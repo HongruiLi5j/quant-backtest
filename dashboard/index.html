@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>量化日报</title>
+<style>
+:root {
+  --bg: #f5f5f7; --surface: #ffffff; --surface-2: #f2f2f7; --fill: rgba(118,118,128,.12); --fill-2: rgba(118,118,128,.08);
+  --text: #1d1d1f; --text-2: #6e6e73; --text-3: #8e8e93; --sep: rgba(60,60,67,.14);
+  --blue: #007aff; --green: #34c759; --red: #ff3b30; --orange: #ff9500; --indigo: #5856d6; --teal: #30b0c7; --pink: #ff2d55; --gray: #8e8e93;
+  --up: #e5362b; --down: #1f9d55;
+  --bar: rgba(255,255,255,.78); --shadow: 0 1px 2px rgba(0,0,0,.025), 0 8px 24px rgba(0,0,0,.035);
+  --r-lg: 18px; --r-md: 12px; --r-sm: 8px;
+  --warn-bg: #fff4e5; --warn-text: #8a5300;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000; --surface: #1c1c1e; --surface-2: #2c2c2e; --fill: rgba(118,118,128,.24); --fill-2: rgba(118,118,128,.16);
+    --text: #f5f5f7; --text-2: #aeaeb2; --text-3: #8e8e93; --sep: rgba(84,84,88,.6);
+    --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --indigo: #5e5ce6; --teal: #40c8e0; --pink: #ff375f; --gray: #8e8e93;
+    --up: #ff5a4e; --down: #32c46f;
+    --bar: rgba(22,22,24,.72); --shadow: 0 1px 2px rgba(0,0,0,.3);
+    --warn-bg: #3a2a0c; --warn-text: #ffd28a;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; }
+button, input, select { font: inherit; color: inherit; letter-spacing: inherit; }
+a { color: var(--blue); text-decoration: none; }
+
+/* ---------- 顶栏（毛玻璃） ---------- */
+header { position: sticky; top: 0; z-index: 20; background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: .5px solid var(--sep); }
+.bar { max-width: 1200px; margin: 0 auto; padding: 10px 24px; display: flex; gap: 18px; align-items: center; }
+.brand { font-weight: 600; font-size: 17px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.brand svg { width: 22px; height: 22px; }
+nav.tabs { display: flex; gap: 8px; margin: 0 auto; max-width: 1200px; padding: 7px 24px 10px; align-items: center; border-top: .5px solid var(--sep); }
+nav.tabs > a { color: var(--text-2); min-width: 0; flex: 1; text-align: center; padding: 8px 10px; height: 36px; display: flex; justify-content: center; align-items: center; border-radius: 10px; font-size: 13.5px; white-space: nowrap; transition: background .15s, color .15s; }
+nav.tabs > a:hover { background: var(--fill-2); color: var(--text); }
+nav.tabs > a.on { background: var(--fill); color: var(--text); font-weight: 600; }
+.spacer { flex: 1; }
+.seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: 7px; font-size: 13px; color: var(--text); cursor: pointer; transition: background .15s, box-shadow .15s; white-space: nowrap; }
+.seg button.on { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04); font-weight: 600; }
+@media (prefers-color-scheme: dark) { .seg button.on { background: #636366; } }
+.search { position: relative; }
+.search input { width: 200px; border: 0; background: var(--fill); border-radius: 9px; padding: 6px 10px 6px 30px; font-size: 14px; outline: none; transition: width .2s; }
+.search input:focus { width: 240px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 35%, transparent); }
+.search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--text-3); }
+.results { position: absolute; right: 0; top: 38px; width: 300px; background: var(--surface); border-radius: var(--r-md); box-shadow: 0 10px 40px rgba(0,0,0,.18); overflow: hidden; display: none; z-index: 30; }
+.results a { display: flex; justify-content: space-between; padding: 9px 14px; color: var(--text); font-size: 14px; border-bottom: .5px solid var(--sep); }
+.results a:last-child { border-bottom: 0; }
+.results a:hover, .results a.hl { background: var(--fill-2); }
+.results small { color: var(--text-3); }
+.iconbtn { border: 0; background: var(--fill); width: 32px; height: 32px; border-radius: 99px; display: grid; place-items: center; cursor: pointer; color: var(--text); }
+.iconbtn svg { width: 16px; height: 16px; }
+.iconbtn.spin svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- 页面 ---------- */
+main { max-width: 1160px; margin: 0 auto; padding: 34px 28px 96px; }
+.page { display: none; animation: fade .25s ease; }
+.page.on { display: block; }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.title { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin: 8px 0 24px; }
+.title h1 { font-size: 34px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+.title .sub { color: var(--text-2); font-size: 14px; padding-bottom: 4px; }
+h2 { font-size: 20px; font-weight: 600; margin: 28px 0 12px; letter-spacing: -0.01em; }
+h2 small { font-size: 13px; font-weight: 400; color: var(--text-3); margin-left: 8px; }
+.card { background: var(--surface); border: .5px solid var(--sep); border-radius: 20px; box-shadow: var(--shadow); padding: 22px; }
+.muted { color: var(--text-2); } .dim { color: var(--text-3); font-size: 13px; }
+.up { color: var(--up); } .down { color: var(--down); }
+.num { font-variant-numeric: tabular-nums; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
+.today-overview { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.today-hero { min-height: 100%; }
+.today-hero .big { font-size: 48px; margin-top: 16px; }
+.today-hero .hero-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; }
+.today-hero .reason { max-width: 620px; line-height: 1.6; margin-top: 14px; }
+.market-overview { margin-bottom: 14px; padding: 20px 22px; }
+.market-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.market-head h2 { margin: 0; }
+.market-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.market-kpi { min-width: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
+.market-kpi span { display: block; color: var(--text-3); font-size: 12px; }
+.market-kpi b { display: block; margin-top: 2px; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.market-riskline { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; color: var(--text-2); font-size: 12.5px; }
+.market-riskline b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.strategy-compact h2 { margin: 0 0 8px; }
+.strategy-compact th, .strategy-compact td { padding: 10px 8px; }
+.strategy-compact td:first-child { font-weight: 600; }
+.banner { background: var(--warn-bg); color: var(--warn-text); border-radius: var(--r-md); padding: 12px 16px; font-size: 14px; margin-bottom: 16px; }
+.banner div + div { margin-top: 4px; }
+
+/* 分享条 */
+.sharebar { background: color-mix(in srgb, var(--blue) 10%, var(--surface)); border-bottom: .5px solid var(--sep); font-size: 13px; }
+.sharebar .in { max-width: 1240px; margin: 0 auto; padding: 7px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sharebar a.url { color: var(--blue); font-weight: 600; font-variant-numeric: tabular-nums; word-break: break-all; }
+.sharebar .btn { padding: 4px 12px; font-size: 12.5px; }
+.sharebar .dim { color: var(--text-3); }
+.note { background: color-mix(in srgb, var(--blue) 8%, var(--surface)); border-radius: var(--r-md); padding: 12px 16px; font-size: 14px; color: var(--text); }
+.note b { font-weight: 600; }
+
+/* 策略卡 */
+.scard { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+.scard:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(0,0,0,.05), 0 12px 32px rgba(0,0,0,.08); }
+.scard .head { display: flex; align-items: center; gap: 8px; }
+.scard .name { font-weight: 600; font-size: 15px; flex: 1; }
+.big { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 10px 0 0; font-variant-numeric: tabular-nums; }
+.big small { font-size: 13px; font-weight: 400; color: var(--text-3); margin-left: 6px; letter-spacing: 0; }
+.meter { height: 6px; background: var(--fill); border-radius: 99px; overflow: hidden; margin: 10px 0 12px; }
+.meter i { display: block; height: 100%; background: var(--blue); border-radius: 99px; transition: width .4s ease; }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+.kv div { background: var(--surface-2); border-radius: 10px; padding: 6px 8px; }
+.kv span { display: block; font-size: 11px; color: var(--text-3); }
+.kv b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.reason { font-size: 13px; color: var(--text-2); margin-top: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.pill.buy { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.pill.sell { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
+.pill.hold { background: var(--fill); color: var(--text-2); }
+.pill.dl { background: var(--fill); color: var(--text-3); }
+
+/* 列表 / 表格 */
+ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list li { padding: 11px 0; border-bottom: .5px solid var(--sep); font-size: 14px; display: flex; gap: 10px; }
+ul.list li:last-child { border-bottom: 0; }
+ul.list li::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--blue); margin-top: 8px; flex: none; }
+.tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: .5px solid var(--sep); }
+th { font-size: 12px; font-weight: 500; color: var(--text-3); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+th:first-child, td:first-child { text-align: left; }
+tbody tr { transition: background .1s; }
+tbody tr.click { cursor: pointer; }
+tbody tr.click:hover { background: var(--fill-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tr.pin td { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+th.sort { cursor: pointer; user-select: none; }
+th.sort:hover { color: var(--text); }
+th.sort.on { color: var(--blue); }
+td .code { color: var(--text-3); font-size: 12px; margin-left: 6px; }
+td .tag { font-size: 11px; color: var(--text-3); background: var(--fill-2); border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+td .sub2 { display: block; font-size: 11.5px; color: var(--text-3); }
+.better { font-weight: 700; color: var(--blue); }
+.link { color: var(--blue); cursor: pointer; margin-left: 10px; font-size: 13px; }
+.link.gray { color: var(--text-3); }
+
+/* 表单 */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); }
+.field input, .field select { border: 0; background: var(--fill); border-radius: 9px; padding: 7px 10px; font-size: 14px; color: var(--text); min-width: 120px; outline: none; }
+.field input:focus, .field select:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 35%, transparent); }
+.btn { border: 0; border-radius: 99px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s, transform .1s; }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--blue); color: #fff; }
+.btn.plain { background: var(--fill); color: var(--blue); }
+.btn:disabled { opacity: .45; cursor: default; }
+.pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--text-2); }
+.stock-switch { display: inline-flex; gap: 3px; padding: 3px; margin: 0 0 22px; border-radius: 11px; background: var(--fill-2); }
+.stock-switch[hidden] { display: none; }
+.stock-switch a { padding: 7px 14px; border-radius: 8px; color: var(--text-2); font-size: 13px; transition: background .15s, color .15s, box-shadow .15s; }
+.stock-switch a:hover { color: var(--text); }
+.stock-switch a.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); font-weight: 600; }
+
+/* 图表 */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tip { position: absolute; pointer-events: none; background: color-mix(in srgb, var(--surface-2) 94%, transparent); border: .5px solid var(--sep); border-radius: 10px; padding: 8px 11px; font-size: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); white-space: nowrap; display: none; font-variant-numeric: tabular-nums; z-index: 5; }
+.tip .d { color: var(--text-3); margin-bottom: 3px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-2); margin: 2px 0 8px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.fresh { font-size: 12px; color: var(--text-2); white-space: nowrap; display: inline-flex; gap: 10px; }
+.fresh i { font-style: normal; display: inline-flex; align-items: center; gap: 4px; }
+.fresh i::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.fresh i.warn::before { background: var(--orange); }
+.fresh i.old::before { background: var(--red); }
+@media (max-width: 760px) { .fresh { display: none; } }
+.ass-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 22px; font-size: 13px; }
+.ass-row { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; border-bottom: .5px solid var(--sep); }
+.ass-row b { font-size: 12px; color: var(--text-3); font-weight: 600; }
+.ass-row span { color: var(--text-2); line-height: 1.45; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+.tile { background: var(--surface-2); border-radius: var(--r-md); padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--text-3); }
+.tile .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tile .b { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 个股详情头部 */
+.shead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 16px; }
+.shead h1 { font-size: 34px; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+.shead .code { color: var(--text-3); font-size: 17px; margin-left: 8px; font-weight: 500; }
+.shead .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.shead .stats div > span:first-child { display: block; font-size: 12px; color: var(--text-3); }
+.shead .stats div b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.two { display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px; }
+.two > *, .grid > *, .card { min-width: 0; }
+.empty { text-align: center; padding: 40px 20px; color: var(--text-2); }
+.empty svg { width: 40px; height: 40px; color: var(--text-3); margin-bottom: 8px; }
+.skeleton { background: linear-gradient(90deg, var(--fill-2), var(--fill), var(--fill-2)); background-size: 200% 100%; animation: sk 1.2s infinite; border-radius: var(--r-md); height: 120px; }
+@keyframes sk { to { background-position: -200% 0; } }
+footer { color: var(--text-3); font-size: 12px; text-align: center; padding: 10px 20px 30px; }
+
+/* ---------- 第三方引擎 / 对比 / 代码 ---------- */
+.enginehead { display: flex; align-items: center; gap: 10px; }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; background: var(--fill); color: var(--text-2); }
+.badge.blue { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.badge.red { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.badge.green { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.progress { height: 8px; background: var(--fill); border-radius: 99px; overflow: hidden; margin: 10px 0; }
+.progress i { display: block; height: 100%; background: var(--blue); border-radius: 99px; transition: width .3s ease; }
+.refresh-progress { display:flex; align-items:center; gap:8px; padding:0 2px 0 4px; color:var(--text-2); font-size:12px; white-space:nowrap; }
+.refresh-progress[hidden] { display:none; }
+.refresh-progress-track { display:block; flex:0 0 128px; width:128px; height:7px; background:var(--fill); border-radius:99px; overflow:hidden; }
+.refresh-progress-fill { display:block; width:0; height:100%; background-color:#007aff; border-radius:99px; transition:width .35s ease; }
+.refresh-progress.running.indeterminate .refresh-progress-fill { width:0; background-color:#007aff; }
+.refresh-progress.failed .refresh-progress-fill { background-color:var(--red); }
+.refresh-progress.failed { color:var(--red); }
+.refresh-progress b { min-width:34px; font-size:12px; font-variant-numeric:tabular-nums; color:var(--text); }
+.refresh-progress .phase { max-width:150px; overflow:hidden; text-overflow:ellipsis; color:var(--text-2); }
+.notes { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-2); }
+.notes li { margin: 3px 0; }
+.heat td { text-align: center; font-size: 12.5px; padding: 6px 8px; }
+.heat th { text-align: center; }
+.heat td.best { outline: 2px solid var(--blue); outline-offset: -2px; font-weight: 700; }
+.heat td.dflt { box-shadow: inset 0 0 0 2px var(--orange); }
+.optgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.errbox { background: color-mix(in srgb, var(--red) 8%, var(--surface)); color: var(--text); border-radius: var(--r-md); padding: 10px 14px; font-size: 13px; white-space: pre-wrap; font-family: ui-monospace, "SF Mono", Menlo, monospace; max-height: 260px; overflow: auto; margin-top: 8px; }
+details.more summary { cursor: pointer; color: var(--blue); font-size: 14px; margin: 12px 0 6px; }
+.codewrap { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
+.codelist { padding: 10px; position: sticky; top: 70px; }
+.codelist .grp { font-size: 12px; color: var(--text-3); margin: 10px 8px 4px; }
+.codelist a { display: block; padding: 8px 10px; border-radius: 10px; color: var(--text); font-size: 13.5px; cursor: pointer; }
+.codelist a small { display: block; color: var(--text-3); font-size: 11.5px; }
+.codelist a:hover { background: var(--fill-2); }
+.codelist a.on { background: color-mix(in srgb, var(--blue) 12%, transparent); }
+.codemain { min-width: 0; }
+.editor { position: relative; height: calc(100vh - 250px); min-height: 420px; border-radius: var(--r-md); background: var(--surface-2); overflow: hidden;
+  font: 13px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0; }
+.editor .gutter { position: absolute; left: 0; top: 0; bottom: 0; width: 48px; padding: 12px 8px 12px 0; text-align: right; color: var(--text-3); background: var(--fill-2); overflow: hidden; white-space: pre; user-select: none; }
+.editor pre, .editor textarea { position: absolute; top: 0; left: 48px; right: 0; bottom: 0; margin: 0; padding: 12px 14px; border: 0; font: inherit; letter-spacing: 0;
+  white-space: pre; overflow: auto; tab-size: 4; box-sizing: border-box; }
+.editor pre { color: var(--text); pointer-events: none; overflow: hidden; }
+.editor textarea { background: transparent; color: transparent; caret-color: var(--text); resize: none; outline: none; }
+.editor textarea::selection { background: color-mix(in srgb, var(--blue) 30%, transparent); color: transparent; }
+.editor.ro textarea { caret-color: transparent; }
+.hl .k { color: #ad3da4; font-weight: 600; } .hl .s { color: #c41a16; } .hl .c { color: #5d6c79; font-style: italic; } .hl .n { color: #1c00cf; } .hl .f { color: #3900a0; } .hl .b { color: #0b4f79; }
+@media (prefers-color-scheme: dark) { .hl .k { color: #fc5fa3; } .hl .s { color: #fc6a5d; } .hl .c { color: #7f8c98; } .hl .n { color: #d0bf69; } .hl .f { color: #a167e6; } .hl .b { color: #5dd8ff; } }
+.editor .errline { position: absolute; left: 48px; right: 0; background: color-mix(in srgb, var(--red) 18%, transparent); pointer-events: none; }
+@media (max-width: 980px) { .bar { gap: 10px; padding-inline: 18px; } nav.tabs { gap: 4px; padding-inline: 18px; overflow-x: auto; } nav.tabs > a { flex: 0 0 auto; padding-inline: 11px; font-size: 12.5px; } .search input { width: 150px; } }
+@media (max-width: 860px) { .codewrap, .optgrid { grid-template-columns: 1fr; } .codelist { position: static; } }
+
+/* ---------- 窄屏：保持导航展开，允许横向浏览 ---------- */
+@media (max-width: 860px) {
+  header { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+  .bar { padding: 8px 14px; gap: 10px; flex-wrap: wrap; }
+  nav.tabs { margin: 0; padding: 6px 14px 9px; gap: 6px; overflow-x: auto; }
+  nav.tabs > a { flex: 0 0 auto; height: 34px; font-size: 12px; padding: 6px 11px; }
+  nav.tabs > a.on { background: var(--fill); color: var(--text); }
+  .search input { width: 120px; } .search input:focus { width: 150px; }
+  .brand span { display: none; }
+.refresh-progress-track { flex-basis:76px; width:76px; }
+  .refresh-progress .phase { display:none; }
+  main { padding: 24px 16px 56px; }
+  .title h1, .shead h1 { font-size: 28px; }
+  .card { padding: 18px; border-radius: 18px; }
+  .stock-switch { margin-bottom: 18px; }
+  .two, .today-overview { grid-template-columns: 1fr; }
+  .market-overview { padding: 18px; }
+  .market-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .market-kpi { padding: 10px 11px; }
+  .market-kpi b { font-size: 19px; }
+  .kv { grid-template-columns: repeat(2, 1fr); }
+  .results { width: 260px; }
+}
+nav.tabs a svg { display: none; }
+.why{margin-top:16px;padding-top:12px;border-top:1px solid rgba(128,128,128,.25)}
+.why h3{margin:0 0 6px;font-size:13px;font-weight:600}
+.why-row{display:grid;grid-template-columns:1fr auto 64px;gap:10px;align-items:center;padding:6px 0;font-size:13px}
+.why-row b{text-align:right}
+.strategy-compact .tbl{overflow-x:visible}
+.strategy-compact table{width:100%;table-layout:auto}
+.strategy-compact th,.strategy-compact td{padding:10px 6px;font-size:13px;white-space:normal;line-height:1.3;vertical-align:middle}
+</style>
+<link rel="stylesheet" href="/terminal.css">
+<script src="/skin.js"></script>
+</head>
+<body>
+<div class="sharebar" id="shareBar" hidden><div class="in" id="shareBarIn"></div></div>
+<header>
+  <div class="bar">
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="22" height="22" rx="6" fill="#007aff"/><path d="M6 15l3.5-4 3 2.5L18 8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>量化日报</span></div>
+    <span class="spacer"></span>
+    <span class="fresh" id="fresh" hidden></span>
+    <div class="seg" id="mkt"></div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5" stroke-linecap="round"/></svg>
+      <input id="q" placeholder="搜索代码或名称" autocomplete="off">
+      <div class="results" id="qres"></div>
+    </div>
+    <button class="btn plain" id="languageToggle" type="button" aria-label="切换语言" style="padding:6px 11px;font-size:12px;white-space:nowrap">EN / 中文</button>
+    <button class="iconbtn" id="refresh" title="立即更新数据"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+    <div class="refresh-progress" id="refreshProgress" hidden aria-live="polite"><span class="refresh-progress-track"><i class="refresh-progress-fill" id="refreshProgressBar"></i></span><b id="refreshProgressPercent"></b><span class="phase" id="refreshProgressText"></span></div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="主导航">
+    <a href="#/today" data-p="today">今日</a><a href="#/market" data-p="market">全市场</a><a href="#/watch" data-p="watch">自选</a>
+    <a href="#/lab" data-p="lab">回测实验室</a><a href="#/track" data-p="track">信号跟踪</a><a href="/member" data-ext="1">模拟交易</a>
+    <details class="more" data-local="1"><summary>引擎 ▾</summary><div><a href="#/bt" data-p="bt">Backtrader</a><a href="#/rq" data-p="rq">RQAlpha 米筐</a><a href="#/cmp" data-p="cmp">引擎对比</a><a href="#/code" data-p="code">代码</a></div></details>
+  </nav>
+</header>
+
+<main>
+  <!-- 今日 -->
+  <section class="page" id="p-today">
+    <div class="title"><h1>今日</h1><span class="sub" id="todayMeta"></span></div>
+    <div id="health"></div>
+    <div class="card market-overview" id="marketOverview"></div>
+    <div class="today-overview">
+      <div id="cards"></div>
+      <div class="card strategy-compact"><h2>策略信号</h2><div class="tbl"><table id="strategyTbl"></table></div><div class="dim" style="margin-top:8px">点击组合建议可查看标的详情。</div></div>
+    </div>
+    <div class="two" style="margin-top:14px">
+      <div class="card"><h2 style="margin-top:0">自动点评</h2><ul class="list" id="notes"></ul></div>
+      <div class="card"><h2 style="margin-top:0">最近提醒 <small>Mac 通知的记录</small></h2><ul class="list" id="notifs"></ul></div>
+    </div>
+    <h2>观察列表 <small>点一行查看详情</small></h2>
+    <div class="card tbl"><table id="watchTbl"></table></div>
+  </section>
+
+  <!-- 全市场 -->
+  <section class="page" id="p-market">
+    <div class="title"><h1>全市场</h1><span class="sub" id="mMeta"></span></div>
+    <div id="mEmpty"></div>
+    <div id="mBody">
+      <div class="card">
+        <h2 style="margin-top:0">策略在全市场有没有用？</h2>
+        <div class="tbl"><table id="mSummary"></table></div>
+        <div class="note" style="margin-top:14px" id="mExplain"></div>
+      </div>
+      <h2>逐只结果</h2>
+      <div class="card">
+        <div class="toolbar">
+          <label class="field">策略<select id="sStrategy"></select></label>
+          <label class="field">搜索<input id="sQ" placeholder="代码或名称"></label>
+          <label class="field">板块<select id="sBoard"><option value="">全部</option></select></label>
+          <label class="field">行业<select id="sInd"><option value="">全部</option></select></label>
+          <label class="field">筛选<select id="sSig">
+            <option value="">全部股票</option><option value="买入">今天买入信号</option><option value="卖出">今天卖出信号</option>
+            <option value="持仓">策略当前持仓</option><option value="空仓">策略当前空仓</option>
+            <option value="有效">策略比持有好</option><option value="退市">已退市股票</option></select></label>
+          <span class="spacer"></span>
+          <button class="btn plain" id="sExport">导出 Excel</button>
+        </div>
+        <div class="tbl"><table id="scanTbl"></table></div>
+        <div class="pager"><span id="sCount"></span><button class="btn plain" id="sPrev">上一页</button><span id="sPage"></span><button class="btn plain" id="sNext">下一页</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 自选 -->
+  <section class="page" id="p-watch">
+    <div class="title"><h1>自选</h1><span class="sub">自选股和 ETF 逐只回测，同一个策略、默认参数</span></div>
+    <div class="card">
+      <div class="toolbar">
+        <label class="field">策略<select id="tStrategy"></select></label>
+        <label class="field">开始日期<input type="date" id="tStart"></label>
+        <label class="field" id="addWrap">添加自选股<input id="addCode" maxlength="10" placeholder="股票代码"></label>
+        <button class="btn primary" id="addBtn">添加</button>
+        <span class="spacer"></span>
+        <button class="btn plain" id="tExport">导出 Excel</button>
+      </div>
+      <div class="dim" id="tMsg"></div>
+      <div class="tbl"><table id="stockTbl"></table></div>
+      <p class="dim">年化、回撤、超额 Sharpe 在同一时间段计算；"持有"指同一只股票一直拿着不动。个股按单边 8bp 成本（含印花税），考虑一字涨跌停；价格为前复权（最新价与行情软件一致）。</p>
+    </div>
+  </section>
+
+  <!-- 个股详情 -->
+  <section class="page" id="p-stock">
+    <div id="sdHead"></div>
+    <div class="card">
+      <div class="toolbar">
+        <label class="field">策略<select id="dStrategy"></select></label>
+        <div class="field">区间<div class="seg" id="dPeriod"></div></div>
+        <label class="field">技术指标<select id="dInd"><option value="all">全部（布林带 + MACD + RSI + KDJ）</option><option value="macd">布林带 + MACD</option><option value="rsi">布林带 + RSI</option><option value="kdj">布林带 + KDJ</option><option value="off">关闭</option></select></label>
+        <span class="spacer"></span>
+        <button class="btn plain" id="dLab">在回测实验室调参数</button>
+        <button class="btn plain" id="dWatch"></button>
+      </div>
+      <div class="legend" id="dLegend"></div>
+      <div class="chart" id="kChart"></div>
+      <div class="dim" id="dNote" style="margin-top:8px"></div>
+    </div>
+    <div class="two" style="margin-top:14px">
+      <div class="card"><h2 style="margin-top:0">这只股票，哪个策略好？</h2><div class="tbl"><table id="dCompare"></table></div></div>
+      <div class="card"><h2 style="margin-top:0">净值 <small>策略 vs 一直持有</small></h2><div class="chart" id="dEquity"></div>
+        <h2>交易记录</h2><div class="tbl" style="max-height:320px;overflow-y:auto"><table id="dTrades"></table></div></div>
+    </div>
+  </section>
+
+  <!-- 回测实验室 -->
+  <section class="page" id="p-lab">
+    <div class="title"><h1>回测实验室</h1><span class="sub">换策略、换品种、改参数，实时回测</span></div>
+    <div class="card">
+      <div class="toolbar">
+        <label class="field">策略<select id="strategy"></select></label>
+        <label class="field">品种<select id="symbol"></select></label>
+        <label class="field">开始日期<input type="date" id="start"></label>
+        <label class="field">单边成本 bp<input type="number" id="cost" min="0" max="100" step="1" style="width:100px;min-width:0"></label>
+      </div>
+      <div class="dim" id="sdesc"></div>
+      <div class="toolbar" id="params" style="margin-top:12px"></div>
+      <div class="toolbar"><button class="btn primary" id="runBtn">运行回测</button><button class="btn plain" id="resetBtn">恢复默认</button><span class="dim" id="btErr" style="color:var(--red)"></span></div>
+      <div id="btOut" hidden>
+        <div class="tiles" id="tiles"></div>
+        <div id="rptOut"></div>
+        <div class="legend"><span><i style="background:var(--blue)"></i><b id="lgS"></b></span><span><i style="background:var(--gray)"></i>买入持有</span></div>
+        <div class="chart" id="eqChart"></div>
+        <div class="dim" style="margin:12px 0 4px">回撤</div>
+        <div class="chart" id="ddChart"></div>
+        <p class="muted" id="posText" style="font-size:14px"></p>
+        <div id="anaOut"></div>
+        <div class="two"><div><h2>最近收益</h2><div class="tbl"><table id="recentTbl"></table></div></div>
+          <div><h2>最近交易</h2><div class="tbl" style="max-height:300px;overflow-y:auto"><table id="tradeTbl"></table></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第三方引擎：backtrader（国外）/ RQAlpha 米筐（国内）——内容由 engines.js 生成 -->
+  <section class="page" id="p-bt"></section>
+  <section class="page" id="p-rq"></section>
+
+  <!-- 三引擎对比 -->
+  <section class="page" id="p-cmp">
+    <div class="title"><h1>引擎对比</h1><span class="sub">同一只股票、同一个策略、同一组参数：自研引擎 vs backtrader vs RQAlpha 米筐</span></div>
+    <div class="card">
+      <div class="toolbar" id="cmpBar"></div>
+      <div class="dim" id="cmpDesc"></div>
+      <div class="toolbar" id="cmpParams" style="margin-top:12px"></div>
+      <div class="toolbar"><button class="btn primary" id="cmpRun">三个引擎一起跑</button><span class="dim" id="cmpMsg"></span></div>
+      <div id="cmpOut" hidden></div>
+    </div>
+    <h2>全部 A 股：三个引擎是否一致 <small>每只股票 × 7 个策略 × 3 个引擎，默认参数</small></h2>
+    <div class="card" id="scanCard"></div>
+  </section>
+
+  <!-- 代码 -->
+  <section class="page" id="p-code">
+    <div class="title"><h1>代码</h1><span class="sub">看回测背后的代码，直接修改策略；每次保存都会留历史版本，随时可以恢复</span></div>
+    <div class="codewrap">
+      <div class="card codelist" id="codeList"></div>
+      <div class="card codemain">
+        <div class="toolbar" style="margin-bottom:8px">
+          <div><b id="codeName"></b> <span class="dim" id="codePath"></span><div class="dim" id="codeDesc"></div></div>
+          <span class="spacer" style="flex:1"></span>
+          <label class="field">历史版本<select id="codeHist"><option value="">—</option></select></label>
+          <button class="btn plain" id="codeRestore">恢复这个版本</button>
+          <button class="btn plain" id="codeRevert">放弃修改</button>
+          <button class="btn primary" id="codeSave">保存 ⌘S</button>
+          <button class="btn plain" id="codeCheck">保存并自检</button>
+        </div>
+        <div class="dim" id="codeMsg" style="min-height:20px"></div>
+        <div class="editor" id="editor"><pre class="hl" id="codeHl" aria-hidden="true"></pre><div class="gutter" id="codeGutter"></div><textarea id="codeText" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
+        <div class="toolbar" id="codeRunBar" style="display:none;margin-top:10px">
+          <label class="field">股票代码<input id="codeRunCode" list="engWl" maxlength="6" inputmode="numeric" placeholder="如 600531" style="width:110px;min-width:0"></label>
+          <label class="field">初始资金（元）<input type="number" id="codeRunCash" value="100000" min="10000" step="10000" style="width:120px;min-width:0"></label>
+          <button class="btn primary" id="codeRunBtn">保存并运行回测</button><span class="dim" id="codeRunMsg"></span>
+        </div>
+        <div id="codeRunResult" hidden></div>
+        <div id="codeCheckOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 信号跟踪 -->
+  <section class="page" id="p-track">
+    <div class="title"><h1>信号跟踪</h1><span class="sub">当时说买的，后来涨了没有？这是最诚实的检验</span></div>
+    <div class="note" style="margin-bottom:14px">每天收盘后发出的买入/卖出信号都会原样记录下来、不再修改。之后按"<b>下一个交易日开盘买入，持有 5 / 20 / 60 个交易日</b>"计算收益，并和同期的沪深300ETF（美股为 SPY）比较。只有从上线那天起的记录才算真正的样本外，所以这里的数据会越积越多。</div>
+    <div id="trEmpty"></div>
+    <div id="trBody">
+      <div class="note" id="trStatus" style="margin-bottom:14px"></div>
+      <div class="card"><div class="tbl"><table id="trSummary"></table></div></div>
+      <h2>最近的信号</h2>
+      <div class="card"><div class="tbl" style="max-height:520px;overflow-y:auto"><table id="trRecent"></table></div></div>
+    </div>
+  </section>
+</main>
+<footer>仅供研究学习，不构成投资建议；回测不代表未来 · 颜色：红涨绿跌 · 只在本机运行（127.0.0.1），不连接交易接口</footer>
+<script src="/app.js?v=20261003-analysis-21"></script>
+<script src="/analysis.js?v=20261003-analysis-21"></script>
+<script src="/engines.js?v=20261003-analysis-21"></script>
+<script src="/i18n.js?v=20261003-analysis-21"></script>
+</body>
+</html>

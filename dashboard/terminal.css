@@ -1,0 +1,96 @@
+/* 「清爽绿」皮肤：沿用学习计划页的设计（浅绿灰底、白卡片、细边框、墨绿强调色、等宽数字），跟随系统浅色/深色。
+   <html data-skin="term"> 时生效；skin.js 的按钮可以切回「经典外观」。 */
+html[data-skin="term"] {
+  --bg: #060a14; --surface: #0c1322; --surface-2: #101a2e; --fill: #15223a; --fill-2: #0f192c;
+  --text: #e6f1ff; --text-2: #8fa6c4; --text-3: #5f7694; --sep: #1b2c47;
+  --blue: #22d3ee; --green: #2ee59d; --red: #ff5c70; --orange: #ffb44c; --indigo: #7c8cff; --teal: #22d3ee; --pink: #ff6bd6; --gray: #5f7694;
+  --up: #ff5c70; --down: #2ee59d; --glow: rgba(34,211,238,.35);
+  --bar: rgba(6,10,20,.82); --shadow: 0 0 0 1px rgba(34,211,238,.06), 0 8px 30px rgba(0,0,0,.45);
+  --r-lg: 12px; --r-md: 10px; --r-sm: 6px;
+  --ok-bg: #0b2a22; --ok-text: #2ee59d; --warn-bg: #33250d; --warn-text: #ffb44c; --bad-bg: #3a1219; --bad-text: #ff8a98;
+  color-scheme: dark;
+}
+html[data-skin="term"] body { font: 15px/1.7 "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif; letter-spacing: 0; background: radial-gradient(900px 500px at 85% -10%, rgba(34,211,238,.10), transparent 60%), radial-gradient(700px 500px at -10% 10%, rgba(124,140,255,.10), transparent 60%), linear-gradient(rgba(34,211,238,.035) 1px, transparent 1px) 0 0/36px 36px, linear-gradient(90deg, rgba(34,211,238,.035) 1px, transparent 1px) 0 0/36px 36px, var(--bg); background-attachment: fixed; }
+html[data-skin="term"] header { -webkit-backdrop-filter: saturate(140%) blur(12px); backdrop-filter: saturate(140%) blur(12px); }
+html[data-skin="term"] .brand { font-weight: 700; }
+html[data-skin="term"] nav.tabs { gap: 6px; }
+html[data-skin="term"] nav.tabs > a { border-radius: 8px; }
+html[data-skin="term"] nav.tabs > a.on { background: var(--surface-2); color: var(--blue); font-weight: 700; box-shadow: inset 0 0 0 1px var(--sep); }
+html[data-skin="term"] .seg { border-radius: 8px; background: var(--fill); }
+html[data-skin="term"] .seg button.on { background: var(--surface); color: var(--blue); box-shadow: inset 0 0 0 1px var(--sep); }
+html[data-skin="term"] .search input { border-radius: 8px; background: var(--surface); border: 1px solid var(--sep); }
+html[data-skin="term"] .iconbtn { border-radius: 8px; background: var(--surface); border: 1px solid var(--sep); }
+html[data-skin="term"] main { max-width: 1000px; padding: 28px 20px 90px; }
+html[data-skin="term"] .title h1 { font-size: 28px; font-weight: 700; letter-spacing: 0; }
+html[data-skin="term"] h2 { font-size: 19px; font-weight: 700; color: var(--text); letter-spacing: 0; text-transform: none; }
+html[data-skin="term"] .card { border: 1px solid var(--sep); border-radius: 10px; padding: 18px 20px; box-shadow: none; }
+html[data-skin="term"] .big { letter-spacing: 0; }
+html[data-skin="term"] .market-kpi, html[data-skin="term"] .kv div { background: var(--surface-2); border-radius: 8px; border: 0; }
+html[data-skin="term"] .scard:hover { transform: none; box-shadow: none; border-color: var(--blue); }
+html[data-skin="term"] .meter i { background: var(--blue); }
+html[data-skin="term"] .banner { border-radius: 10px; }
+html[data-skin="term"] .note { background: var(--fill-2); border-left: 3px solid var(--blue); border-radius: 6px; }
+html[data-skin="term"] .sharebar { background: var(--fill-2); }
+html[data-skin="term"] a { color: var(--blue); }
+html[data-skin="term"] table { border-collapse: collapse; }
+html[data-skin="term"] th { font-size: 12px; font-weight: 500; color: var(--text-3); text-align: left; }
+html[data-skin="term"] td, html[data-skin="term"] th { padding: 8px 10px; border-bottom: 1px solid var(--sep); }
+html[data-skin="term"] tbody tr:hover td { background: var(--fill-2); }
+html[data-skin="term"] .num, html[data-skin="term"] td.num, html[data-skin="term"] .market-kpi b, html[data-skin="term"] .big, html[data-skin="term"] .kv b {
+  font-family: ui-monospace, "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+html[data-skin="term"] button, html[data-skin="term"] .btn { border-radius: 8px; }
+.skinbtn { border: 1px solid var(--sep); background: var(--surface); color: var(--text-2); border-radius: 8px; font-size: 12px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+@media (max-width: 760px) { html[data-skin="term"] main { padding: 16px 12px 80px; } }
+
+.rpt{padding:14px 16px;margin-top:12px}
+.rpt h3{margin:0 0 8px;font-size:15px}
+.rgh{font-size:12px;color:var(--dim,#6b7a73);margin:12px 0 6px;letter-spacing:.04em}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 14px}
+.ri{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(128,128,128,.15);font-size:13px}
+.ri b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
+
+.tabs .more{display:inline-block;position:relative}
+.tabs .more summary{cursor:pointer;list-style:none;padding:6px 12px;color:var(--text-2,#6b7a73);font-size:inherit}
+.tabs .more summary::-webkit-details-marker{display:none}
+.tabs .more.on summary{color:var(--blue,#0f7a5c);font-weight:600}
+.tabs .more>div{position:absolute;right:0;top:100%;z-index:30;background:var(--card,#fff);border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:6px;display:flex;flex-direction:column;min-width:130px;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.tabs .more>div a{padding:7px 10px;white-space:nowrap}
+
+/* 顶栏窄屏不再把文字竖排：允许换行，按钮和链接不折字 */
+html[data-skin="term"] .bar { flex-wrap: wrap; row-gap: 6px; }
+html[data-skin="term"] .bar a, html[data-skin="term"] .bar button { white-space: nowrap; }
+
+/* ===== 科技风加成：霓虹描边、发光、渐变标题、等宽数字 ===== */
+html[data-skin="term"] .card, html[data-skin="term"] .tile, html[data-skin="term"] .scard { background: linear-gradient(180deg, rgba(16,26,46,.92), rgba(10,17,32,.92)); border: 1px solid rgba(34,211,238,.16); box-shadow: var(--shadow); }
+html[data-skin="term"] .card:hover, html[data-skin="term"] .scard:hover { border-color: rgba(34,211,238,.45); box-shadow: 0 0 0 1px rgba(34,211,238,.2), 0 0 24px -6px var(--glow); }
+html[data-skin="term"] .title h1, html[data-skin="term"] .brand { background: linear-gradient(90deg, #e6f1ff, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html[data-skin="term"] h2 { color: var(--text); padding-left: 10px; border-left: 3px solid var(--blue); }
+html[data-skin="term"] nav.tabs > a.on { background: rgba(34,211,238,.10); color: var(--blue); box-shadow: inset 0 0 0 1px rgba(34,211,238,.45), 0 0 14px -4px var(--glow); }
+html[data-skin="term"] nav.tabs > a:hover { color: var(--text); background: rgba(34,211,238,.06); }
+html[data-skin="term"] header { border-bottom: 1px solid rgba(34,211,238,.18); }
+html[data-skin="term"] .btn:not(.plain):not(.ghost):not(.g), html[data-skin="term"] button.primary { background: linear-gradient(135deg, #22d3ee, #3b82f6); color: #04121f; border: 0; font-weight: 700; box-shadow: 0 0 18px -4px var(--glow); }
+html[data-skin="term"] .btn.plain, html[data-skin="term"] .skinbtn, html[data-skin="term"] .iconbtn { background: var(--surface-2); border: 1px solid rgba(34,211,238,.25); color: var(--text); }
+html[data-skin="term"] .btn.plain:hover, html[data-skin="term"] .skinbtn:hover { border-color: var(--blue); box-shadow: 0 0 12px -3px var(--glow); }
+html[data-skin="term"] input, html[data-skin="term"] select, html[data-skin="term"] textarea { background: var(--surface-2); color: var(--text); border: 1px solid var(--sep); }
+html[data-skin="term"] input:focus, html[data-skin="term"] select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(34,211,238,.15); outline: 0; }
+html[data-skin="term"] .pill { background: rgba(34,211,238,.10); color: var(--blue); }
+html[data-skin="term"] .pill.buy { background: rgba(255,92,112,.14); color: var(--up); }
+html[data-skin="term"] th { color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; font-size: 11.5px; }
+html[data-skin="term"] .tabs .more > div, html[data-skin="term"] .results { background: var(--surface); border-color: rgba(34,211,238,.3); box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+html[data-skin="term"] ::selection { background: rgba(34,211,238,.35); }
+html[data-skin="term"] ::-webkit-scrollbar { width: 10px; height: 10px; } html[data-skin="term"] ::-webkit-scrollbar-thumb { background: #1f3354; border-radius: 6px; }
+
+/* 模拟交易终端同色 */
+html[data-t="dark"] { --bg: #060a14; --card: #0c1322; --text: #e6f1ff; --text2: #8fa6c4; --sep: #1b2c47; --fill: #121d33; --up: #ff5c70; --down: #2ee59d; --blue: #22d3ee; }
+html[data-t="dark"] body { background: radial-gradient(800px 400px at 90% -10%, rgba(34,211,238,.10), transparent 60%), #060a14; }
+html[data-t="dark"] .Ttop { border-bottom: 1px solid rgba(34,211,238,.25); background: rgba(8,13,26,.95); }
+html[data-t="dark"] .wl.act { border-left-color: #22d3ee; background: rgba(34,211,238,.08); }
+html[data-t="dark"] .btabs button.on { border-bottom-color: #22d3ee; }
+html[data-t="dark"] .pn { background: #0a111f; }
+html[data-t="dark"] .Tgrid { background: #16253d; }
+html[data-t="dark"] .st b { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+/* 图表浅灰底 */
+html[data-skin="term"] .chart { background: linear-gradient(180deg, #cbd3de, #c4ccd8); border: 1px solid rgba(34,211,238,.18); border-radius: 10px; padding: 10px 8px 4px; }
+html[data-t="dark"] .kbox, html[data-t="dark"] svg.cv { background: #c9d1dc; border-radius: 8px; padding: 6px 4px 2px; --text2: #3a4658; --sep: #aab5c4; --up: #d63348; --down: #0f9d6a; }
+html[data-t="dark"] .kbox .sm { padding: 0 8px 4px; }

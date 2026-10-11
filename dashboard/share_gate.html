@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>请输入访问密码</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#6e6e73;--blue:#0071e3;--line:#d2d2d7}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#a1a1a6;--blue:#2997ff;--line:#38383a}}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans SC",sans-serif;padding:16px}
+.box{background:var(--card);border-radius:18px;padding:28px 24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:20px;margin:0}p{margin:0;color:var(--sub);font-size:14px}
+input,button{font:inherit;border-radius:10px;padding:12px;border:1px solid var(--line);background:transparent;color:var(--text)}
+button{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600;cursor:pointer}button:disabled{opacity:.5}
+#msg{color:#d70015;font-size:14px;min-height:20px}
+</style></head><body>
+<div class="box"><h1>请输入访问密码</h1><p>这个页面需要密码才能查看，请向分享给你的人索取。</p>
+<input id="pw" type="password" placeholder="访问密码" autocomplete="current-password" autofocus>
+<button id="go">进入</button><div id="msg"></div></div>
+<script src="/share_gate.js"></script></body></html>

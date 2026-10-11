@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+yfinance>=0.2.40
+pytest>=7
+akshare>=1.14
+baostock>=0.8
+pyarrow>=14

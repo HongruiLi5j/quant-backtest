@@ -1,0 +1,92 @@
+// MA 交叉 + ADX 过滤 + ATR 止损
+// 与 Python 版 src/strategy.py + src/backtest.py 规则完全一致，用来对照结果。
+//
+// 规则：
+//   买入信号：快线上穿慢线 且 ADX > ADXMin（收盘判断）
+//   卖出信号：快线下穿慢线
+//   执行：信号出现的下一根 K 线开盘价成交
+//   止损：入场价 - ATRMult * ATR（取信号当天的 ATR），入场后固定
+//         跳空低开到止损下方 → 按开盘价出；盘中触及 → 按止损价出
+//         入场当天不检查止损
+//
+// 用循环而不是 ApplyStop，这样成交价格的定义和 Python 完全一样。
+
+SetOption("InitialEquity", 100000);
+SetOption("CommissionMode", 1);          // 1 = 按成交金额百分比
+SetOption("CommissionAmount", 0.05);     // 0.05%，对应 Python 的 commission_pct=0.0005
+SetOption("AllowPositionShrinking", True);
+SetOption("MaxOpenPositions", 1);
+SetOption("PriceBoundChecking", False);  // 止损价由我们自己算，不让 AmiBroker 改价
+RoundLotSize = 1;
+SetTradeDelays(0, 0, 0, 0);              // 延迟在下面的循环里手动处理
+SetPositionSize(100, spsPercentOfEquity);
+
+Fast    = Param("Fast MA", 5, 2, 50, 1);
+Slow    = Param("Slow MA", 20, 5, 200, 1);
+ADXLen  = Param("ADX period", 14, 5, 50, 1);
+ADXMin  = Param("ADX min", 20, 0, 50, 1);
+ATRLen  = Param("ATR period", 14, 5, 50, 1);
+ATRMult = Param("ATR stop mult", 2, 0.5, 5, 0.5);
+
+MAf = MA(C, Fast);
+MAs = MA(C, Slow);
+ADXv = ADX(ADXLen);
+ATRv = ATR(ATRLen);
+
+BuySig  = Cross(MAf, MAs) AND ADXv > ADXMin;
+SellSig = Cross(MAs, MAf);
+
+Buy = Sell = Short = Cover = 0;
+BuyPrice = SellPrice = O;
+StopLine = Null * C;       // 全是 Null 的数组
+
+inPos = False;
+entryBar = -1;
+stopLvl = 0;
+
+for (i = 1; i < BarCount; i++)
+{
+    if (inPos)
+    {
+        if (SellSig[i - 1])
+        {
+            Sell[i] = 1; SellPrice[i] = O[i]; inPos = False;
+        }
+        else if (i > entryBar)
+        {
+            if (O[i] <= stopLvl)
+            {
+                Sell[i] = 1; SellPrice[i] = O[i]; inPos = False;
+            }
+            else if (L[i] <= stopLvl)
+            {
+                Sell[i] = 1; SellPrice[i] = stopLvl; inPos = False;
+            }
+        }
+        if (inPos) StopLine[i] = stopLvl;
+    }
+    else if (BuySig[i - 1] AND NOT IsNull(ATRv[i - 1]))
+    {
+        Buy[i] = 1; BuyPrice[i] = O[i];
+        inPos = True; entryBar = i;
+        stopLvl = O[i] - ATRMult * ATRv[i - 1];
+        StopLine[i] = stopLvl;
+    }
+}
+
+// ---- 图表 ----
+Plot(C, "Close", colorDefault, styleCandle);
+Plot(MAf, "MA" + NumToStr(Fast, 1.0), colorBlue);
+Plot(MAs, "MA" + NumToStr(Slow, 1.0), colorOrange);
+Plot(StopLine, "Stop", colorRed, styleDashed);
+PlotShapes(Buy * shapeUpArrow, colorGreen, 0, L);
+PlotShapes(Sell * shapeDownArrow, colorRed, 0, H);
+
+// ---- Exploration：导出指标，用来和 Python 逐日对比 ----
+Filter = 1;
+AddColumn(MAf, "MAfast", 1.4);
+AddColumn(MAs, "MAslow", 1.4);
+AddColumn(ADXv, "ADX", 1.4);
+AddColumn(ATRv, "ATR", 1.4);
+AddColumn(BuySig, "BuySig", 1.0);
+AddColumn(SellSig, "SellSig", 1.0);
