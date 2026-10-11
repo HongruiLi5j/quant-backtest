@@ -1,22 +1,22 @@
-"""技术指标，尽量与 AmiBroker 的定义保持一致。
+"""Technical indicators, kept as close as possible to AmiBroker's definitions.
 
-AmiBroker 的 ATR / ADX 用的都是 Wilder 平滑（Wilders()），
-不是普通 EMA。Wilder 平滑 = alpha 为 1/n 的指数平滑，
-第一个值用前 n 个值的简单平均作为种子。
+AmiBroker's ATR and ADX both use Wilder smoothing (Wilders()),
+not a plain EMA. Wilder smoothing = exponential smoothing with alpha = 1/n,
+where the first value is seeded with the simple average of the first n values.
 """
 import numpy as np
 import pandas as pd
 
 
 def sma(s: pd.Series, n: int) -> pd.Series:
-    """简单移动平均，对应 AFL 的 MA(C, n)。"""
+    """Simple moving average, matches AFL's MA(C, n)."""
     return s.rolling(n, min_periods=n).mean()
 
 
 def wilder(s: pd.Series, n: int) -> pd.Series:
-    """Wilder 平滑，对应 AFL 的 Wilders(x, n)。
+    """Wilder smoothing, matches AFL's Wilders(x, n).
 
-    前 n 个有效值取简单平均作为种子，之后：
+    The first n valid values are averaged to seed the series, then:
         w[t] = w[t-1] + (x[t] - w[t-1]) / n
     """
     x = s.to_numpy(dtype=float)
@@ -45,12 +45,12 @@ def true_range(df: pd.DataFrame) -> pd.Series:
 
 
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
-    """对应 AFL 的 ATR(n)。"""
+    """Matches AFL's ATR(n)."""
     return wilder(true_range(df), n)
 
 
 def adx(df: pd.DataFrame, n: int = 14) -> pd.Series:
-    """对应 AFL 的 ADX(n)（Wilder 原始定义）。"""
+    """Matches AFL's ADX(n) (Wilder's original definition)."""
     up = df["High"].diff()
     down = -df["Low"].diff()
     plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=df.index)
@@ -68,7 +68,7 @@ def adx(df: pd.DataFrame, n: int = 14) -> pd.Series:
 
 
 def rsi(close: pd.Series, n: int = 14) -> pd.Series:
-    """Wilder 的 RSI，对应 AFL 的 RSI(n)。"""
+    """Wilder's RSI, matches AFL's RSI(n)."""
     d = close.diff()
     gain = wilder(d.clip(lower=0), n)
     loss = wilder((-d).clip(lower=0), n)
@@ -78,10 +78,10 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 
 def realized_vol(close: pd.Series, n: int = 20) -> pd.Series:
-    """过去 n 天日收益率的标准差，年化。"""
+    """Standard deviation of daily returns over the past n days, annualized."""
     return close.pct_change().rolling(n, min_periods=n).std() * np.sqrt(252)
 
 
 def cross(a: pd.Series, b: pd.Series) -> pd.Series:
-    """对应 AFL 的 Cross(a, b)：今天 a > b，昨天 a <= b。"""
+    """Matches AFL's Cross(a, b): a > b today, a <= b yesterday."""
     return (a > b) & (a.shift(1) <= b.shift(1))

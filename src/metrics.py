@@ -1,4 +1,4 @@
-"""绩效指标。"""
+"""Performance metrics."""
 from __future__ import annotations
 
 import numpy as np
@@ -49,8 +49,8 @@ def sharpe(ret: pd.Series) -> float:
 
 def stats(ret: pd.Series, trades: pd.DataFrame | None = None,
           weights: pd.DataFrame | None = None, rf: pd.Series | None = None) -> dict:
-    """用每日收益序列算指标（给 portfolio.run_weights 的结果用），键名短一点方便做表。
-    rf：无风险利率的日收益（如短债 ETF），给了就多算一个超额 Sharpe（ExSharpe），这是业界标准口径。"""
+    """Compute metrics from a daily return series (for results from portfolio.run_weights); the keys are kept short so they fit in tables.
+    rf: daily return of the risk-free rate (e.g. a short-term Treasury ETF); if given, an excess Sharpe (ExSharpe) is also computed, which is the standard industry convention."""
     ret = ret.dropna()
     eq = (1 + ret).cumprod()
     years = len(ret) / TRADING_DAYS

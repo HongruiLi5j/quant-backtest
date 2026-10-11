@@ -1,10 +1,10 @@
-"""命令行入口。
+"""Command-line entry point.
 
-例子：
-  python run_backtest.py SPY                       # 默认参数回测
+Examples:
+  python run_backtest.py SPY                       # backtest with default parameters
   python run_backtest.py QQQ --start 2015-01-01 --fast 10 --slow 50
-  python run_backtest.py SPY --scan                # 参数扫描（类似 AmiBroker 的 Optimize）
-  python run_backtest.py --synthetic               # 用随机数据测试代码能不能跑
+  python run_backtest.py SPY --scan                # parameter scan (like AmiBroker's Optimize)
+  python run_backtest.py --synthetic               # test that the code runs, using random data
 """
 from __future__ import annotations
 
@@ -53,8 +53,8 @@ def plot(res: backtest.Result, symbol: str, path: Path):
 
 
 def scan(df: pd.DataFrame, symbol: str, cfg: backtest.Config):
-    """扫描快慢均线组合。注意：挑出来的最优参数几乎一定是过拟合的，
-    真要用得做样本外检验（walk-forward），见 README 里的练习。"""
+    """Scan fast/slow moving-average combinations. Note: the best parameters picked this way are almost certainly overfit;
+    before relying on them, run an out-of-sample test (walk-forward); see the exercises in the README."""
     rows = []
     for fast in [3, 5, 8, 10, 15, 20]:
         for slow in [20, 30, 50, 100, 150, 200]:
@@ -89,8 +89,8 @@ def main():
     ap.add_argument("symbol", nargs="?", default="SPY")
     ap.add_argument("--start", default="2010-01-01")
     ap.add_argument("--end", default=None)
-    ap.add_argument("--refresh", action="store_true", help="重新下载数据")
-    ap.add_argument("--synthetic", action="store_true", help="用随机数据（离线测试）")
+    ap.add_argument("--refresh", action="store_true", help="re-download the data")
+    ap.add_argument("--synthetic", action="store_true", help="use random data (offline test)")
     ap.add_argument("--fast", type=int, default=5)
     ap.add_argument("--slow", type=int, default=20)
     ap.add_argument("--adx-min", type=float, default=20.0)
@@ -117,7 +117,7 @@ def main():
     print(metrics.format_summary(stats))
     res.trades.to_csv(RESULTS / f"{symbol}_trades.csv", index=False)
     plot(res, symbol, RESULTS / f"{symbol}_backtest.png")
-    print(f"\n成交记录 → results/{symbol}_trades.csv\n图表     → results/{symbol}_backtest.png")
+    print(f"\nTrade list -> results/{symbol}_trades.csv\nChart      -> results/{symbol}_backtest.png")
 
 
 if __name__ == "__main__":

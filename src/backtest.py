@@ -1,7 +1,7 @@
-"""逐根 K 线的回测引擎（只做多、单一品种、满仓进出）。
+"""Bar-by-bar backtest engine (long only, single symbol, fully invested).
 
-故意写成循环而不是向量化：逻辑和 AFL 里的 for 循环一模一样，
-方便两边逐笔对照，也更容易看懂每一步发生了什么。
+Deliberately written as a loop instead of vectorized: the logic matches the for loop in the AFL code exactly,
+which makes trade-by-trade comparison easy and makes each step easier to follow.
 """
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from .strategy import Params
 @dataclass
 class Config:
     initial_equity: float = 100_000.0
-    commission_pct: float = 0.0005     # 单边手续费 0.05%
-    stop_on_entry_bar: bool = False    # 入场当天是否检查止损（AmiBroker 默认不检查）
+    commission_pct: float = 0.0005     # one-way commission 0.05%
+    stop_on_entry_bar: bool = False    # whether to check the stop on the entry bar (AmiBroker does not by default)
 
 
 @dataclass
@@ -63,17 +63,17 @@ def run(sig: pd.DataFrame, p: Params, cfg: Config = Config()) -> Result:
     for i in range(n):
         if i > 0:
             if shares > 0:
-                # 1) 昨天收盘出现卖出信号 → 今天开盘卖
+                # 1) sell signal at yesterday's close -> sell at today's open
                 if sell_sig[i - 1]:
                     close_position(i, o[i], "signal")
-                # 2) 止损：跳空低开直接按开盘价，否则盘中触及按止损价
+                # 2) stop loss: if price gaps down at the open, fill at the open price; otherwise fill at the stop price when it is touched intraday
                 elif i > entry_i or cfg.stop_on_entry_bar:
                     if o[i] <= stop:
                         close_position(i, o[i], "stop_gap")
                     elif l[i] <= stop:
                         close_position(i, stop, "stop")
             elif buy_sig[i - 1] and not np.isnan(atr_[i - 1]):
-                # 昨天收盘出现买入信号 → 今天开盘买，整数股
+                # buy signal at yesterday's close -> buy at today's open, whole shares
                 px = o[i]
                 qty = math.floor(cash / (px * (1 + cfg.commission_pct)))
                 if qty > 0:
@@ -84,7 +84,7 @@ def run(sig: pd.DataFrame, p: Params, cfg: Config = Config()) -> Result:
                         close_position(i, stop, "stop")
         equity[i] = cash + shares * c[i]
 
-    # 回测结束时还持仓：按最后收盘价平掉，方便统计
+    # still holding at the end of the backtest: close at the last close price for easier statistics
     if shares > 0:
         close_position(n - 1, c[-1], "end_of_data")
         equity[-1] = cash

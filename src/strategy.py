@@ -1,10 +1,10 @@
-"""MA5/MA20 均线交叉 + ADX 趋势过滤 + ATR 止损。
+"""MA5/MA20 moving-average crossover + ADX trend filter + ATR stop.
 
-规则（和 amibroker/ma_cross_adx_atr.afl 一一对应）：
-  买入信号：快线上穿慢线，且 ADX > adx_min
-  卖出信号：快线下穿慢线
-  止损：入场价 - atr_mult * ATR（用信号当天的 ATR），入场后固定不动
-  执行：信号在收盘时产生，下一根 K 线开盘价成交（避免未来函数）
+Rules (one-to-one with amibroker/ma_cross_adx_atr.afl):
+  Buy signal: fast MA crosses above slow MA, and ADX > adx_min
+  Sell signal: fast MA crosses below slow MA
+  Stop: entry price - atr_mult * ATR (using the ATR on the signal day), fixed after entry
+  Execution: the signal is generated at the close and filled at the next bar's open (avoids look-ahead bias)
 """
 from __future__ import annotations
 

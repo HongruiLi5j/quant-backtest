@@ -1,10 +1,10 @@
-"""策略库。每个策略只做一件事：根据截至第 t 天收盘的数据，给出第 t 天收盘后的目标仓位。
+"""Strategy library. Each strategy does one thing: given data up to the close of day t, it returns the target position after the close of day t.
 
-执行（次日开盘成交、手续费）统一交给 portfolio.run_weights，所以策略里不用关心成交细节，
-只要保证**不用到 t 之后的数据**（tests/test_strategies.py 会检查这一点）。
+Execution (fills at the next open, trading costs) is handled in one place by portfolio.run_weights, so a strategy does not deal with fill details and
+only has to guarantee that it **never uses data after day t** (tests/test_strategies.py checks this).
 
-默认参数都来自公开文献或业界常用值，**没有在任何数据上优化过**，这点很重要：
-这样样本外结果才有意义。
+Default parameters come from published research or common industry values and **were not optimized on any data**. This matters because
+it keeps the out-of-sample results meaningful.
 """
 from __future__ import annotations
 
@@ -14,27 +14,27 @@ import pandas as pd
 from .indicators import adx, atr, cross, realized_vol, rsi, sma
 
 
-# ---------------------------------------------------------------- 工具函数
+# ---------------------------------------------------------------- Helper functions
 def vol_scale(close: pd.Series, target_vol: float | None, vol_len: int = 20,
               max_lev: float = 1.0) -> pd.Series:
-    """波动率目标仓位：市场越动荡仓位越小。target_vol=None 表示固定满仓。
-    仓位 = min(max_lev, 目标年化波动 / 过去 vol_len 天的实际年化波动)"""
+    """Volatility-targeted position size: the more turbulent the market, the smaller the position. target_vol=None means a fixed full position.
+    position = min(max_lev, target annualized vol / realized annualized vol over the past vol_len days)"""
     if target_vol is None:
         return pd.Series(1.0, index=close.index)
     return (target_vol / realized_vol(close, vol_len)).clip(upper=max_lev)
 
 
-# ---------------------------------------------------------------- 1. 趋势 + 波动率目标
+# ---------------------------------------------------------------- 1. Trend + volatility target
 def trend_vol_target(df: pd.DataFrame, sma_len: int = 200, buffer: float = 0.01,
                      target_vol: float | None = 0.15, vol_len: int = 20,
                      max_lev: float = 1.0) -> pd.Series:
-    """长期趋势过滤 + 波动率目标仓位。
+    """Long-term trend filter + volatility-targeted position.
 
-    思路：价格在 200 日均线之上时持有，之下时空仓（Faber 2007 "A Quantitative Approach to
-    Tactical Asset Allocation"）。再按波动率调仓位：大跌往往伴随波动放大，
-    降低仓位能削减回撤（Moreira & Muir 2017 "Volatility-Managed Portfolios"）。
+    Idea: hold when price is above the 200-day moving average and stay in cash when it is below (Faber 2007, "A Quantitative Approach to
+    Tactical Asset Allocation"). Then scale the position by volatility: large drops usually come with rising volatility,
+    so cutting the position reduces drawdowns (Moreira & Muir 2017, "Volatility-Managed Portfolios").
 
-    buffer：迟滞区间，价格要高于均线 1% 才进、低于均线 1% 才出，减少在均线附近来回打脸。
+    buffer: a hysteresis band. Price must be 1% above the average to enter and 1% below to exit, which reduces whipsaws around the average.
     """
     c = df["Close"].to_numpy()
     m = sma(df["Close"], sma_len).to_numpy()
@@ -55,29 +55,29 @@ def trend_vol_target(df: pd.DataFrame, sma_len: int = 200, buffer: float = 0.01,
 def trend_ensemble(df: pd.DataFrame, lens: tuple = (100, 150, 200, 250), buffer: float = 0.01,
                    target_vol: float | None = 0.15, vol_len: int = 20,
                    max_lev: float = 1.0) -> pd.Series:
-    """趋势信号的"集成"版：同时看 100/150/200/250 日四条均线，
-    仓位 = 在均线上方的比例（0、25%、50%、75%、100%）× 波动率仓位。
+    """Ensemble version of the trend signal: looks at four moving averages (100/150/200/250 days) at once,
+    position = share of the averages that price is above (0, 25%, 50%, 75%, 100%) × volatility-targeted position.
 
-    为什么：只用 200 日均线，结果会依赖"200"这一个数字（参数风险）。
-    几条均线取平均，进出场是渐进的，不会因为某个参数恰好好/坏而大起大落。
-    这是 CTA 行业里的标准做法。"""
+    Why: with only the 200-day average, results depend on that single number (parameter risk).
+    Averaging several moving averages makes entries and exits gradual, so one lucky or unlucky parameter cannot cause big swings.
+    This is standard practice in the CTA industry."""
     states = [trend_vol_target(df, sma_len=n, buffer=buffer, target_vol=None) for n in lens]
     avg = sum(states) / len(states)
     w = avg * vol_scale(df["Close"], target_vol, vol_len, max_lev)
     return w.fillna(0.0).rename("trend_ens")
 
 
-# ---------------------------------------------------------------- 2. 唐奇安通道突破（海龟）
+# ---------------------------------------------------------------- 2. Donchian channel breakout (Turtle)
 def donchian_breakout(df: pd.DataFrame, entry_len: int = 55, exit_len: int = 20,
                       atr_len: int = 20, atr_mult: float = 3.0,
                       target_vol: float | None = 0.15, vol_len: int = 20) -> pd.Series:
-    """收盘价创 55 日新高进场；跌破 20 日低点、或从持仓期最高收盘回撤超过 3×ATR 出场。
+    """Enter when the close makes a 55-day high; exit when price falls below the 20-day low, or drops more than 3×ATR from the highest close since entry.
 
-    经典海龟交易法则的简化版（Faith, "Way of the Turtle"）。
-    吊灯止损（Chandelier exit）会随价格上涨而上移，锁住利润。
+    A simplified version of the classic Turtle trading rules (Faith, "Way of the Turtle").
+    The chandelier exit moves up as price rises, which locks in profits.
     """
     c = df["Close"].to_numpy()
-    hi = df["High"].rolling(entry_len).max().shift(1).to_numpy()   # 不含今天
+    hi = df["High"].rolling(entry_len).max().shift(1).to_numpy()   # excludes today
     lo = df["Low"].rolling(exit_len).min().shift(1).to_numpy()
     a = atr(df, atr_len).to_numpy()
     state = np.zeros(len(c))
@@ -99,23 +99,23 @@ def donchian_breakout(df: pd.DataFrame, entry_len: int = 55, exit_len: int = 20,
 
 def donchian_s1(df: pd.DataFrame, entry_len: int = 20, exit_len: int = 10,
                 atr_mult: float = 2.0, target_vol: float | None = 0.15) -> pd.Series:
-    """海龟"系统 1"：20 日突破进场、10 日低点出场、2×ATR 止损（Faith, "Way of the Turtle"）。
-    上一版报告里 walk-forward 反复选中 20 日突破，这里用海龟原书的系统 1 参数来验证，
-    而不是直接用 walk-forward 选出来的数字（那样就是拿测试结果调参了）。"""
+    """Turtle "System 1": enter on a 20-day breakout, exit at the 10-day low, 2×ATR stop (Faith, "Way of the Turtle").
+    In the previous report, walk-forward kept selecting the 20-day breakout, so here I test it with the System 1 parameters from the original Turtle book,
+    rather than using the numbers walk-forward picked (that would be tuning parameters on the test results)."""
     return donchian_breakout(df, entry_len=entry_len, exit_len=exit_len, atr_len=20,
                              atr_mult=atr_mult, target_vol=target_vol).rename("donchian_s1")
 
 
-# ---------------------------------------------------------------- 3. RSI(2) 短线均值回归
+# ---------------------------------------------------------------- 3. RSI(2) short-term mean reversion
 def rsi2_reversion(df: pd.DataFrame, trend_len: int = 200, rsi_len: int = 2,
                    entry_th: float = 10.0, exit_ma: int = 5, max_hold: int = 10) -> pd.Series:
-    """长期上升趋势中，买短期超跌，反弹就走。
+    """In a long-term uptrend, buy short-term oversold dips and sell on the rebound.
 
-    进场：收盘 > 200 日均线 且 RSI(2) < 10
-    出场：收盘 > 5 日均线，或持有满 10 天（时间止损）
-    来源：Connors & Alvarez, "Short Term Trading Strategies That Work" (2008)。
-    特点：胜率高、持仓短、大部分时间空仓；和趋势策略的相关性很低，适合做组合。
-    风险：没有价格止损，遇到连续暴跌（如 2020 年 3 月）会吃大亏 → 持仓上限 max_hold 控制。
+    Entry: close > 200-day moving average and RSI(2) < 10
+    Exit: close > 5-day moving average, or after holding 10 days (time stop)
+    Source: Connors & Alvarez, "Short Term Trading Strategies That Work" (2008).
+    Traits: high win rate, short holding periods, in cash most of the time; very low correlation with trend strategies, so it works well in a blend.
+    Risk: there is no price stop, so a sustained crash (e.g. March 2020) can cause large losses -> the holding cap max_hold limits this.
     """
     c = df["Close"].to_numpy()
     trend = sma(df["Close"], trend_len).to_numpy()
@@ -137,17 +137,17 @@ def rsi2_reversion(df: pd.DataFrame, trend_len: int = 200, rsi_len: int = 2,
     return pd.Series(state, index=df.index, name="rsi2")
 
 
-# ---------------------------------------------------------------- 4. 改进版 MA 交叉 + ADX
+# ---------------------------------------------------------------- 4. Improved MA crossover + ADX
 def ma_adx_plus(df: pd.DataFrame, fast: int = 5, slow: int = 20, adx_len: int = 14,
                 adx_min: float = 20.0, regime_len: int = 200, atr_len: int = 14,
                 atr_mult: float = 3.0, target_vol: float | None = 0.15,
                 vol_len: int = 20) -> pd.Series:
-    """你原来那个策略的升级版，改了三处：
-      1. 加长期趋势过滤：只在收盘 > 200 日均线时做多（原版在熊市里反复被打）
-      2. 固定止损 → 吊灯跟踪止损：持仓期最高收盘 - 3×ATR，赚到的利润能锁住
-      3. 满仓 → 波动率目标仓位
-    进场：快线上穿慢线 且 ADX > 20 且 在 200 日均线之上
-    出场：快线下穿慢线 / 跟踪止损 / 跌破 200 日均线，任一触发
+    """An upgraded version of the original strategy, with three changes:
+      1. Add a long-term trend filter: only go long when close > 200-day moving average (the original was repeatedly whipsawed in bear markets)
+      2. Fixed stop -> chandelier trailing stop: highest close since entry - 3×ATR, which locks in gains
+      3. Full position -> volatility-targeted position
+    Entry: fast MA crosses above slow MA, ADX > 20, and price above the 200-day moving average
+    Exit: fast MA crosses below slow MA, trailing stop hit, or price falls below the 200-day moving average (any one triggers)
     """
     c = df["Close"].to_numpy()
     mf, ms = sma(df["Close"], fast), sma(df["Close"], slow)
@@ -174,7 +174,7 @@ def ma_adx_plus(df: pd.DataFrame, fast: int = 5, slow: int = 20, adx_len: int = 
 
 def ma_adx_original(df: pd.DataFrame, fast: int = 5, slow: int = 20, adx_len: int = 14,
                     adx_min: float = 20.0) -> pd.Series:
-    """原版（不含 ATR 止损），作为对照基准。完整带止损的原版见 backtest.py。"""
+    """Original version (without the ATR stop), used as a baseline. See backtest.py for the full original with the stop."""
     mf, ms = sma(df["Close"], fast), sma(df["Close"], slow)
     up = (cross(mf, ms) & (adx(df, adx_len) > adx_min)).to_numpy()
     down = cross(ms, mf).to_numpy()
@@ -189,20 +189,20 @@ def ma_adx_original(df: pd.DataFrame, fast: int = 5, slow: int = 20, adx_len: in
     return pd.Series(state, index=df.index, name="ma_adx_original")
 
 
-# ---------------------------------------------------------------- 5. 双动量轮动（多品种）
+# ---------------------------------------------------------------- 5. Dual momentum rotation (multi-asset)
 def dual_momentum(prices: dict[str, pd.DataFrame], risky: tuple = ("SPY", "EFA"),
                   safe: str = "IEF", cash: str = "SHY", lookback: int = 252,
                   skip: int = 0) -> pd.DataFrame:
-    """Antonacci, "Dual Momentum Investing" (2014)。每月末调仓一次：
-      相对动量：在风险资产（美股 SPY、海外股 EFA）里选过去 12 个月涨得多的那个
-      绝对动量：如果它连短期国债（SHY，代替现金）都跑不赢 → 说明股市整体走弱，换成中期国债 IEF
-    skip：跳过最近 skip 天（学术上常跳过最近 1 个月以避开短期反转）。
+    """Antonacci, "Dual Momentum Investing" (2014). Rebalances once at each month end:
+      Relative momentum: among the risk assets (US stocks SPY, foreign stocks EFA), pick the one that gained more over the past 12 months
+      Absolute momentum: if it cannot even beat short-term Treasuries (SHY, standing in for cash), the stock market is weak overall, so switch to intermediate Treasuries (IEF)
+    skip: ignore the most recent skip days (academic studies often skip the last month to avoid short-term reversal).
     """
     C = pd.concat({s: prices[s]["Close"] for s in set(risky) | {safe, cash}},
                   axis=1, join="inner")
     mom = C.shift(skip) / C.shift(lookback) - 1
-    # 月末 = 下一个交易日换月。数据的最后一天只有在它确实是当月最后一个工作日时才算月末，
-    # 否则月中运行时会把"今天"误当成月末提前调仓
+    # Month end = the month changes on the next trading day. The last day of the data only counts as a month end if it really is the last business day of the month,
+    # otherwise running mid-month would mistake "today" for a month end and rebalance early
     d = C.index.to_series()
     month_end = (d.shift(-1).dt.month != d.dt.month).to_numpy().copy()
     last = C.index[-1]
@@ -220,9 +220,9 @@ def dual_momentum(prices: dict[str, pd.DataFrame], risky: tuple = ("SPY", "EFA")
     return W.ffill().fillna(0.0)
 
 
-# ---------------------------------------------------------------- 6. 组合
+# ---------------------------------------------------------------- 6. Blend
 def blend(*weights: pd.Series, mix: tuple[float, ...] | None = None) -> pd.Series:
-    """把几个单品种策略按比例合成一个仓位，例如 50% 趋势 + 50% 均值回归。
-    两个策略赚钱的时段不同（相关性低），合在一起回撤通常比任何一个单独都小。"""
+    """Combine several single-asset strategies into one position by weights, e.g. 50% trend + 50% mean reversion.
+    The two strategies make money at different times (low correlation), so the combined drawdown is usually smaller than either one alone."""
     mix = mix or tuple(1 / len(weights) for _ in weights)
     return sum(m * w for m, w in zip(mix, weights)).rename("blend")
