@@ -293,6 +293,7 @@ nav.tabs a svg { display: none; }
 </head>
 <body>
 <div class="sharebar" id="shareBar" hidden><div class="in" id="shareBarIn"></div></div>
+<a class="skip" href="#main">跳到主要内容</a>
 <header>
   <div class="bar">
     <div class="brand"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="22" height="22" rx="6" fill="#007aff"/><path d="M6 15l3.5-4 3 2.5L18 8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>量化日报</span></div>
@@ -305,17 +306,17 @@ nav.tabs a svg { display: none; }
       <div class="results" id="qres"></div>
     </div>
     <button class="btn plain" id="languageToggle" type="button" aria-label="切换语言" style="padding:6px 11px;font-size:12px;white-space:nowrap">EN / 中文</button>
-    <button class="iconbtn" id="refresh" title="立即更新数据"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+    <button class="iconbtn" id="refresh" title="立即更新数据" aria-label="立即更新数据"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
     <div class="refresh-progress" id="refreshProgress" hidden aria-live="polite"><span class="refresh-progress-track"><i class="refresh-progress-fill" id="refreshProgressBar"></i></span><b id="refreshProgressPercent"></b><span class="phase" id="refreshProgressText"></span></div>
   </div>
   <nav class="tabs" id="tabs" aria-label="主导航">
-    <a href="#/today" data-p="today">今日</a><a href="#/market" data-p="market">全市场</a><a href="#/watch" data-p="watch">自选</a>
+    <a href="#/today" data-p="today">今日</a><a href="#/trade" data-p="trade">今日买卖</a><a href="#/review" data-p="review">信号核对</a><a href="#/market" data-p="market">全市场</a><a href="#/watch" data-p="watch">自选</a>
     <a href="#/lab" data-p="lab">回测实验室</a><a href="#/track" data-p="track">信号跟踪</a><a href="/member" data-ext="1">模拟交易</a>
     <details class="more" data-local="1"><summary>引擎 ▾</summary><div><a href="#/bt" data-p="bt">Backtrader</a><a href="#/rq" data-p="rq">RQAlpha 米筐</a><a href="#/cmp" data-p="cmp">引擎对比</a><a href="#/code" data-p="code">代码</a></div></details>
   </nav>
 </header>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- 今日 -->
   <section class="page" id="p-today">
     <div class="title"><h1>今日</h1><span class="sub" id="todayMeta"></span></div>
@@ -331,6 +332,63 @@ nav.tabs a svg { display: none; }
     </div>
     <h2>观察列表 <small>点一行查看详情</small></h2>
     <div class="card tbl"><table id="watchTbl"></table></div>
+  </section>
+
+  <!-- 信号核对：今日买卖的信号之后对不对、漏了什么，只读。 -->
+  <section class="page" id="p-review">
+    <div class="trade-disclaimer">统计不是预测。样本不足（少于 30 条或不足 5 个信号日）的结果只供观察，不应据此改策略；入场按次日开盘价，未计费用和滑点。</div>
+    <div class="title"><h1>信号核对</h1><span class="sub" id="reviewMeta"></span></div>
+    <div id="reviewBody"></div>
+  </section>
+
+  <!-- AI 账户：系统自己按今日买卖清单运行的模拟账户，只读。 -->
+  <section class="page" id="p-ai">
+    <div class="trade-disclaimer">模拟账户，不是真实资金，也不是投资建议。完全由程序按「今日买卖」的 blend2 清单执行，不需要登录。</div>
+    <div class="title"><h1>AI 账户</h1><span class="sub" id="aiMeta"></span></div>
+    <div id="aiBody"></div>
+  </section>
+
+  <!-- 今日买卖：清单对已经通过网站鉴权的访客只读开放。 -->
+  <section class="page" id="p-trade">
+    <div class="trade-disclaimer">这是按回测策略机械生成的信号清单，不是投资建议。</div>
+    <div class="title"><h1>今日买卖</h1><span class="sub" id="tradeMeta"></span></div>
+    <div class="note trade-limitations"><b>使用前请了解局限</b><ul>
+      <li>多重检验：同时看很多股票和策略，容易把偶然的好表现当成规律。</li>
+      <li>幸存者偏差：当前股票和有限的退市历史未完整代表过去的市场。</li>
+      <li>成本和滑点：实际费用、冲击成本和成交价可能比回测更差。</li>
+      <li>涨跌停可能买不到或卖不出，停牌不能交易；信号不保证成交。</li>
+      <li>2020 年以后的回测我已经看过，所以不算干净的样本外。</li>
+    </ul></div>
+    <div class="card" id="tradeTracking"><h2>上线后信号跟踪</h2><div id="tradeTrackingBody"></div></div>
+    <div class="card">
+      <div class="toolbar">
+        <label class="field">策略<select id="tradeStrategy"></select></label>
+        <label class="field">存档日期<select id="tradeDate"><option value="">最新清单</option></select></label>
+        <label class="field">搜索<input id="tradeSearch" placeholder="代码或名称"></label>
+        <div class="field trade-mobile-sort"><span>排序</span><div class="trade-sort-row"><select id="tradeSortMobile" aria-label="排序字段"></select><button class="btn plain" id="tradeSortDir" type="button">↑ 升序</button></div></div>
+        <label class="field">流动性<select id="tradeLiquidity"><option value="">全部</option><option value="正常">正常</option><option value="流动性差">流动性差</option><option value="流动性未知">流动性未知</option></select></label>
+        <span id="tradeLiquidityWarning" class="trade-warning" hidden></span>
+        <button class="btn" id="tradeExportXlsx" title="买入、卖出、加仓、减仓全部信号，含概览、数据异常和说明">导出完整 Excel</button>
+        <button class="btn plain" id="tradeExport">导出当前视图（CSV）</button>
+      </div>
+      <div class="dim">今日仓位是策略引擎模拟的仓位，不是你账户的实际持仓。目标用于下一交易日开盘；成交额已知不足 80% 时默认按代码排序，否则按 20 日平均成交额降序、同额按代码。回测指标仅作展示。</div>
+      <div id="tradeCounts" class="trade-counts"></div>
+      <div class="seg trade-tabs" id="tradeTabs" role="tablist" aria-label="信号类型">
+        <button type="button" data-tab="buy" role="tab">买入</button>
+        <button type="button" data-tab="sell" role="tab">卖出</button>
+        <button type="button" data-tab="adjust" role="tab">加减仓</button>
+      </div>
+      <div id="tradeMessage" class="dim" aria-live="polite"></div>
+      <div id="tradeCoverageWarning" class="trade-warning" hidden aria-live="polite"></div>
+      <div class="tbl trade-table"><table id="tradeTable"></table></div>
+      <details id="tradeIlliquid" class="trade-small" hidden><summary id="tradeIlliquidTitle">流动性差/未知</summary><div class="tbl trade-table"><table id="tradeIlliquidTable"></table></div></details>
+      <details id="tradeSmall" class="trade-small" hidden><summary id="tradeSmallTitle">小仓位买入</summary><div class="tbl trade-table"><table id="tradeSmallTable"></table></div></details>
+    </div>
+    <section id="tradeMine" data-local="1" class="card trade-mine"><h2>我的相关 <small>仅本机当前会话</small></h2><div id="tradeMineBody"></div></section>
+    <h2>数据异常/停牌 <small id="tradeExceptionCount"></small></h2>
+    <div class="card tbl trade-table"><table id="tradeExceptions"></table></div>
+    <p class="dim">一手约需金额仅供参考，不含手续费；次日开盘价可能不同。A 股 T+1，今天买入当天不能卖出。成交额不足 20 个交易日或有缺失时为“流动性未知”，不把行情缺失记为零。“导出完整 Excel”包含当前策略和日期的全部信号（买入、卖出、加仓、减仓）及数据异常；“导出当前视图（CSV）”只含当前标签和筛选条件下的记录。</p>
+    <p class="dim" id="tradePerformanceNote"></p>
   </section>
 
   <!-- 全市场 -->

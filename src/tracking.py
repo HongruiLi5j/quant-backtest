@@ -207,3 +207,9 @@ def save_eval(market: str, ev: dict, replay: bool = False):
 def load_eval(market: str, replay: bool = False) -> dict | None:
     p = CACHE / f"tracking_{market}{'_replay' if replay else ''}.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def evaluate_trade_list(strategy="blend2", **kwargs):
+    """只读独立清单信号表；原 evaluate、record 和回放逻辑保持原样。"""
+    from . import trade_signals
+    return trade_signals.evaluate(strategy, **kwargs)

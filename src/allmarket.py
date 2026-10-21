@@ -280,6 +280,12 @@ def spot_snapshot() -> pd.DataFrame:
                 df = df[~df.index.duplicated()]
                 if len(df) > 1000:
                     log.info("全市场快照：%s，%d 只", name, len(df))
+                    # 只透传本次已有原始快照；旁表失败不影响原行情返回或每日更新。
+                    try:
+                        from . import turnover
+                        turnover.capture_snapshot(raw, name, now=_now_bj())
+                    except Exception as exc:
+                        log.warning("成交额旁表保存失败（不影响行情更新）：%s", exc)
                     return df
             except Exception as e:
                 errs.append(f"{name}: {type(e).__name__}")

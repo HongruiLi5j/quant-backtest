@@ -262,8 +262,155 @@ function kChart(el, d) {
   }, [{ color: css("--text"), y: (i) => (isNum(d.close[i]) ? y(d.close[i]) : null) }]);
 }
 
+// ================================================================ 信号核对（只读）
+function renderBoard(d) {
+  const b = d.board || {};
+  const pc = (v, dg = 1) => (isNum(v) ? `${(v * 100).toFixed(dg)}%` : "—");
+  const sg = (v, dg = 2) => (isNum(v) ? `${v > 0 ? "+" : ""}${(v * 100).toFixed(dg)}%` : "—");
+  const cl = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  const label = (k) => (S.meta && S.meta.strategies && S.meta.strategies[k] ? S.meta.strategies[k].label : (d.labels || {})[k] || k);
+  const fam = (k) => (d.families || {})[k] || "正式";
+  const mp = d.main_pick || {};
+  const pr = d.promotion || {};
+  const ps = pr.strategies || {};
+  const gate = pr.gate || {};
+  const main = mp.main || d.main;
+  const ci = (x) => (isNum(x.hit_lo) ? `<small class="dim"> [${pc(x.hit_lo, 0)}–${pc(x.hit_hi, 0)}]</small>` : "");
+  const tag = (k) => (k === main ? ` <small class="up">主策略${mp.default ? "（默认策略，未经晋升检验）" : ""}</small>` : "");
+  // 排名：样本够的按 5 日得分从高到低，样本不足的排在最后且不给名次
+  const order = Object.entries(b).sort((x, y) => {
+    const ax = x[1].h5.enough ? 1 : 0, ay = y[1].h5.enough ? 1 : 0;
+    return ay - ax || (y[1].h5.score ?? -9) - (x[1].h5.score ?? -9);
+  });
+  const rows = order.map(([k, v]) => {
+    const h5 = v.h5, h1 = v.h1, last = (h5.daily || []).slice(-1)[0] || (h1.daily || []).slice(-1)[0] || {};
+    const rk = fam(k) === "对照" ? '<span class="dim">对照</span>' : h5.enough ? `#${h5.rank}` : '<span class="dim">数据不足</span>';
+    return `<tr class="${h5.enough ? "" : "dim"}"><td>${rk}</td><td>${esc(label(k))}${tag(k)}<small class="dim"> ${esc(fam(k))}</small></td>
+      <td>${h5.n}<small> / ${h5.days} 天</small></td><td>${pc(h5.hit, 0)}${ci(h5)}</td><td class="${cl(h5.score)}">${sg(h5.score)}</td>
+      <td>${pc(h1.hit, 0)}</td><td class="${cl(h1.score)}">${sg(h1.score)}</td>
+      <td class="${cl(last.d_hit)}">${sg(last.d_hit, 1)}</td></tr>`;
+  }).join("");
+  const nTxt = (x) => `${x.weeks ?? 0}/${gate.min_weeks || 12} 周 · ${x.n ?? 0}/${gate.min_n || 500} 条`;
+  const left = (x) => (x.weeks_left == null ? (x.weeks ? '<span class="dim">现有数据下追不上（优势 ≤ 0）</span>' : "—") : x.weeks_left === 0 ? "已达标" : x.weeks_left > 104 ? '<span class="dim">超过 2 年（现有优势太小）</span>' : `至少 ${x.weeks_left} 周`);
+  const mde = (x) => (isNum(x.mde) ? `${sg(x.mde)}<small class="dim"> → 12 周 ${sg(x.mde_12w)} → 26 周 ${sg(x.mde_26w)}</small>` : x.mde_possible === false ? '<span class="dim">对照数不够</span>' : "—");
+  const prRows = Object.entries(ps).filter(([k]) => fam(k) !== "对照").sort((x, y) => (y[1].advantage ?? -9) - (x[1].advantage ?? -9)).map(([k, x]) => {
+    const noise = x.noise ? `<span class="${x.noise === "显著高于随机" ? "up" : x.noise === "显著低于随机" ? "down" : "dim"}">${esc(x.noise)}</span>` : "—";
+    return `<tr class="${x.data_ok ? "" : "dim"}"><td>${esc(label(k))}${tag(k)}</td><td>${nTxt(x)}</td><td>${sg(x.stat)}</td>
+      <td class="${cl(x.advantage)}">${sg(x.advantage)}</td><td>${noise}${isNum(x.ctrl_lo) ? `<small class="dim"> 随机 95% 范围 ${sg(x.ctrl_lo)} ~ ${sg(x.ctrl_hi)}</small>` : ""}</td>
+      <td class="${cl(x.hit_diff)}">${sg(x.hit_diff, 1)}</td><td>${isNum(x.p) ? x.p.toFixed(4) : "—"}</td>
+      <td>${esc(x.status || "—")}</td><td>${left(x)}</td><td>${mde(x)}</td></tr>`;
+  }).join("");
+  // 主策略：晋升前 / 晋升后分开
+  const rec = mp.record || {};
+  const seg = (s, title, note, formal) => {
+    if (!s) return "";
+    const vc = s.vs_control || {};
+    return `<tr class="${formal ? "" : "dim"}"><td><b>${title}</b><div class="dim"><small>${note}</small></div></td><td>${s.n ?? 0} 条 / ${s.days ?? 0} 天</td>
+      <td>${s.n ? pc(s.hit, 1) + ci(s) : "—"}</td><td class="${cl(s.score)}">${s.n ? sg(s.score) : "—"}</td>
+      <td>${vc.weeks ? `${vc.weeks} 周：比随机 <span class="${cl(vc.advantage)}">${sg(vc.advantage)}</span>，${esc(vc.noise || "")}（p=${isNum(vc.p) ? vc.p.toFixed(3) : "—"}）` : '<span class="dim">还没有完整交易周</span>'}</td></tr>`;
+  };
+  const recCard = rec.strategy ? `<h2>主策略成绩：晋升前 / 晋升后 <small>只有晋升后的才算正式成绩</small></h2>
+    <div class="card tbl"><table><thead><tr><th>${esc(label(rec.strategy))}${mp.default ? "（默认策略，未经晋升检验）" : ""} · 晋升日 ${esc(rec.promoted_on || "—")}</th><th>5 日信号</th><th>命中率 [95%]</th><th>每条得分</th><th>对随机对照（按周）</th></tr></thead><tbody>
+      ${seg(rec.pre, "晋升前", mp.default ? "上线检验以前的历史，不算战绩" : "选中它的依据（样本内），不算战绩", false)}
+      ${seg(rec.post, "晋升后 · 正式成绩", mp.default ? "从检验上线日之后的信号日起算" : "晋升日之后的信号日", true)}
+    </tbody></table></div>` : "";
+  const days = [...new Set(Object.values(b).flatMap((v) => (v.h1.daily || []).map((x) => x.day)))].sort();
+  const keys = Object.keys(b);
+  const hist = days.slice(-15).reverse().map((day) => `<tr><td>${esc(day)}</td>${keys.map((k) => {
+    const x = (b[k].h1.daily || []).find((y) => y.day === day);
+    return x ? `<td title="当天 ${x.n} 条，命中 ${pc(x.hit, 0)}；累计命中 ${pc(x.cum_hit, 1)}"><span class="${cl(x.d_hit)}">${sg(x.d_hit, 1)}</span> <small class="dim">${pc(x.cum_hit, 0)}</small></td>` : "<td>—</td>";
+  }).join("")}</tr>`).join("");
+  const none = !pr.any_passed;
+  return `<h2>主策略晋升检验 <small>${esc(pr.message || "尚无策略通过晋升检验")}</small></h2>
+    <div class="card"><b>主策略：${esc(label(main))}</b>${mp.default ? ' <span class="tag">默认策略，未经晋升检验</span>' : ` <span class="tag">晋升于 ${esc(mp.promoted_on || "")}</span>`}
+      <div class="${none ? "down" : "up"}" style="margin-top:6px"><b>${none ? "尚无策略通过晋升检验" : esc(pr.message)}</b>${pr.error ? ` <small class="dim">（检验没有运行：${esc(pr.error)}）</small>` : ""}</div>
+      <div class="dim" style="margin-top:4px">${esc(mp.reason || "")}</div>
+      <div class="dim" style="margin-top:4px">晋升门槛（缺一不可）：≥${gate.min_weeks || 12} 个完整交易周、≥${gate.min_n || 500} 条已走满 5 日的信号；每个策略都和 ${pr.k || 1000} 个“匹配的随机对照”比
+        （每天保持它的买卖条数不变，把信号随机分配给股票）；按 ${pr.m || 25} 个策略做多重检验修正（Holm，第一步要求经验 p ≤ ${isNum(pr.alpha) && pr.m ? (pr.alpha / pr.m).toFixed(3) : "0.002"}）；
+        连续 ${gate.streak || 4} 个周检查点都通过；现任满 ${Math.round((gate.tenure_days || 84) / 7)} 周任期；相对现任还要多 ${pc(gate.beat_gain || 0.003, 1)}（除非现任已不通过）。满足前不会切换主策略。
+        候选（影子）策略只参与核对，不能当主策略。当前已有 ${pr.complete_weeks ?? 0} 个完整交易周。</div></div>
+    ${recCard}
+    <h2>各策略准确率 <small>命中率 = 跑赢全市场的信号占比，方括号是 95% 置信区间（把信号当独立样本，偏窄）；得分 = 每条信号平均比全市场多赚多少（扣费后）。样本不足（&lt;${gate.board_min_n || 100} 条或 &lt;${gate.board_min_days || 10} 个信号日）的不排名</small></h2>
+    <div class="card tbl"><table><thead><tr><th>名次</th><th>策略</th><th>5 日条数</th><th>5 日命中率 [95% 区间]</th><th>5 日得分</th><th>次日命中率</th><th>次日得分</th><th>最近一天命中率变化</th></tr></thead><tbody>${rows || '<tr><td colspan="8" class="dim">等第一批信号走满一个交易日。</td></tr>'}</tbody></table></div>
+    <h2>和随机对照比 <small>按交易周聚合；“比随机高”= 周均得分 − 1000 个对照的平均；“最小可检测效应”= 在当前周数下要比随机至少高多少才可能通过多重检验，按每周独立、效应不变外推到 12 / 26 周（近似，不是保证）</small></h2>
+    <div class="card tbl"><table><thead><tr><th>策略</th><th>数据量（周 · 条）</th><th>周均得分</th><th>比随机高</th><th>是否在噪声内</th><th>命中率比随机高</th><th>经验 p</th><th>晋升检验</th><th>距晋升还差</th><th>最小可检测效应</th></tr></thead><tbody>${prRows || '<tr><td colspan="10" class="dim">还没有走满 5 日的信号，也没有完整交易周。</td></tr>'}</tbody></table></div>
+    <div class="dim" style="margin:6px 0">“是否在噪声内”用对照的 2.5%~97.5% 分位，没做多重检验修正；是否够晋升看“晋升检验”一列。对照不保留“同一只股票连续多天被持有”的相关性，所以噪声范围可能偏窄。</div>
+    ${hist ? `<h2>每天准确率提升了多少 <small>次日口径：当天累计准确率的变化（小字是累计准确率）</small></h2><div class="card tbl"><table><thead><tr><th>信号日</th>${keys.map((k) => `<th>${esc(label(k))}</th>`).join("")}</tr></thead><tbody>${hist}</tbody></table></div>` : ""}`;
+}
+
+function renderTune(t) {
+  if (!t) return "";
+  if (t.error) return `<h2>自动调参</h2><div class="card dim">本次没运行：${esc(t.error)}</div>`;
+  const pc = (v, dg = 2) => (isNum(v) ? `${(v * 100).toFixed(dg)}%` : "—");
+  const a = t.active_after || {};
+  const rows = (t.candidates || []).slice().sort((x, y) => (y.t ?? -99) - (x.t ?? -99)).map((c) =>
+    `<tr class="${c.banned ? "dim" : ""}"><td>阈值 ${pc(c.params.thr, 0)} · 小仓位线 ${pc(c.params.mt, 0)}</td><td class="${c.gain > 0 ? "up" : c.gain < 0 ? "down" : ""}">${pc(c.gain)}</td><td>${isNum(c.t) ? c.t.toFixed(1) : "—"}</td><td>${c.weeks ?? c.days}</td><td>${isNum(c.coverage) ? pc(c.coverage, 0) : "—"}</td></tr>`).join("");
+  const ser = (t.series || []).map((x) => `<tr><td>${esc(x.day)}</td><td>${pc(x.active)}</td><td>${pc(x.default)}</td><td>${x.n}</td></tr>`).join("");
+  return `<h2>自动调参 <small>每天并行比较 12 组参数，但完整交易周不足 20 周之前参数固定不动；之后换参数要按周 t 通过多重检验修正。只调这两个参数，不改策略公式</small></h2>
+    <div class="card"><div class="kv"><span>当前：阈值 <b>${pc(a.thr, 0)}</b> · 小仓位线 <b>${pc(a.mt, 0)}</b></span> <span>可核对 ${t.scorable_days} 天 · ${t.weeks ?? 0}/${t.freeze_weeks ?? 20} 个完整交易周${(t.weeks ?? 0) < (t.freeze_weeks ?? 20) ? "（冻结中）" : ""}</span></div>
+    <div style="margin-top:6px">${esc(t.why || "")}</div>${t.watch ? `<div class="dim" style="margin-top:4px">换参数后 ${t.watch.post_days} 个新信号日，比旧参数 ${pc(t.watch.gain_vs_prev)}</div>` : ""}</div>
+    <div class="card tbl"><table><thead><tr><th>备选参数（每天并行比较）</th><th>比当前每条信号好</th><th>按周 t</th><th>周数</th><th>信号数占比</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${ser ? `<div class="card tbl"><table><thead><tr><th>信号日</th><th>当前参数每条信号得分</th><th>默认参数</th><th>信号数</th></tr></thead><tbody>${ser}</tbody></table></div>` : ""}`;
+}
+
+async function loadReview() {
+  const box = $("reviewBody"), meta = $("reviewMeta");
+  box.innerHTML = '<div class="skeleton"></div>';
+  const d = await api("/api/ledger");
+  if (!d || d.error || d.empty) { box.innerHTML = `<div class="card dim">${esc((d && (d.message || d.error)) || "暂无数据")}</div>`; meta.textContent = ""; return; }
+  const pct = (v, dg = 1) => (isNum(v) ? `${(v * 100).toFixed(dg)}%` : "—");
+  const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  meta.textContent = `已记录 ${d.signal_days.length} 个信号日，已核对 ${d.evaluated_days.length} 个`;
+  const notes = (d.notes || []).map((n) => `<li>${esc(n)}</li>`).join("");
+  const hName = { 1: "次日", 5: "5 日", 10: "10 日", 20: "20 日" };
+  const precision = Object.entries(d.precision || {}).map(([s, rows]) => {
+    const body = rows.map((p) => `<tr class="${p.enough ? "" : "dim"}"><td>${esc(p.action)}</td><td>${hName[p.h] || p.h}</td><td>${p.n}${p.untradable ? ` <small>(另有 ${p.untradable} 条开盘即涨/跌停)</small>` : ""}</td><td>${pct(p.hit_raw, 0)}</td><td>${pct(p.hit_excess, 0)}</td><td class="${cls(p.mean_ret)}">${pct(p.mean_ret, 2)}</td><td class="${cls(p.mean_excess)}">${pct(p.mean_excess, 2)}</td><td title="命中率 95% 区间 ${pct(p.hit_excess_lo, 0)}–${pct(p.hit_excess_hi, 0)}；中位数 ${pct(p.median_excess, 2)}；扣费后 ${pct(p.net_excess, 2)}">${esc(p.verdict || (p.enough ? "" : "样本不足"))}</td></tr>`).join("");
+    return `<h2>${esc(s)}${s === d.main ? " <small>主策略</small>" : ""}</h2><div class="card tbl"><table><thead><tr><th>信号</th><th>看多久</th><th>条数</th><th>方向命中</th><th>跑赢全市场</th><th>平均涨跌</th><th>相对全市场</th><th>结论</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }).join("");
+  const rec = (d.recall || []).map((r) => `<div class="card" style="margin-bottom:10px"><b>${esc(r.day)}</b> 之后 ${r.h} 日涨幅居前的 ${r.winners} 只：${Object.entries(r.categories).map(([k, v]) => `${esc(k)} ${v}`).join("、")}；召回率 ${pct(r.recall, 0)}
+    ${(r.missed || []).length ? `<div class="tbl" style="margin-top:8px"><table><thead><tr><th>股票</th><th>涨幅</th><th>当时为什么没买</th></tr></thead><tbody>${r.missed.map((m) => `<tr><td>${esc(m.name || "")} <small>${esc(m.code)}</small></td><td class="up">${pct(m.ret, 1)}</td><td>${esc(m.category)}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`).join("");
+  const lvl = { ok: "up", warn: "down", info: "dim" };
+  const refl = (d.reflection || []).map((r) => `<li class="${lvl[r.level] || ""}">${esc(r.text)}${r.suggestion ? ` <small class="dim">建议：${esc(r.suggestion)}</small>` : ""}</li>`).join("");
+  box.innerHTML = `<div class="card"><ul class="list">${notes}</ul></div>
+    <h2>每日反思 <small>只给建议，改策略要你同意</small></h2><div class="card"><ul class="list">${refl || "<li class=dim>暂无</li>"}</ul></div>
+    ${renderBoard(d)}
+    ${renderTune(d.tune)}
+    <h2>漏掉的机会 <small>开盘涨停和连板短炒已剔除</small></h2>${rec || '<div class="card dim">今天开始记录当时的持仓状态，等走满 5 个交易日后才会有。</div>'}
+    <h2>信号准确率</h2>${precision || '<div class="card dim">等第一批信号走满一个交易日。</div>'}
+    <div class="dim" style="margin-top:10px">${(d.caveats || []).map(esc).join(" ")}</div>`;
+}
+
+// ================================================================ AI 账户（只读）
+async function loadAi() {
+  const box = $("aiBody"), meta = $("aiMeta");
+  box.innerHTML = '<div class="skeleton"></div>';
+  const d = await api("/api/sim");
+  if (!d || d.error || d.empty || !(d.accounts || []).length) { box.innerHTML = `<div class="card dim">${esc((d && (d.message || d.error)) || "暂无数据")}</div>`; meta.textContent = ""; return; }
+  const sign = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  const money = (v) => (isNum(v) ? Number(v).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—");
+  const sideTxt = (s) => (s === "buy" ? "买入" : "卖出");
+  meta.textContent = d.fee_verified ? "" : "费率为默认值，待和真实账户核对";
+  box.innerHTML = d.accounts.map((a) => {
+    const pos = (a.positions || []).map((p) => { const v = p.close * p.qty, pnl = (p.close / p.cost - 1) * 100; return `<tr><td>${esc(p.name)} <small>${esc(p.code)}</small></td><td>${p.qty}</td><td>${fmt(p.cost)}</td><td>${fmt(p.close)}${p.stale ? "*" : ""}</td><td>${money(v)}</td><td class="${sign(pnl)}">${fmt(pnl, 2, "%")}</td></tr>`; }).join("");
+    const pend = (a.pending || []).map((o) => `<tr><td>${esc(o.name)} <small>${esc(o.code)}</small></td><td>${sideTxt(o.side)}</td><td>${o.qty}</td><td>${esc(o.fill_day)}</td><td class="dim">${esc(o.reason)}</td></tr>`).join("");
+    const skip = (a.skipped || []).slice(0, 60).map((o) => `<tr><td>${esc(o.name)} <small>${esc(o.code)}</small></td><td>${esc(o.signal_day)}</td><td class="dim">${esc(o.reason)}</td></tr>`).join("");
+    const rej = (a.rejected || []).slice(0, 40).map((o) => `<tr><td>${esc(o.name)} <small>${esc(o.code)}</small></td><td>${sideTxt(o.side)}</td><td>${esc(o.fill_day)}</td><td class="dim">${esc(o.reason)}</td></tr>`).join("");
+    const trd = (a.trades || []).map((t) => `<tr><td>${esc(t.day)}</td><td>${esc(t.name)} <small>${esc(t.code)}</small></td><td>${sideTxt(t.side)}</td><td>${t.qty}</td><td>${fmt(t.price)}</td><td>${money(t.amount)}</td><td title="佣金 ${t.commission} / 过户费 ${t.transfer} / 印花税 ${t.stamp}">${money(t.fee)}</td><td class="${sign(t.pnl)}">${isNum(t.pnl) ? money(t.pnl) : "—"}</td></tr>`).join("");
+    const notes = (a.summaries || []).filter((s) => (s.lines || []).length).map((s) => `<div class="card" style="margin-bottom:10px"><b>${esc(s.day)}</b>${(s.lines || []).map((l) => `<div class="dim" style="margin-top:4px">${esc(l)}</div>`).join("")}</div>`).join("");
+    const tbl = (h, rows, empty) => rows ? `<div class="card tbl"><table><thead><tr>${h.map((x) => `<th>${x}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="card dim">${empty}</div>`;
+    return `<div class="card"><h2 style="margin-top:0">${esc(a.label)} <small>开始日 ${esc(a.created)} · 单只上限 ${Math.round(a.max_weight * 100)}% · 最多 ${a.max_positions} 只</small></h2>
+      <div class="kv"><span>净值 <b>${money(a.value)}</b></span> <span>本金 ${money(a.initial)}</span> <span class="${sign(a.ret_pct)}">累计 ${fmt(a.ret_pct, 2, "%")}</span> <span>现金 ${money(a.cash)}</span></div></div>
+      <h2>持仓</h2>${tbl(["股票", "股数", "成本", "最新收盘", "市值", "浮盈亏"], pos, "目前没有持仓。今天挂的买单要等下一个交易日开盘后才会成交。")}
+      <h2>明天要成交的挂单 <small>成交价=下一交易日开盘价</small></h2>${tbl(["股票", "方向", "股数", "撮合日", "原因"], pend, "没有挂单。")}
+      <h2>每日总结</h2>${notes || '<div class="card dim">第一次撮合之后才会有总结。</div>'}
+      <h2>成交记录 <small>费用含佣金、过户费、印花税，悬停看明细</small></h2>${tbl(["日期", "股票", "方向", "股数", "价格", "金额", "费用", "盈亏"], trd, "还没有成交。")}
+      <h2>没成交的订单 <small>涨停买不进、跌停卖不出、停牌、资金不足</small></h2>${tbl(["股票", "方向", "撮合日", "原因"], rej, "暂无。")}
+      <h2>信号有、但没下单 <small>被规则挡掉，用来之后检验这些规则对不对</small></h2>${tbl(["股票", "信号日", "原因"], skip, "暂无。")}`;
+  }).join("");
+}
+
 // ================================================================ 路由
-const PAGES = ["today", "market", "watch", "stock", "lab", "track", "bt", "rq", "cmp", "code"];
+const PAGES = ["trade", "review", "ai", "today", "market", "watch", "stock", "lab", "track", "bt", "rq", "cmp", "code"];
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 function route() {
   const [, page = "today", arg = null] = (location.hash || "#/today").split("/");
@@ -274,7 +421,7 @@ function route() {
   document.querySelectorAll("#tabs a[data-p]").forEach((a) => a.classList.toggle("on", a.dataset.p === p));
   const mo = document.querySelector("#tabs .more"); if (mo) mo.classList.toggle("on", ["bt", "rq", "cmp", "code"].includes(p));
   window.scrollTo({ top: 0 });
-  ({ today: loadToday, market: loadMarket, watch: loadWatch, stock: loadStock, lab: loadLab, track: loadTrack, ...(window.ENG_LOADERS || {}) })[p]()
+  ({ trade: loadTrade, review: loadReview, ai: loadAi, today: loadToday, market: loadMarket, watch: loadWatch, stock: loadStock, lab: loadLab, track: loadTrack, ...(window.ENG_LOADERS || {}) })[p]()
     .catch((e) => { console.error(e); });
 }
 async function updateFresh() {
@@ -341,6 +488,253 @@ async function loadToday() {
       <td>${fmt(w.close)}</td><td class="${cls(w.d1)}">${pct(w.d1, 2)}</td><td class="${cls(w.ytd)}">${pct(w.ytd)}</td>
       <td class="${cls(w.ma300_gap)}">${pct(w.ma300_gap)}</td><td>${fmt(w.vol, 1, "%")}</td><td class="${cls(w.dd1y)}">${pct(w.dd1y)}</td><td>${fmt(w.rsi14, 1)}</td></tr>`).join("") + "</tbody>";
   $("watchTbl").querySelectorAll("tr.click").forEach((tr2) => tr2.addEventListener("click", () => openStock(tr2.dataset.c)));
+}
+
+// ================================================================ 今日买卖
+const TRADE = { inited: false, data: null, tab: "buy", sort: "code", dir: 1, manualSort: false, request: 0 };
+const TRADE_COLUMNS = [["code", "股票 / 代码"], ["close", "收盘价"], ["d1", "当天涨跌幅"],
+  ["avg_turnover_20d", "20 日平均成交额（元）"], ["liquidity", "流动性"], ["lot_cost", "一手约需（元）"],
+  ["action", "信号"], ["now", "今日仓位"], ["next", "明日目标仓位"], ["reason", "触发原因"],
+  ["total", "样本外累计收益"], ["b_total", "样本外持有累计收益"], ["beat_bh", "样本外跑赢持有"],
+  ["maxdd", "样本外最大回撤"], ["trades", "样本外完整交易"], ["sharpe", "样本外超额 Sharpe"], ["flags", "可交易性"]];
+const tradeValue = (row, key) => row.performance?.[key] ?? row[key] ?? null;
+const tradeNumber = (v, suffix = "", digits = 2) => isNum(v) ? `${Number(v).toFixed(digits)}${suffix}` : "数据不足";
+// 手机宽度（≤600px）用卡片代替宽表格；桌面保持表格。
+const TRADE_MOBILE_QUERY = "(max-width: 600px)";
+const tradeIsMobile = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(TRADE_MOBILE_QUERY).matches;
+const tradePosition = (v) => isNum(v) ? tradeNumber(v * 100, "%", 1) : "数据不足";
+// 没有信号的相关股票（仓位和标记都为空）显示“无信号”；有异常标记但仓位缺失仍显示“数据不足”。
+const tradeTargetText = (r) => (!r.action && !isNum(r.now) && !isNum(r.next) && !(r.flags?.length)) ? "无信号" : tradePosition(r.next);
+function tradeCard(r, exception) {
+  const p = r.performance || {};
+  const flags = r.flags?.length ? r.flags.map(esc).join("；") : "未发现本页列出的限制（不保证成交）";
+  const change = exception ? "—" : (isNum(r.d1) ? pct(r.d1, 2) : "数据不足");
+  const outcome = typeof p.beat_bh === "boolean" ? (p.beat_bh ? "是" : "否") : "数据不足";
+  return `<article class="trade-card${exception ? " trade-card-exception" : ""}">
+    <div class="trade-card-head"><a href="#/stock/${encodeURIComponent(r.code)}" data-trade-stock="${esc(r.code)}"><strong>${esc(r.name)}</strong><span class="sub2">${esc(r.code)} · 数据 ${esc(r.last_date)}</span></a><span class="trade-card-signal">${r.action ? pill(r.action) : "无有效动作"}</span></div>
+    ${exception ? `<div class="trade-card-flags trade-warning">${flags}</div>` : ""}
+    <dl class="trade-card-grid">
+      <div><dt>今日 → 明日目标仓位</dt><dd class="trade-target">${tradePosition(r.now)} → <strong>${tradeTargetText(r)}</strong></dd></div>
+      <div><dt>当天涨跌幅</dt><dd class="${exception ? "" : cls(r.d1)}">${change}</dd></div>
+      <div><dt>流动性</dt><dd>${esc(r.liquidity || "数据不足")}</dd></div>
+      <div><dt>一手约需（元）</dt><dd title="参考，不含手续费；次日开盘价可能不同；A 股 T+1，今天买入当天不能卖出">${tradeNumber(r.lot_cost)}</dd></div>
+    </dl>
+    <details class="trade-card-more"><summary>查看详情</summary>
+      <div class="trade-card-reason">${esc(r.reason)}</div>
+      <dl class="trade-card-detail">
+        <div><dt>收盘价</dt><dd>${tradeNumber(r.close)} <span class="sub2">${esc(r.price_note || "数据不足")}</span></dd></div>
+        <div><dt>20 日平均成交额（元）</dt><dd>${tradeNumber(r.avg_turnover_20d, "", 0)}</dd></div>
+        <div><dt>样本外累计收益</dt><dd>${tradeNumber(p.total, "%")}</dd></div>
+        <div><dt>样本外持有累计收益</dt><dd>${tradeNumber(p.b_total, "%")}</dd></div>
+        <div><dt>样本外跑赢持有</dt><dd>${outcome}</dd></div>
+        <div><dt>样本外最大回撤</dt><dd>${tradeNumber(p.maxdd, "%")}</dd></div>
+        <div><dt>样本外完整交易</dt><dd>${tradeNumber(p.trades, "", 0)}${p.small_sample ? '<span class="sub2 trade-warning">样本太少，不可靠</span>' : ""}</dd></div>
+        <div><dt>样本外超额 Sharpe</dt><dd>${tradeNumber(p.sharpe)}</dd></div>
+        <div class="wide"><dt>可交易性</dt><dd>${flags}</dd></div>
+      </dl>
+    </details></article>`;
+}
+function tradeCards(rows, table, exception) {
+  table.innerHTML = '<tbody><tr><td class="trade-cards-cell"><div class="trade-cards">' +
+    (rows.length ? rows.map((r) => tradeCard(r, exception)).join("") : '<div class="empty">无匹配记录</div>') + "</div></td></tr></tbody>";
+  table.querySelectorAll("[data-trade-stock]").forEach((a) => a.addEventListener("click", () => {
+    store.set("dStrategy", $("tradeStrategy").value);
+  }));
+}
+// 手机上没有表头可点，用下拉框和方向按钮代替排序；窗口跨过 600px 时重新渲染。
+function tradeInitMobile() {
+  const sortable = TRADE_COLUMNS.filter(([key]) => !["reason", "flags"].includes(key));
+  $("tradeSortMobile").innerHTML = sortable.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join("");
+  $("tradeSortMobile").addEventListener("change", () => {
+    TRADE.sort = $("tradeSortMobile").value; TRADE.dir = TRADE.sort === "code" ? 1 : -1; TRADE.manualSort = true; renderTrade();
+  });
+  $("tradeSortDir").addEventListener("click", () => { TRADE.dir = -TRADE.dir; TRADE.manualSort = true; renderTrade(); });
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    const media = window.matchMedia(TRADE_MOBILE_QUERY);
+    const redraw = () => renderTrade();
+    if (media.addEventListener) media.addEventListener("change", redraw); else if (media.addListener) media.addListener(redraw);
+  }
+}
+function tradeSyncSortControls() {
+  const select = $("tradeSortMobile"), button = $("tradeSortDir");
+  if (select) select.value = TRADE.sort;
+  if (button) {
+    button.textContent = TRADE.dir === 1 ? "↑ 升序" : "↓ 降序";
+    button.setAttribute("aria-label", TRADE.dir === 1 ? "当前升序，点击改为降序" : "当前降序，点击改为升序");
+  }
+}
+function tradeRows(rows, table, sortable = true, options = {}) {
+  const exception = options.exception === true;
+  if (tradeIsMobile()) { tradeCards(rows, table, exception); return; }
+  const head = TRADE_COLUMNS.map(([key, label]) => {
+    const sort = sortable && !["reason", "flags"].includes(key);
+    const active = sort && TRADE.sort === key;
+    return `<th scope="col" ${sort ? `class="sort ${active ? "on" : ""}" data-sort="${key}" tabindex="0" aria-sort="${active ? (TRADE.dir === 1 ? "ascending" : "descending") : "none"}"` : ""}>${esc(label)}${active ? (TRADE.dir === 1 ? " ↑" : " ↓") : ""}</th>`;
+  }).join("");
+  table.innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + rows.map((r) => {
+    const p = r.performance || {}, position = tradePosition;
+    const flags = r.flags?.length ? r.flags.map(esc).join("；") : "未发现本页列出的限制（不保证成交）";
+    return `<tr><td><a href="#/stock/${encodeURIComponent(r.code)}" data-trade-stock="${esc(r.code)}">${esc(r.name)}<span class="sub2">${esc(r.code)}</span></a><span class="sub2">数据 ${esc(r.last_date)}</span></td>
+      <td>${tradeNumber(r.close)}<span class="sub2">${esc(r.price_note || "数据不足")}</span></td>
+      <td class="${exception ? "" : cls(r.d1)}">${exception ? "—" : (isNum(r.d1) ? pct(r.d1, 2) : "数据不足")}</td>
+      <td>${tradeNumber(r.avg_turnover_20d, "", 0)}</td><td>${esc(r.liquidity || "数据不足")}</td><td title="参考，不含手续费；次日开盘价可能不同；A 股 T+1，今天买入当天不能卖出">${tradeNumber(r.lot_cost)}</td><td>${r.action ? pill(r.action) : "无有效动作"}</td>
+      <td>${position(r.now)}</td><td class="trade-target"><strong>${tradeTargetText(r)}</strong></td>
+      <td class="trade-reason"><details><summary>查看指标和触发条件</summary>${esc(r.reason)}</details></td>
+      <td>${tradeNumber(p.total, "%")}<span class="sub2">${p.start ? `${esc(p.start)} → ${esc(p.end)}` : "数据不足"}</span></td>
+      <td>${tradeNumber(p.b_total, "%")}</td><td>${typeof p.beat_bh === "boolean" ? (p.beat_bh ? "是" : "否") : "数据不足"}</td>
+      <td>${tradeNumber(p.maxdd, "%")}</td><td>${tradeNumber(p.trades, "", 0)}${p.small_sample ? '<span class="sub2 trade-warning">样本太少，不可靠</span>' : ""}</td>
+      <td>${tradeNumber(p.sharpe)}</td><td class="trade-flags">${flags}</td></tr>`;
+  }).join("") + (rows.length ? "" : `<tr><td colspan="${TRADE_COLUMNS.length}" class="empty">无匹配记录</td></tr>`) + "</tbody>";
+  table.querySelectorAll("[data-trade-stock]").forEach((a) => a.addEventListener("click", () => {
+    store.set("dStrategy", $("tradeStrategy").value);
+  }));
+  table.querySelectorAll("[data-sort]").forEach((th) => {
+    const act = () => { TRADE.dir = TRADE.sort === th.dataset.sort ? -TRADE.dir : 1; TRADE.sort = th.dataset.sort; TRADE.manualSort = true; renderTrade(); };
+    th.addEventListener("click", act);
+    th.addEventListener("keydown", (e) => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); act(); } });
+  });
+}
+function renderTrade() {
+  const r = TRADE.data;
+  $("tradeTabs").querySelectorAll("button").forEach((button) => {
+    const selected = button.dataset.tab === TRADE.tab;
+    button.classList.toggle("on", selected); button.setAttribute("aria-selected", String(selected));
+  });
+  if (!r) return;
+  const query = $("tradeSearch").value.trim().toLowerCase();
+  const matches = (row) => !query || `${row.code} ${row.name}`.toLowerCase().includes(query);
+  const allowed = TRADE.tab === "buy" ? ["买入"] : TRADE.tab === "sell" ? ["卖出"] : ["加仓", "减仓"];
+  // 覆盖率按整个当前标签计算，搜索或过滤不会让缺失数据显得更完整。
+  const tabRows = (r.rows || []).filter(row => allowed.includes(row.action));
+  const known = tabRows.filter(row => isNum(row.avg_turnover_20d) && ["正常", "流动性差"].includes(row.liquidity)).length;
+  const incomplete = tabRows.length > 0 && known * 5 < tabRows.length * 4;
+  const warning = incomplete ? `成交额数据补充中，当前 ${(known / tabRows.length * 100).toFixed(1)}% 已知；流动性过滤暂不可靠` : "";
+  for (const id of ["tradeLiquidityWarning", "tradeCoverageWarning"]) {
+    $(id).textContent = warning; $(id).hidden = !incomplete;
+  }
+  if (!TRADE.manualSort) {
+    TRADE.sort = incomplete || !tabRows.length ? "code" : "avg_turnover_20d";
+    TRADE.dir = TRADE.sort === "code" ? 1 : -1;
+  }
+  const compare = (a, b) => {
+    const x = tradeValue(a, TRADE.sort), y = tradeValue(b, TRADE.sort);
+    if (x === null || y === null) return x === y ? a.code.localeCompare(b.code) : x === null ? 1 : -1;
+    const delta = typeof x === "string" ? x.localeCompare(String(y), "zh-CN") : Number(x) - Number(y);
+    return delta * TRADE.dir || a.code.localeCompare(b.code);
+  };
+  const liquidity = $("tradeLiquidity").value;
+  const filtered = tabRows.filter((row) => matches(row) && (!liquidity || (row.liquidity || "流动性未知") === liquidity));
+  TRADE.exportRows = [...filtered].sort(compare);
+  const fold = row => row.liquidity === "流动性差" || (row.liquidity !== "正常" && !incomplete);
+  const normal = filtered.filter(row => !fold(row));
+  const illiquid = filtered.filter(fold).sort(compare);
+  const small = TRADE.tab === "buy" ? normal.filter((row) => row.small_target === true).sort(compare) : [];
+  const rows = normal.filter((row) => TRADE.tab !== "buy" || row.small_target !== true).sort(compare);
+  $("tradeIlliquid").hidden = !illiquid.length;
+  $("tradeIlliquidTitle").textContent = `流动性差${incomplete ? "" : "/流动性未知"} · ${illiquid.length} 只（可展开查看）`;
+  tradeRows(illiquid, $("tradeIlliquidTable"));
+  $("tradeSmall").hidden = TRADE.tab !== "buy" || !small.length;
+  $("tradeSmallTitle").textContent = `小仓位买入（目标仓位低于 ${fmt((r.min_target ?? 0.05) * 100, 2).replace(/\.?0+$/, "")}%）· ${small.length} 只`;
+  tradeRows(small, $("tradeSmallTable"));
+  const exceptions = (r.exceptions || []).filter(matches).sort((a, b) => a.code.localeCompare(b.code));
+  tradeRows(rows, $("tradeTable")); tradeRows(exceptions, $("tradeExceptions"), false, {exception: true});
+  $("tradeExceptionCount").textContent = `共 ${(r.exceptions || []).length} 只，搜索匹配 ${exceptions.length} 只`;
+  $("tradeMessage").textContent = TRADE.tab === "adjust" && r.binary
+    ? "该策略仅有空仓或满仓，没有加减仓信号"
+    : `当前标签 ${rows.length} 只；异常/停牌记录单列，不进入正常信号列表。`;
+  tradeSyncSortControls();
+}
+async function loadTradeFollowups(request) {
+  const strategy = $("tradeStrategy").value;
+  const params = new URLSearchParams({strategy, date: $("tradeDate").value});
+  const local = typeof location !== "undefined" && ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname) && $("tradeMine");
+  const tasks = [api(`/api/trade_list_tracking?strategy=${encodeURIComponent(strategy)}`)];
+  if (local) tasks.push(api(`/api/trade_list_mine?${params}`));
+  const results = await Promise.allSettled(tasks);
+  if (request !== TRADE.request) return;
+  const stats = results[0].status === "fulfilled" ? results[0].value : null;
+  const body = $("tradeTrackingBody");
+  if (stats && !stats.error) {
+    body.innerHTML = `<p class="dim">${esc(stats.note || "")} 跟踪统计随后续行情更新，不属于历史快照。</p>` + (stats.empty ? '<p class="dim">暂无上线后当时记录的信号，不自动回放旧清单。</p><div class="tiles">' + [5,20,60].map(horizon => `<div class="tile"><div class="k">${horizon} 个交易日</div><div class="v">数据不足</div><div class="b">已完成 0 · 跑赢大盘：数据不足</div></div>`).join('') + '</div>' :
+      `<div class="dim">行情截至 ${esc(stats.latest_price_date || "数据不足")}；所选策略已记录 ${stats.recorded_signals} 条。</div><div class="tbl"><table><thead><tr><th>信号</th><th>5日平均收益</th><th>跑赢大盘/可比样本</th><th>已完成数</th><th>20日平均收益</th><th>跑赢大盘/可比样本</th><th>已完成数</th><th>60日平均收益</th><th>跑赢大盘/可比样本</th><th>已完成数</th></tr></thead><tbody>` +
+      stats.groups.map(group => `<tr><td>${esc(group.action)}${group.action === "卖出" ? '<span class="sub2">卖出后股票收益，非卖出策略收益</span>' : ""}</td>` + [5,20,60].map(horizon => `<td>${tradeNumber(group[`avg${horizon}`], "%")}</td><td>${tradeNumber(group[`beat${horizon}`], "%")} / ${group[`bench_n${horizon}`]}</td><td>${group[`n${horizon}`]}</td>`).join("") + '</tr>').join("") + '</tbody></table></div>');
+  } else body.textContent = "信号跟踪暂不可用。";
+  if (local && results[1]) {
+    const mine = results[1].status === "fulfilled" ? results[1].value : null;
+    $("tradeMineBody").innerHTML = mine && !mine.error ? `<div class="dim">600531 固定第一，其余卖出信号置顶。${mine.member_logged_in ? "已包含当前会员的模拟持仓。" : "登录模拟交易会员后可查看当前账户的相关股票。"}</div><div class="tbl"><table><thead><tr><th>股票</th><th>相关来源</th><th>信号</th><th>明日目标</th></tr></thead><tbody>` + (mine.rows || []).map(row => `<tr class="${row.action === "卖出" ? "trade-mine-sell" : ""}"><td><a href="#/stock/${encodeURIComponent(row.code)}">${esc(row.name)} ${esc(row.code)}</a></td><td>${row.in_watchlist ? "自选 " : ""}${row.in_member_positions ? "模拟持仓" : ""}</td><td>${row.action ? pill(row.action) : "清单无信号"}</td><td>${tradeTargetText(row)}</td></tr>`).join("") + '</tbody></table></div>' : "我的相关暂不可用。";
+  }
+}
+
+function tradeCSVData() {
+  const header = [["code", "代码"], ["name", "名称"], ["last_date", "数据日期"], ["action", "信号"], ["now", "今日模拟仓位"], ["next", "明日目标仓位"], ["close", "前复权收盘价"], ["d1", "当天涨跌幅%"], [row => row.avg_turnover_20d ?? "数据不足", "20日平均成交额（元）"], [row => row.liquidity ?? "数据不足", "流动性"], [row => row.lot_cost ?? "数据不足", "一手参考金额（元）"], ["reason", "触发原因"],
+    [row => row.performance?.total ?? "数据不足", "样本外策略累计收益%"], [row => row.performance?.b_total ?? "数据不足", "样本外持有累计收益%"], [row => row.performance?.maxdd ?? "数据不足", "样本外最大回撤%"], [row => row.performance?.trades ?? "数据不足", "样本外完整交易次数"], [row => row.performance?.sharpe ?? "数据不足", "样本外超额Sharpe"], [row => (row.flags || []).join("；"), "可交易性标记"]];
+  return {header, rows: TRADE.exportRows || []};
+}
+function exportTrade() {
+  if (!TRADE.data) return;
+  const data = tradeCSVData();
+  downloadCSV(`今日买卖_${TRADE.data.strategy}_${TRADE.data.data_date}_${TRADE.tab}.csv`, data.header, data.rows);
+}
+
+function tradeHeaderHeight() {
+  $("p-trade").style.setProperty("--trade-header-height", `${document.querySelector("header").offsetHeight}px`);
+}
+async function loadTrade() {
+  tradeHeaderHeight();
+  if (!TRADE.inited) {
+    $("tradeStrategy").innerHTML = stratOptions((key, spec) => spec.kind === "single" && key !== "buy_hold");
+    $("tradeStrategy").value = "blend2";
+    try {   // 主策略 = 信号核对里准确率最高的策略（样本不够时沿用 blend2）
+      const mp = await api("/api/main_strategy");
+      if (mp && mp.main && [...$("tradeStrategy").options].some((o) => o.value === mp.main)) $("tradeStrategy").value = mp.main;
+      TRADE.mainPick = mp || {};
+    } catch (e) { TRADE.mainPick = {}; }
+    for (const id of ["tradeStrategy", "tradeDate"]) $(id).addEventListener("change", () => {
+      TRADE.manualSort = false; loadTrade();
+    });
+    $("tradeSearch").addEventListener("input", renderTrade);
+    $("tradeLiquidity").addEventListener("change", renderTrade);
+    $("tradeExport").addEventListener("click", exportTrade);
+    $("tradeExportXlsx").addEventListener("click", () => {
+      const params = new URLSearchParams({ strategy: $("tradeStrategy").value, date: $("tradeDate").value });
+      window.location.assign(`/api/trade_list_export?${params}`);
+    });
+    $("tradeTabs").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+      TRADE.tab = button.dataset.tab; TRADE.manualSort = false; renderTrade();
+    }));
+    window.addEventListener("resize", debounce(tradeHeaderHeight, 150));
+    tradeInitMobile();
+    TRADE.inited = true;
+  }
+  const request = ++TRADE.request;
+  TRADE.data = null; TRADE.exportRows = [];
+  $("tradeTrackingBody").textContent = "读取中…";
+  if ($("tradeMineBody")) $("tradeMineBody").textContent = "读取中…";
+  $("tradeSmall").hidden = $("tradeIlliquid").hidden = true;
+  $("tradeLiquidityWarning").hidden = $("tradeCoverageWarning").hidden = true;
+  for (const id of ["tradeIlliquidTable", "tradeTable", "tradeSmallTable", "tradeExceptions", "tradeCounts", "tradeExceptionCount", "tradeMeta", "tradePerformanceNote"]) $(id).textContent = "";
+  if (S.market !== "cn") { $("tradeMessage").textContent = "美股今日买卖暂未支持，请切换到 A 股。"; return; }
+  $("tradeMessage").textContent = "正在读取已发布清单…";
+  try {
+    const archive = await api("/api/trade_list_dates");
+    if (request !== TRADE.request) return;
+    const selected = $("tradeDate").value;
+    $("tradeDate").innerHTML = '<option value="">最新清单</option>' + (archive.dates || []).map(day => `<option value="${esc(day)}">${esc(day)}</option>`).join("");
+    $("tradeDate").value = (archive.dates || []).includes(selected) ? selected : "";
+    const query = new URLSearchParams({ strategy: $("tradeStrategy").value, date: $("tradeDate").value });
+    const r = await api(`/api/trade_list?${query}`);
+    if (request !== TRADE.request) return;
+    if (r.error || r.empty) { $("tradeMessage").textContent = r.error || r.message; return; }
+    TRADE.data = r;
+    const generated = new Date(r.generated_at);
+    const generatedText = Number.isNaN(generated.getTime()) ? "数据不足" : new Intl.DateTimeFormat("sv-SE", {timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false}).format(generated);
+    $("tradeMeta").textContent = `数据日期 ${r.data_date} · 生成 ${generatedText} 北京时间 · ${r.label}`;
+    const minTarget = fmt((r.min_target ?? 0.05) * 100, 2).replace(/\.?0+$/, "");
+    $("tradeCounts").innerHTML = ["买入", "卖出", "加仓", "减仓"].map((key) => `<span>${key} <b>${r.counts[key] || 0}</b> 只${key === "买入" ? `（目标仓位 ≥${minTarget}% 的 ${r.counts_main?.[key] ?? "数据不足"} 只，另有 ${r.counts_small?.[key] ?? "数据不足"} 只为小仓位）` : ""}</span>`).join("");
+    $("tradePerformanceNote").textContent = r.performance_note;
+    renderTrade();
+    await loadTradeFollowups(request);
+  } catch (e) { if (request === TRADE.request) $("tradeMessage").textContent = `清单读取失败：${e.message}`; }
 }
 
 // ================================================================ 全市场

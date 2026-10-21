@@ -57,3 +57,30 @@ ENABLED = ["cn", "us"]
 
 SERVER_HOST = "127.0.0.1"   # local access only; do not change to 0.0.0.0
 SERVER_PORT = 8765
+
+# 今日买卖：目标仓位变化严格超过 10 个百分点才标记加仓或减仓。
+TRADE_LIST_THRESHOLD = 0.1
+
+# 涨跌停价格取整到分导致实际涨跌幅略低；与现有引擎的 0.002 容差一致。
+TRADE_LIST_LIMIT_TOLERANCE = 0.002
+# 小仓位仅影响展示分组，不改策略信号；目标仓位直接与阈值比较。
+TRADE_LIST_MIN_TARGET = 0.05
+
+# 自我改进闭环（src/auto_tune.py）通过 data/auto_params.json 自动调这两个参数；
+# 只接受 [默认值, 上限] 内的值，文件不存在或被改坏就用上面的默认值。
+def _auto_override():
+    import json as _j, pathlib as _p
+    try:
+        a = _j.loads((_p.Path(__file__).resolve().parent / "data" / "auto_params.json").read_text(encoding="utf-8"))["active"]
+        thr, mt = float(a["thr"]), float(a["mt"])
+        if 0.10 <= thr <= 0.30 and 0.05 <= mt <= 0.15:
+            return thr, mt
+    except Exception:
+        pass
+    return None
+_ov = _auto_override()
+if _ov:
+    TRADE_LIST_THRESHOLD, TRADE_LIST_MIN_TARGET = _ov
+
+# 20 个已收盘交易日的平均真实成交额，单位元；不足 20 日标为未知。
+TRADE_LIST_MIN_TURNOVER = 50_000_000

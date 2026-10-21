@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from config import ENABLED, MARKETS
-from src import allmarket, daily_report, datasource, notify, scan, tracking
+from src import allmarket, daily_report, datasource, notify, scan, tracking, trade_list, turnover_backfill
 
 ROOT = Path(__file__).resolve().parent
 LOG = ROOT / "logs" / "daily.log"
@@ -41,9 +41,58 @@ def setup_logging():
         handler.setFormatter(formatter)
 
 
-def run_market(market: str, offline: bool = False) -> dict:
+def _backfill_trade_turnover(market, day, offline):
+    """可选的限时成交额补取；任何失败都不阻止后面的清单生成。"""
+    if market != "cn" or offline:
+        return
+    try:
+        turnover_backfill.automatic_once(day)
+    except Exception:
+        logging.exception("成交额自动补取不可用，继续生成清单")
+
+
+def _step(n: int, total: int, name: str):
+    """写一行固定格式的步骤日志：网页进度条靠它显示"第 n 步 / 共 N 步"，也方便人看日志。"""
+    logging.info("[步骤 %d/%d] %s", n, total, name)
+
+
+def _simtrade(market):
+    """模拟盘/AI 账户：清单发布后撮合并挂新单。独立模块，任何失败只记日志，不影响每日任务。"""
+    if market != "cn":
+        return
+    try:
+        from src import simtrade
+        simtrade.main()
+    except Exception:
+        logging.exception("模拟盘更新失败，不影响每日任务")
+
+
+def _ledger(market):
+    """信号核对账本：清单发布后记录信号并核对已走满的旧信号。独立模块，任何失败只记日志，不影响每日任务。"""
+    if market != "cn":
+        return
+    try:
+        from src import signal_ledger
+        signal_ledger.main()
+    except Exception:
+        logging.exception("信号核对账本更新失败，不影响每日任务")
+
+
+def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
     cfg = MARKETS[market]
+    # 扫描已更新时只补清单，不重复下载、扫描和原有跟踪统计。
+    pending = trade_list.pending_day(market) if cfg.get("all_market") else None
+    existing = daily_report.load(market) if pending else None
+    if pending and existing and existing.get("data_date") == pending:
+        _step(1, 2, "补齐今日买卖清单（含成交额补取，可能较慢）")
+        _backfill_trade_turnover(market, pending, offline)
+        trade_list.try_generate(market, pending, automatic=auto)
+        _step(2, 2, "信号核对账本")
+        _ledger(market)
+        return existing
     logging.info("开始更新 %s 市场数据", cfg["name"])
+    total = 6 if (market == "cn" and cfg.get("all_market")) else 2
+    _step(1, total, "行情下载（指数、基金、自选股）")
     errors = {}
     if not offline:
         for i, s in enumerate(cfg["universe"]):
@@ -78,6 +127,7 @@ def run_market(market: str, offline: bool = False) -> dict:
                              f"失败 {err}" if err else f"{len(df)} 行，最新 {df.index[-1].date() if len(df) else '-'}")
     if market == "cn" and cfg.get("all_market"):   # 沪深全市场
         try:
+            _step(2, total, "全市场数据更新（快照、补缺口）")
             if not offline:
                 r = allmarket.daily_update(max_repair_minutes=cfg.get("repair_minutes", 30))
                 logging.info("全市场数据更新：%s", r)
@@ -85,11 +135,18 @@ def run_market(market: str, offline: bool = False) -> dict:
             if unfinished and scan.load_scan()[1]:
                 logging.info("全市场数据还没更新完，先不重新回测（续传完成后再跑）")
             elif allmarket.cached_codes():
+                _step(3, total, "全市场回测（所有策略）")
                 logging.info("正在进行 A 股全市场回测（%d 只股票）", len(allmarket.cached_codes()))
                 m = scan.run()
                 logging.info("全市场回测：%d 只，%d 秒", m["stocks"], m["seconds"])
+                _step(4, total, "生成今日买卖清单（含补取缺价股票，是最慢的一步，可能 10–30 分钟）")
+                _backfill_trade_turnover(market, m["data_date"], offline)
+                trade_list.try_generate(market, m["data_date"], automatic=auto)
+                _step(5, total, "信号核对账本（核对旧信号、记录新信号）")
+                _ledger(market)
         except Exception as e:
             logging.exception("全市场部分失败：%s", e)
+    _step(total, total, "汇总、记录信号、发提醒")
     prices = datasource.load_market(market, cfg)
     if cfg["main"] not in prices:
         raise RuntimeError(f"{cfg['name']} 主品种 {cfg['main']} 没有数据，先联网运行一次")
@@ -175,6 +232,8 @@ def needs_update(market: str) -> bool:
         _, meta = scan.load_scan()
         if not meta or meta.get("data_date", "") < day.isoformat():
             return True
+        if trade_list.needs_generation(day.isoformat()):
+            return True   # 清单生成失败、缺失或扫描已更新时，下次任务重新尝试
     return done < day.isoformat()
 
 
@@ -247,7 +306,7 @@ def main():
     ok = True
     for m in markets:
         try:
-            run_market(m, a.offline)
+            run_market(m, a.offline, auto=a.auto)
         except Exception as e:
             ok = False
             logging.exception("%s 失败：%s", m, e)

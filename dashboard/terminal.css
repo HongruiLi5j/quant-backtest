@@ -94,3 +94,67 @@ html[data-t="dark"] .st b { font-family: ui-monospace, "SF Mono", Menlo, monospa
 html[data-skin="term"] .chart { background: linear-gradient(180deg, #cbd3de, #c4ccd8); border: 1px solid rgba(34,211,238,.18); border-radius: 10px; padding: 10px 8px 4px; }
 html[data-t="dark"] .kbox, html[data-t="dark"] svg.cv { background: #c9d1dc; border-radius: 8px; padding: 6px 4px 2px; --text2: #3a4658; --sep: #aab5c4; --up: #d63348; --down: #0f9d6a; }
 html[data-t="dark"] .kbox .sm { padding: 0 8px 4px; }
+
+/* 今日买卖：复用现有色彩变量，表格在窄屏内横向滚动。 */
+.trade-disclaimer { position: sticky; top: var(--trade-header-height, 120px); z-index: 5; padding: 8px 12px; margin-bottom: 18px; background: var(--surface); color: var(--text-2); border: 1px solid var(--sep); border-radius: 8px; font-size: 12px; }
+.trade-limitations { margin-bottom: 16px; }
+.trade-limitations ul { margin: 8px 0 0; padding-left: 20px; }
+.trade-limitations li { margin: 5px 0; }
+.trade-counts { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 16px 0; }
+.trade-counts b { font-variant-numeric: tabular-nums; }
+.trade-tabs { margin-bottom: 12px; }
+.trade-table { max-width: 100%; }
+.trade-table td { vertical-align: top; }
+.trade-table td.trade-reason { min-width: 260px; max-width: 360px; white-space: normal; text-align: left; font-size: 12px; line-height: 1.7; }
+.trade-reason summary { cursor: pointer; color: var(--blue); }
+.trade-table td.trade-flags { min-width: 190px; max-width: 280px; white-space: normal; text-align: left; font-size: 12px; }
+.trade-warning { color: var(--warn-text); }
+#tradeMessage { padding: 8px 0; }
+@media (max-width: 760px) {
+  .trade-disclaimer { font-size: 11px; padding: 8px; }
+  #p-trade .toolbar { align-items: stretch; }
+  #p-trade .field { flex: 1 1 100%; }
+  #p-trade .field input, #p-trade .field select { width: 100%; min-width: 0; }
+  .trade-table table { font-size: 12px; }
+}
+
+.trade-target strong { color: var(--blue); font-size: 16px; font-variant-numeric: tabular-nums; }
+.trade-small { margin-top: 18px; border-top: 1px solid var(--sep); padding-top: 12px; }
+.trade-small summary { cursor: pointer; color: var(--text-2); }
+
+#tradeTracking, .trade-mine { margin-bottom: 16px; }
+.trade-mine-sell td { background: var(--warn-bg); color: var(--warn-text); font-weight: 600; }
+
+/* 今日买卖：手机宽度（≤600px）由脚本渲染卡片，桌面保持表格；颜色全部用主题变量，深色模式自动跟随 */
+#tradeTracking h2, .trade-mine h2 { margin-top: 0; }
+.trade-mobile-sort { display: none; }
+.trade-table td.trade-cards-cell { padding: 0; border: 0; white-space: normal; text-align: left; }
+.trade-cards { display: grid; gap: 10px; }
+.trade-card { border: 1px solid var(--sep); border-radius: 10px; padding: 12px; background: var(--surface); min-width: 0; }
+.trade-card-exception { background: var(--warn-bg); }
+.trade-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.trade-card-head a { min-width: 0; display: block; }
+.trade-card-head strong { display: block; font-size: 16px; }
+.trade-card-head .sub2 { display: block; }
+.trade-card-signal { flex: none; }
+.trade-card-flags { margin-top: 6px; font-size: 12px; }
+.trade-card dl { margin: 0; }
+.trade-card dt { font-size: 11px; color: var(--text-2); }
+.trade-card dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+.trade-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 10px; }
+.trade-card-more { margin-top: 8px; border-top: 1px solid var(--sep); padding-top: 4px; }
+.trade-card-more summary { cursor: pointer; color: var(--blue); font-size: 13px; padding: 6px 0; }
+.trade-card-reason { font-size: 12px; line-height: 1.7; margin-bottom: 8px; }
+.trade-card-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px; }
+.trade-card-detail .wide { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .trade-mobile-sort { display: block; flex: 1 1 100%; }
+  .trade-sort-row { display: flex; gap: 8px; }
+  .trade-sort-row select { flex: 1; min-width: 0; }
+}
+
+/* 无障碍：键盘焦点可见、跳转链接、尊重“减少动态效果”设置 */
+:focus-visible { outline: 2px solid var(--blue, #007aff); outline-offset: 2px; }
+.skip { position: absolute; left: -9999px; top: 0; z-index: 100; padding: 8px 14px; background: var(--surface, #fff); color: var(--text, #000); }
+.skip:focus { left: 8px; top: 8px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }

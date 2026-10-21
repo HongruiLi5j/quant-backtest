@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import hmac
+import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -33,7 +35,7 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 
 from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
-from src import admin, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, usdata
+from src import admin, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
 import tunnel
 
@@ -60,6 +62,15 @@ ADMIN_COOKIE = "qb_admin"
 ALLOWED_HOSTS = {f"127.0.0.1:{SERVER_PORT}", f"localhost:{SERVER_PORT}"}
 
 # ---- 行情缓存：文件没变就不重复读
+_trade_local_sessions: set = set()
+_trade_session_lock = threading.Lock()
+
+def _local_trade_positions():
+    with _trade_session_lock:
+        hashes = tuple(_trade_local_sessions)
+    return members.position_codes_for_sessions(hashes)
+
+
 _price_cache: dict = {}
 _lock = threading.Lock()
 _offline_lock = threading.Lock()
@@ -229,6 +240,27 @@ def refresh_status() -> dict:
     # 使用真实下载/扫描计数作为进度；阶段间显示当前阶段，不伪造精确百分比。
     percent, phase = (None if running else 100), ("启动中" if running else "已完成")
     latest = lines[-1] if lines else ""
+    import re as _re
+    step_hits = [_re.search(r"\[步骤 (\d+)/(\d+)\] (.+)$", x) for x in lines]
+    step_hits = [h for h in step_hits if h]
+    if step_hits and running:
+        n, total_steps, step_name = int(step_hits[-1].group(1)), int(step_hits[-1].group(2)), step_hits[-1].group(3).strip()
+        frac, detail = 0.0, ""
+        if n == 1 and total_steps >= 1:
+            updates = sum(1 for x in lines if " 行，最新 " in x)
+            markets_ = [_refresh["market"]] if _refresh.get("market") else list(ENABLED)
+            targets_ = sum(len(MARKETS[m]["universe"]) + len(datasource.load_watchlist(m)) for m in markets_)
+            if targets_:
+                frac, detail = min(0.95, updates / targets_), f"（{min(updates, targets_)}/{targets_}）"
+        elif "每日缺口修复进度" in latest or "回补进度" in latest:
+            mm = _re.findall(r"(?:每日缺口修复|回补)进度 (\d+)/(\d+)", latest)
+            if mm and int(mm[-1][1]):
+                done_, tot_ = map(int, mm[-1])
+                frac, detail = min(0.95, done_ / tot_), f"（{done_:,}/{tot_:,}）"
+        percent = int(100 * (n - 1 + frac) / max(total_steps, 1))
+        phase = f"第 {n} 步 / 共 {total_steps} 步：{step_name}{detail}"
+        return {"running": running, "log": tail, "percent": percent, "phase": phase, "message": msg,
+                "returncode": None}
     if "汇总完成" in latest:
         percent, phase = (None if running else 100), "正在收尾" if running else "已完成"
     elif "全市场回测：" in latest:
@@ -347,6 +379,34 @@ def share_visits() -> dict:
             "visitors": sorted(g.values(), key=lambda e: (not e["online"], e["last"]), reverse=False)[:20]}
 
 
+COMPRESSIBLE = {"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "text/plain", "image/svg+xml"}
+_asset_cache: dict = {}
+_gz_cache: dict = {}
+
+
+def _asset(name: str):
+    """读 dashboard 下的静态文件；按修改时间缓存内容和哈希。"""
+    f = DASH / name
+    st = f.stat()
+    hit = _asset_cache.get(name)
+    if hit and hit[0] == st.st_mtime_ns:
+        return hit[1], hit[2]
+    data = f.read_bytes()
+    etag = '"' + hashlib.sha1(data).hexdigest() + '"'
+    _asset_cache[name] = (st.st_mtime_ns, data, etag)
+    return data, etag
+
+
+def _gzip_cached(body: bytes, etag):
+    import gzip
+    if etag:
+        hit = _gz_cache.get(etag)
+        if hit is None:
+            hit = _gz_cache[etag] = gzip.compress(body, 9, mtime=0)
+        return hit
+    return gzip.compress(body, 5, mtime=0)
+
+
 _bad_login: list = []
 _alive: dict = {}
 
@@ -359,21 +419,69 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # ---------- 工具
-    def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None):
+    def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None, cache: str = "no-store"):
+        extra = dict(extra or {})
+        etag = extra.pop("ETag", None)
+        if etag and code == 200 and self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache)
+            self.end_headers()
+            return
+        enc = None
+        if (len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", "")
+                and ctype.split(";")[0] in COMPRESSIBLE and "Content-Disposition" not in extra):
+            body, enc = _gzip_cached(body, etag), "gzip"
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
+        if enc:
+            self.send_header("Content-Encoding", enc)
+        self.send_header("Vary", "Accept-Encoding, Cookie")
+        if etag:
+            self.send_header("ETag", etag)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        if self._remote():     # 只有经 Cloudflare 隧道（HTTPS）来的请求才发 HSTS；本机是 http，不能发
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-                         "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
-        for k, v in (extra or {}).items():
+                         "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                         "form-action 'self'; object-src 'none'")
+        for k, v in extra.items():
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _static(self, name: str, ctype: str):
+        """静态文件：ETag 校验（304）+ gzip；带 ?v=内容哈希 的请求缓存一年（内容变了哈希就变）。
+        private：令牌后面的内容，不让 Cloudflare 等共享缓存存。"""
+        data, etag = _asset(name)
+        long = "v" in parse_qs(urlparse(self.path).query)
+        self._send(200, data, ctype, {"ETag": etag},
+                   cache="private, max-age=31536000, immutable" if long else "private, no-cache")
+
+    def _page(self, name: str):
+        """HTML：把 <script src>/<link href> 里的 ?v=… 换成文件内容哈希，HTML 本身每次向服务器确认（no-cache + ETag）。"""
+        raw = (DASH / name).read_bytes()
+        html = raw.decode("utf-8")
+
+        def fix(m):
+            f = m.group(2)
+            try:
+                return f'{m.group(1)}{f}?v={_asset(f.lstrip("/"))[1].strip(chr(34))[:10]}"'
+            except OSError:
+                return m.group(0)
+        html = re.sub(r'((?:src|href)=")(/[A-Za-z0-9_.-]+\.(?:js|css))(?:\?v=[^"]*)?"', fix, html)
+        data = html.encode("utf-8")
+        etag = '"' + hashlib.sha1(data).hexdigest() + '"'
+        self._send(200, data, "text/html; charset=utf-8", {"ETag": etag}, cache="private, no-cache")
 
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False, default=float).encode(), "application/json; charset=utf-8")
@@ -381,7 +489,10 @@ class Handler(BaseHTTPRequestHandler):
     def _authed(self) -> bool:
         c = SimpleCookie(self.headers.get("Cookie", ""))
         v = c.get(COOKIE)
-        return bool(v) and hmac.compare_digest(v.value, TOKEN)
+        authenticated = bool(v) and hmac.compare_digest(v.value, TOKEN)
+        if authenticated and c.get(MEMBER_COOKIE) and not self._remote():
+            self._member_user()   # 本机请求沿用现有会话校验，恢复通知所需的内存哈希集合。
+        return authenticated
 
     # ---------- 分享链接的访问记录（只记录 HTTP 请求本来就带的信息：时间、网络地址、国家、浏览器和系统）
     def _remote(self) -> bool:
@@ -429,7 +540,7 @@ class Handler(BaseHTTPRequestHandler):
             admin.audit("login", ok=False, error="令牌不对")
             return self._send(401, "令牌不对".encode(), "text/plain; charset=utf-8")
         if not self._admin_authed():
-            return self._send(401, "未授权：请在终端运行 bash scripts/open_admin.sh 打开后台".encode(),
+            return self._send(401, "未授权：请在终端运行 cd ~/Documents/Projects/quant-backtest && bash scripts/open_admin.sh 打开后台".encode(),
                               "text/plain; charset=utf-8")
         try:
             if u.path == "/admin":
@@ -527,11 +638,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._member_get(u, q)
         try:
             if u.path == "/":
-                self._send(200, (DASH / "index.html").read_bytes(), "text/html; charset=utf-8")
+                self._page("index.html")
             elif u.path == "/terminal.css":
-                self._send(200, (DASH / "terminal.css").read_bytes(), "text/css; charset=utf-8")
+                self._static("terminal.css", "text/css; charset=utf-8")
             elif u.path in ("/app.js", "/engines.js", "/i18n.js", "/analysis.js", "/skin.js"):
-                self._send(200, (DASH / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
+                self._static(u.path[1:], "text/javascript; charset=utf-8")
             elif u.path == "/api/meta":
                 self._json(meta())
             elif u.path == "/api/summary":
@@ -577,6 +688,55 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"eval": tracking.load_eval(m) or {"empty": True},
                             "replay": tracking.load_eval(m, replay=True) or {"empty": True},
                             "notifications": notify.recent(20)})
+            elif u.path == "/api/trade_list_mine":
+                if self._remote() or not admin.is_local_request(self.headers, ALLOWED_HOSTS):
+                    return self._json({"error": "我的相关仅限本机访问"}, 403)
+                try:
+                    self._json(trade_private.mine(q.get("strategy", "blend2"), q.get("date") or None, self._member_user()))
+                except trade_list.PublishError as e:
+                    self._json({"error": str(e)}, 400)
+            elif u.path == "/api/trade_list_tracking":
+                strategy = q.get("strategy", "blend2")
+                if strategy not in scan.STRATS:
+                    return self._json({"error": "未知单品种策略"}, 400)
+                self._json(tracking.evaluate_trade_list(strategy))
+            elif u.path == "/api/trade_list_export":
+                try:
+                    from src import trade_export
+                    pack = trade_list.load(q.get("market", "cn"), q.get("date") or None, q.get("strategy", "blend2"))
+                    if pack.get("empty"):
+                        return self._json({"error": pack.get("message", "尚无有效清单")}, 404)
+                    name = f"今日买卖_{pack['strategy']}_{pack['data_date']}.xlsx"
+                    from urllib.parse import quote
+                    self._send(200, trade_export.build_xlsx(pack),
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               {"Content-Disposition": f"attachment; filename=\"trade_{pack['strategy']}_{pack['data_date']}.xlsx\"; filename*=UTF-8''{quote(name)}"})
+                except trade_list.PublishError as e:
+                    self._json({"error": str(e)}, 400)
+            elif u.path == "/api/main_strategy":
+                f = Path(__file__).resolve().parent / "data" / "main_strategy.json"
+                try:
+                    info = json.loads(f.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    info = {}
+                self._json({"main": trade_list.main_strategy(), "reason": info.get("reason", "还没有足够的核对结果，沿用默认的组合策略 blend2。")})
+            elif u.path == "/api/ledger":
+                f = Path(__file__).resolve().parent / "data" / "daily" / "ledger" / "latest.json"
+                try:
+                    self._json(json.loads(f.read_text(encoding="utf-8")))
+                except Exception:
+                    self._json({"empty": True, "message": "信号核对账本还没有运行过，等收盘后的每日任务。"})
+            elif u.path == "/api/sim":
+                from src import simtrade
+                self._json(simtrade.snapshot())
+            elif u.path == "/api/trade_list_dates":
+                self._json(trade_list.dates())
+            elif u.path == "/api/trade_list":
+                try:
+                    self._json(trade_list.load(q.get("market", "cn"), q.get("date") or None,
+                                               q.get("strategy", "blend2")))
+                except trade_list.PublishError as e:
+                    self._json({"error": str(e)}, 400)
             elif u.path == "/api/scan":
                 self._json(scan_query(q))
             elif u.path == "/api/table":
@@ -707,14 +867,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _member_user(self):
         v = SimpleCookie(self.headers.get("Cookie", "")).get(MEMBER_COOKIE)
-        return members.user_for(v.value if v else None)
+        user = members.user_for(v.value if v else None)
+        # 只在内存记下已由本机请求验证的会话哈希；不保存 Cookie 或会员持仓。
+        if v and not self._remote() and admin.is_local_request(self.headers, ALLOWED_HOSTS):
+            digest = hashlib.sha256(v.value.encode()).hexdigest()
+            with _trade_session_lock:
+                if user:
+                    _trade_local_sessions.add(digest)
+                else:
+                    _trade_local_sessions.discard(digest)
+        return user
 
     def _member_get(self, u, q):
         try:
             if u.path == "/member":
-                return self._send(200, (DASH / "member.html").read_bytes(), "text/html; charset=utf-8")
+                return self._page("member.html")
             if u.path == "/member.js":
-                return self._send(200, (DASH / "member.js").read_bytes(), "text/javascript; charset=utf-8")
+                return self._static("member.js", "text/javascript; charset=utf-8")
             user = self._member_user()
             if u.path == "/api/member/me":
                 return self._json({"user": user})
@@ -1130,6 +1299,7 @@ def auto_reload(interval: float = 5.0):
 def main():
     srv = ThreadingHTTPServer((SERVER_HOST, SERVER_PORT), Handler)
     auto_reload()
+    trade_notifications.start_watcher(_local_trade_positions)
     jobs.on_server_start()      # 没跑完的全市场三引擎扫描自动继续
     # 自选股里还没下载过数据的（比如默认的 600531），启动时顺便下载
     for market in ENABLED:

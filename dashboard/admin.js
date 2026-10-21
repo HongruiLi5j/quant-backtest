@@ -67,7 +67,7 @@ async function api(path, opts = {}) {
   if (opts.body) { init.method = 'POST'; init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
   let r;
   try { r = await fetch(path, init); } catch (e) { throw new Error('连不上网页服务（可能正在重启，几秒后会自动重连）'); }
-  if (r.status === 401) { banner('登录已过期（会话 8 小时有效）。请在终端运行：bash scripts/open_admin.sh'); throw new Error('未登录或会话已过期'); }
+  if (r.status === 401) { banner('登录已过期（会话 8 小时有效）。请在终端运行：cd ~/Documents/Projects/quant-backtest && bash scripts/open_admin.sh'); throw new Error('未登录或会话已过期'); }
   let j = null;
   try { j = await r.json(); } catch (e) { /* 不是 JSON */ }
   if (!r.ok) throw new Error((j && j.error) || ('请求失败 ' + r.status));
@@ -241,7 +241,7 @@ function viewAccess(o, v, mem) {   // mem = { members, feed }
         h('tr', {}, h('td', {}, '主页面令牌'), h('td', { class: 'dim' }, '上次更换：' + dt(t.main_rotated)),
           h('td', { style: 'text-align:right' }, btn('更换', () => act('rotate_main_token', {}, { title: '更换主页面令牌？', body: '旧令牌和所有已登录的浏览器会立刻失效，正在开启的分享会被停止。之后需运行 bash scripts/open_dashboard.sh 重新打开。', ok: '更换' }), 'sm danger'))),
         h('tr', {}, h('td', {}, '后台令牌'), h('td', { class: 'dim' }, '上次更换：' + dt(t.admin_rotated)),
-          h('td', { style: 'text-align:right' }, btn('更换', () => act('rotate_admin_token', {}, { title: '更换后台令牌？', body: '当前后台会话会失效，需运行 bash scripts/open_admin.sh 重新登录。', ok: '更换' }), 'sm danger'))),
+          h('td', { style: 'text-align:right' }, btn('更换', () => act('rotate_admin_token', {}, { title: '更换后台令牌？', body: '当前后台会话会失效，需运行 cd ~/Documents/Projects/quant-backtest && bash scripts/open_admin.sh 重新登录。', ok: '更换' }), 'sm danger'))),
         h('tr', {}, h('td', {}, '近 10 分钟登录失败'), h('td', {}, t.failed_logins_10min ? pill(t.failed_logins_10min + ' 次', 'warn') : pill('0 次', 'ok')), h('td', {}))))));
 }
 

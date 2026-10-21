@@ -666,5 +666,5 @@ def _do(action: str, body: dict, ctx: dict, market, code: str) -> dict:
         return {"ok": True, **ctx["rotate_main_token"]()}
     if action == "rotate_admin_token":
         ctx["rotate_admin_token"]()
-        return {"ok": True, "note": "管理令牌已更换，当前会话已失效。请在终端运行 bash scripts/open_admin.sh 重新登录"}
+        return {"ok": True, "note": "管理令牌已更换，当前会话已失效。请在终端运行 cd ~/Documents/Projects/quant-backtest && bash scripts/open_admin.sh 重新登录"}
     raise AdminError("未知操作")

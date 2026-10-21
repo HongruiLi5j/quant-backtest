@@ -362,3 +362,16 @@ def leaderboard(market: str, uid: int | None = None, limit: int = 20) -> dict:
         if i <= limit or x["id"] == uid:
             out.append({"rank": i, "name": x["name"][0] + "***", "ret": x["ret"], "me": x["id"] == uid})
     return {"market": market, "total": len(lst), "rows": out}
+
+
+def position_codes_for_sessions(session_hashes, market="cn") -> set:
+    """通知只读已在本机验证过且仍有效的现有会话，不读取密码或新建持仓存储。"""
+    hashes = [value for value in set(session_hashes) if re.fullmatch(r"[0-9a-f]{64}", value)][:1000]
+    if not hashes:
+        return set()
+    placeholders = ",".join("?" for _ in hashes)
+    with _lock, _conn() as c:
+        rows = c.execute(f"SELECT DISTINCT p.code FROM positions p JOIN sessions s ON s.uid=p.uid "
+                         f"JOIN users u ON u.id=p.uid WHERE p.market=? AND s.exp>? AND u.disabled=0 "
+                         f"AND s.th IN ({placeholders})", [market, time.time(), *hashes])
+        return {row["code"] for row in rows}
