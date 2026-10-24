@@ -1,6 +1,265 @@
 "use strict";
 // English UI with a one-click Chinese fallback. Market names, company names, and security codes stay as source data.
 (() => {
+  // 翻译页使用稳定的键；中英文成对保存，避免自动替换不可信文本。
+  const aiTranslations = {
+    "ai.title": [
+        "AI 想法翻译(实验)",
+        "AI Idea Translator (experimental)"
+    ],
+    "ai.notice": [
+        "实验功能,结果需确认。模型可能理解错你的意思,请逐项核对后再确认。",
+        "Experimental feature — results must be confirmed. The model can misread your idea; check every field before confirming."
+    ],
+    "ai.badge.exp": [
+        "实验版本",
+        "Experimental version"
+    ],
+    "ai.input.ph": [
+        "用中文或英文描述一个回测想法,例如:60 日动量,每月调仓",
+        "Describe a backtest idea in Chinese or English, e.g. 60-day momentum, rebalance monthly"
+    ],
+    "ai.btn.translate": [
+        "翻译",
+        "Translate"
+    ],
+    "ai.busy": [
+        "正在翻译…(首次需加载模型,可能要几十秒)",
+        "Translating… (the first request loads the model and may take tens of seconds)"
+    ],
+    "ai.btn.confirm": [
+        "确认",
+        "Confirm"
+    ],
+    "ai.btn.cancel": [
+        "取消",
+        "Cancel"
+    ],
+    "ai.btn.wrong": [
+        "翻译错了",
+        "Translation is wrong"
+    ],
+    "ai.btn.copy": [
+        "复制配置 JSON",
+        "Copy config JSON"
+    ],
+    "ai.ack": [
+        "我已看到上面的不一致提示",
+        "I have seen the mismatch warnings above"
+    ],
+    "ai.confirmed.note": [
+        "已确认。本版不会自动运行回测。",
+        "Confirmed. This version does not run any backtest automatically."
+    ],
+    "ai.col.field": [
+        "字段",
+        "Field"
+    ],
+    "ai.col.value": [
+        "取值",
+        "Value"
+    ],
+    "ai.col.source": [
+        "来源",
+        "Source"
+    ],
+    "ai.src.idea": [
+        "你写的",
+        "From your idea"
+    ],
+    "ai.src.default": [
+        "默认值(你没提)",
+        "Default (not in your idea)"
+    ],
+    "ai.src.mismatch": [
+        "与你的想法不一致",
+        "Differs from your idea"
+    ],
+    "ai.src.unchecked": [
+        "无法自动核对",
+        "Could not be checked automatically"
+    ],
+    "ai.flag.mismatch": [
+        "你写的是「{idea}」,配置里是「{config}」",
+        "You wrote \"{idea}\", the config has \"{config}\""
+    ],
+    "ai.flag.block": [
+        "此项无法确认,请修改想法后重试",
+        "This cannot be confirmed; edit your idea and try again"
+    ],
+    "ai.note.limits": [
+        "自动核对只能发现一部分不一致,没有提示不代表配置一定正确。",
+        "The automatic check finds only some mismatches; no warning does not prove the config is right."
+    ],
+    "ai.off": [
+        "AI 翻译未开启。可在 data/ai_translator.json 中打开(仅本机)。",
+        "AI translation is off. It can be turned on in data/ai_translator.json (local machine only)."
+    ],
+    "ai.cfg.bad": [
+        "AI 翻译配置有误,已自动关闭,请检查 data/ai_translator.json。",
+        "The AI translator config is invalid and the feature was switched off; check data/ai_translator.json."
+    ],
+    "ai.err.TRANSLATOR_BUSY": [
+        "正在处理上一个请求,请稍后再试。",
+        "Another request is being processed; please try again shortly."
+    ],
+    "ai.err.TRANSLATOR_TIMEOUT": [
+        "翻译超时,本次请求已结束。",
+        "The translation timed out. This request has ended."
+    ],
+    "ai.err.TRANSLATOR_UNAVAILABLE": [
+        "翻译服务暂不可用。",
+        "The translator is temporarily unavailable."
+    ],
+    "ai.err.TRANSLATOR_DAILY_LIMIT": [
+        "今日次数已用完。",
+        "Today's limit has been reached."
+    ],
+    "ai.err.TRANSLATOR_BUDGET_EXCEEDED": [
+        "翻译预算或今日请求次数已到上限，暂不能发送请求。",
+        "The translation budget or daily request limit has been reached. No request can be sent."
+    ],
+    "ai.err.TRANSLATOR_BAD_OUTPUT": [
+        "模型输出格式不正确：需要单一配置、拒绝或追问 JSON；消息须为 1–200 字，不能有未知字段。",
+        "Invalid model output: expected one config, rejection or clarification JSON, no unknown fields, and a 1–200 character message."
+    ],
+    "ai.clarify.title": [
+        "请补充你的想法",
+        "Please add a little detail"
+    ],
+    "ai.example.equal_weight": [
+        "美股等权，其余使用默认值。",
+        "US equal-weight, using defaults elsewhere."
+    ],
+    "ai.example.momentum": [
+        "美股动量，回看 252 日，跳过 21 日，每日调仓，前后 10%。",
+        "US momentum, 252-day lookback, skip 21 days, rebalance daily, top/bottom 10%."
+    ],
+    "ai.refusal.fields": [
+        "请检查字段：{fields}",
+        "Check these fields: {fields}"
+    ],
+    "ai.refusal.SEALED_PERIOD": [
+        "评估结束日期不能晚于 2023-12-31;2024-01-01 起的数据为封存期,不能使用。",
+        "The evaluation end date cannot be after 2023-12-31; data from 2024-01-01 onward is sealed."
+    ],
+    "ai.refusal.OUT_OF_RANGE": [
+        "请求的参数超出本项目实际使用过的取值范围,无法生成配置。",
+        "A requested value is outside the ranges this project has actually used, so no config can be produced."
+    ],
+    "ai.refusal.EMBARGO_VIOLATION": [
+        "embargo 不得小于预测周期加 1 天(h+1),否则训练标签会泄漏。",
+        "The embargo must be at least h+1 days, otherwise training labels leak."
+    ],
+    "ai.refusal.UNSUPPORTED_REQUEST": [
+        "该请求不在本项目支持的策略与参数范围内,无法生成配置。",
+        "This request is outside the strategies and parameter combinations this project supports."
+    ],
+    "ai.refusal.MISSING_REQUIRED": [
+        "请求没有指明要测试的策略类型,请说明信号(如残差反转、动量、ML 模型)。",
+        "The request does not say which strategy to test; please name a signal (e.g. residual reversal, momentum, an ML model)."
+    ],
+    "ai.flag.conflict": [
+        "你的想法里对「{field}」写了不同的值,无法自动核对",
+        "Your idea gives different values for \"{field}\"; it cannot be checked automatically"
+    ],
+    "ai.flag.missing": [
+        "你提到了「{idea}」,但配置里没有「{field}」这一项",
+        "You mentioned \"{idea}\", but the config has no \"{field}\""
+    ],
+    "ai.input.label": [
+        "回测想法",
+        "Backtest idea"
+    ],
+    "ai.feedback.note": [
+        "备注(可选,最多 200 字)",
+        "Note (optional, up to 200 characters)"
+    ],
+    "ai.btn.feedback": [
+        "提交反馈",
+        "Send feedback"
+    ],
+    "ai.feedback.sent": [
+        "反馈已记录。",
+        "Feedback recorded."
+    ],
+    "ai.copy.ok": [
+        "配置 JSON 已复制。",
+        "Config JSON copied."
+    ],
+    "ai.copy.failed": [
+        "复制失败,请手动复制下方 JSON。",
+        "Copy failed; select and copy the JSON below."
+    ],
+    "ai.loading": [
+        "正在读取翻译状态…",
+        "Loading translator status…"
+    ],
+    "ai.saving": [
+        "正在提交…",
+        "Submitting…"
+    ],
+    "ai.note.coverage": [
+        "自动核对不覆盖中文数字、英文数字词、口语化或相对时间、语义替换、否定与假设、模糊或冲突意图、拼写及刻意绕过;也不判断策略是否合理,可能漏报或误报。默认值仅表示未在想法中识别到,不表示你一定没提。",
+        "Automatic checks do not cover number words, informal or relative dates, semantic substitutions, negation or hypotheticals, ambiguous or conflicting intent, spelling or deliberate evasion. They do not judge strategy quality and may miss issues or raise false alarms. Default means nothing was extracted, not necessarily that you never mentioned it."
+    ],
+    "ai.err.TRANSLATOR_RATE_LIMITED": [
+        "请求过于频繁,请稍后再试。",
+        "Too many requests; please try again later."
+    ],
+    "ai.err.TRANSLATOR_BACKEND_FAILED": [
+        "翻译后端处理失败,请稍后重试。",
+        "The translation backend failed; please try again later."
+    ],
+    "ai.err.TRANSLATOR_INPUT_INVALID": [
+        "请输入有效的回测想法或反馈。",
+        "Enter a valid backtest idea or feedback."
+    ],
+    "ai.err.TRANSLATOR_INPUT_TOO_LONG": [
+        "想法超过允许的字数,请缩短后重试。",
+        "The idea exceeds the input limit; shorten it and try again."
+    ],
+    "ai.err.TRANSLATOR_DISABLED": [
+        "AI 翻译已关闭。",
+        "AI translation has been switched off."
+    ],
+    "ai.err.TRANSLATOR_BAD_ORIGIN": [
+        "请求来源校验失败,请从本机仪表盘重试。",
+        "Request origin check failed; retry from the local dashboard."
+    ],
+    "ai.err.TRANSLATOR_NOT_CONFIRMABLE": [
+        "此结果无法确认,请修改想法后重试。",
+        "This result cannot be confirmed; edit the idea and try again."
+    ],
+    "ai.err.TRANSLATOR_ACK_REQUIRED": [
+        "请先勾选已看到不一致提示。",
+        "Acknowledge the mismatch warnings first."
+    ],
+    "ai.err.TRANSLATOR_ALREADY_CONFIRMED": [
+        "此结果已确认。",
+        "This result has already been confirmed."
+    ],
+    "ai.err.TRANSLATOR_REQUEST_EXPIRED": [
+        "结果已过期,请重新翻译。",
+        "This result has expired; translate again."
+    ],
+    "ai.err.HTTP_401": [
+        "登录已失效,请从本机重新打开仪表盘。",
+        "Your session has expired; reopen the local dashboard."
+    ],
+    "ai.err.HTTP_403": [
+        "请求未通过访问校验。",
+        "The request failed access checks."
+    ],
+    "ai.err.HTTP_404": [
+        "翻译页仅限本机访问,或服务尚不可用。",
+        "The translator requires local access, or the service is unavailable."
+    ],
+    "ai.err.HTTP_429": [
+        "请求过于频繁,请稍后再试。",
+        "Too many requests; please try again later."
+    ]
+};
   const dictionary = {
     "关闭": "Off",
     "技术指标": "Indicators",
@@ -1036,6 +1295,310 @@
   const renderedAttrs = new WeakMap();
   let language = "en";
   try { language = localStorage.getItem("dashboard-language-v2") || "en"; } catch {}
+  window.AI_I18N = {
+    get language() { return language === "en" ? "en" : "zh"; },
+    has(key) { return Object.hasOwn(aiTranslations, key); },
+    text(key, values = {}, lang = language) {
+      const pair = aiTranslations[key];
+      const template = pair ? pair[lang === "en" ? 1 : 0] : key;
+      return template.replace(/\{(idea|config|field)\}/g, (_, name) => String(values[name] ?? ""));
+    }
+  };
+  // 持仓页文案：键成对保存 [中文, 英文]，由 app.js 的 hText 取用；占位符 {name} 只做文本替换。
+  const holdingsTranslations = {
+    "hold.title": ["持仓", "Holdings"],
+    "hold.note": ["仅记录，不连接券商、不下单；数据只存在本机 data/holdings.db。", "Record-keeping only: no broker connection, no orders; data stays in data/holdings.db on this machine."],
+    "hold.loading": ["读取中…", "Loading…"],
+    "hold.retry": ["重试", "Retry"],
+    "hold.monitor": ["盯盘盈亏：尚未接入。", "Live-monitor P&L: not connected yet."],
+    "hold.sum.title": ["汇总", "Summary"],
+    "hold.sum.capital": ["总资金", "Total capital"],
+    "hold.sum.capital_unset": ["未设置", "Not set"],
+    "hold.sum.capital_hint": ["总资金 = 账户总资产（含现金），手动填写，不会自动调整，只用来算占比。", "Total capital = total account assets including cash. Entered by hand, never adjusted automatically; used only for weights."],
+    "hold.sum.edit": ["修改", "Edit"],
+    "hold.sum.save": ["保存", "Save"],
+    "hold.sum.cancel": ["取消", "Cancel"],
+    "hold.sum.capital_label": ["总资金（元）", "Total capital (CNY)"],
+    "hold.sum.market_value": ["持仓市值", "Market value"],
+    "hold.sum.invested": ["已投入占比", "Invested share"],
+    "hold.sum.floating": ["浮动盈亏", "Unrealized P&L"],
+    "hold.sum.realized": ["已实现盈亏", "Realized P&L"],
+    "hold.sum.dividends": ["现金分红", "Cash dividends"],
+    "hold.sum.missing": ["{n} 只持仓价格不可用，市值与占比未计入。", "{n} position(s) have no price; their value and weight are excluded."],
+    "hold.pos.title": ["当前持仓", "Current positions"],
+    "hold.pos.empty": ["还没有持仓。在下方录入第一笔成交。", "No positions yet. Record your first trade below."],
+    "hold.pos.code": ["代码", "Code"],
+    "hold.pos.name": ["名称", "Name"],
+    "hold.pos.shares": ["数量（股）", "Shares"],
+    "hold.pos.avg": ["平均成本", "Avg cost"],
+    "hold.pos.price": ["现价", "Price"],
+    "hold.pos.pnl": ["浮动盈亏", "Unrealized P&L"],
+    "hold.pos.weight": ["占总资金", "Weight"],
+    "hold.pos.first": ["首次买入日", "First bought"],
+    "hold.pos.days": ["持有天数", "Days held"],
+    "hold.pos.over": ["超 10%", "Over 10%"],
+    "hold.pos.noprice": ["价格不可用", "No price"],
+    "hold.pos.stale": ["价格偏旧", "Stale price"],
+    "hold.pos.foot": ["浮动盈亏未扣预估卖出费用；现价取自本地日线收盘价，不是实时价；占比超过 10% 标红（仅展示，不限制录入）。", "Unrealized P&L excludes estimated selling costs; prices are local daily closes, not real-time; weights above 10% are shown in red (display only, entries are not blocked)."],
+    "hold.form.title": ["录入成交", "Record a trade"],
+    "hold.form.date": ["日期（北京时间）", "Date (Beijing)"],
+    "hold.form.code": ["代码（6 位）", "Code (6 digits)"],
+    "hold.form.side": ["方向", "Side"],
+    "hold.form.qty": ["数量（股）", "Quantity (shares)"],
+    "hold.form.qty_div": ["登记日持股数", "Shares at record date"],
+    "hold.form.qty_bonus": ["送转新增股数", "New bonus shares"],
+    "hold.form.price": ["价格（元）", "Price (CNY)"],
+    "hold.form.price_div": ["每股税后现金（元）", "After-tax cash per share (CNY)"],
+    "hold.form.fee": ["费用（元，可留空）", "Fees (CNY, optional)"],
+    "hold.form.fee_hint": ["留空将按费率估算（估算值，建议填券商账单上的真实费用）。", "Leave blank to estimate from fee rates (an estimate; prefer the real fee on your broker statement)."],
+    "hold.form.note": ["备注", "Note"],
+    "hold.form.submit": ["提交", "Submit"],
+    "hold.form.name_unknown": ["未找到名称（仍可录入）", "Name not found (you can still record it)"],
+    "hold.form.incomplete": ["请填写 6 位代码、数量，以及（送转以外的）价格。", "Enter a 6-digit code, a quantity and (except for bonus shares) a price."],
+    "hold.form.confirm_title": ["请确认这笔成交", "Please confirm this entry"],
+    "hold.form.confirm_text": ["{side} {code} {name} {qty} 股 @{price} 元，费用 {fee}，日期 {date}", "{side} {code} {name} {qty} shares @ {price} CNY, fees {fee}, date {date}"],
+    "hold.form.confirm_text_bonus": ["{side} {code} {name} 新增 {qty} 股，日期 {date}", "{side} {code} {name} +{qty} shares, date {date}"],
+    "hold.form.fee_auto": ["按费率估算", "estimated from rates"],
+    "hold.form.fee_value": ["{fee} 元", "{fee} CNY"],
+    "hold.form.confirm_ok": ["确认入账", "Confirm entry"],
+    "hold.form.back": ["返回修改", "Back to edit"],
+    "hold.form.saving": ["提交中…", "Submitting…"],
+    "hold.form.saved": ["已入账。", "Entry recorded."],
+    "hold.form.dup": ["相同的提交已存在，没有重复入账。", "This submission already exists; it was not recorded twice."],
+    "hold.side.buy": ["买入", "Buy"],
+    "hold.side.sell": ["卖出", "Sell"],
+    "hold.side.bonus": ["送转", "Bonus shares"],
+    "hold.side.dividend": ["分红", "Dividend"],
+    "hold.hist.title": ["成交历史", "Trade history"],
+    "hold.hist.empty": ["暂无成交记录。", "No trades yet."],
+    "hold.hist.show_voided": ["显示已撤销", "Show voided"],
+    "hold.hist.date": ["日期", "Date"],
+    "hold.hist.side": ["方向", "Side"],
+    "hold.hist.stock": ["股票", "Stock"],
+    "hold.hist.qty": ["数量", "Qty"],
+    "hold.hist.price": ["价格", "Price"],
+    "hold.hist.fee": ["费用", "Fees"],
+    "hold.hist.note": ["备注", "Note"],
+    "hold.hist.est": ["估算", "est."],
+    "hold.hist.voided": ["已撤销", "Voided"],
+    "hold.hist.void": ["撤销", "Void"],
+    "hold.hist.void_ask": ["确认撤销这笔成交？撤销后持仓会按剩余记录整体重算。", "Void this trade? Positions will be recomputed from the remaining records."],
+    "hold.hist.void_ok": ["确认撤销", "Confirm void"],
+    "hold.hist.void_cancel": ["取消", "Cancel"],
+    "hold.hist.void_done": ["已撤销。", "Trade voided."],
+    "hold.closed.title": ["已清仓历史", "Closed positions"],
+    "hold.closed.empty": ["暂无已清仓记录。", "No closed positions."],
+    "hold.closed.last": ["最后卖出日", "Last sold"],
+    "hold.closed.pnl": ["盈亏", "P&L"],
+    "hold.capital_saved": ["总资金已保存。", "Total capital saved."],
+    "hold.err.AUTH": ["登录已失效：在终端运行 bash scripts/open_dashboard.sh 重新打开。", "Session expired: run bash scripts/open_dashboard.sh in a terminal to reopen."],
+    "hold.err.UNAVAILABLE": ["持仓功能不可用（仅个人模式、仅本机访问）。", "Holdings is unavailable (personal mode and this machine only)."],
+    "hold.err.NETWORK": ["网络错误，请稍后重试。", "Network error; please try again."],
+    "hold.err.generic": ["操作失败，请检查输入后重试。", "The operation failed; check your input and try again."],
+    "hold.err.HOLDINGS_FORBIDDEN": ["请求被拒绝。", "Request refused."],
+    "hold.err.HOLDINGS_BAD_JSON": ["请求格式不正确。", "Malformed request."],
+    "hold.err.HOLDINGS_UNKNOWN_FIELD": ["请求包含不支持的字段。", "The request contains an unsupported field."],
+    "hold.err.HOLDINGS_MISSING_FIELD": ["缺少必填字段。", "A required field is missing."],
+    "hold.err.HOLDINGS_BAD_CODE": ["代码无效：只支持沪深 A 股和沪深 ETF 的 6 位代码。", "Invalid code: only 6-digit Shanghai/Shenzhen stock and ETF codes are supported."],
+    "hold.err.HOLDINGS_BAD_SIDE": ["方向无效。", "Invalid side."],
+    "hold.err.HOLDINGS_BAD_DATE": ["日期无效。", "Invalid date."],
+    "hold.err.HOLDINGS_FUTURE_DATE": ["日期不能晚于北京时间今天。", "The date cannot be later than today in Beijing."],
+    "hold.err.HOLDINGS_BAD_QTY": ["数量无效：须为正整数。", "Invalid quantity: it must be a positive integer."],
+    "hold.err.HOLDINGS_BAD_LOT": ["买入数量不符合整手规则（普通 100 股整数倍；科创板至少 200 股）。", "The buy quantity breaks the lot rule (multiples of 100; at least 200 on STAR Market)."],
+    "hold.err.HOLDINGS_BAD_PRICE": ["价格无效。", "Invalid price."],
+    "hold.err.HOLDINGS_BAD_FEE": ["费用无效。", "Invalid fees."],
+    "hold.err.HOLDINGS_BAD_NOTE": ["备注无效（最多 200 字）。", "Invalid note (200 characters at most)."],
+    "hold.err.HOLDINGS_BAD_SIGNAL_REF": ["来源信号格式无效。", "Invalid signal reference."],
+    "hold.err.HOLDINGS_BAD_CLIENT_ID": ["提交标识无效，请刷新页面重试。", "Invalid submission id; reload the page and retry."],
+    "hold.err.HOLDINGS_BAD_CAPITAL": ["总资金无效：须大于 0，最多 2 位小数。", "Invalid total capital: it must be positive with at most 2 decimals."],
+    "hold.err.HOLDINGS_BAD_ID": ["记录编号无效。", "Invalid record id."],
+    "hold.err.HOLDINGS_OVERSELL": ["卖出数量超过当时的持股数。", "The sell quantity exceeds the shares held at that time."],
+    "hold.err.HOLDINGS_NO_POSITION": ["送转或分红需要对应的持股。", "A bonus or dividend entry needs a matching position."],
+    "hold.err.HOLDINGS_VOID_BREAKS_HISTORY": ["撤销这笔会让之后的记录不合法，请先撤销后面的卖出。", "Voiding this would invalidate later records; void the later sells first."],
+    "hold.err.HOLDINGS_ALREADY_VOIDED": ["这笔已经撤销过了。", "This trade is already voided."],
+    "hold.err.HOLDINGS_TRADE_NOT_FOUND": ["找不到这笔记录。", "Trade not found."],
+    "hold.err.HOLDINGS_CLIENT_ID_CONFLICT": ["提交标识冲突，请刷新页面重试。", "Submission id conflict; reload the page and retry."],
+    "hold.err.HOLDINGS_TOO_LARGE": ["请求体过大。", "Request too large."],
+    "hold.err.HOLDINGS_RATE_LIMITED": ["操作过于频繁，请稍后再试。", "Too many requests; please wait a moment."],
+    "hold.err.HOLDINGS_STORE_UNSAFE": ["持仓文件不安全（符号链接或非普通文件），已拒绝读写。", "The holdings file is unsafe (symlink or not a regular file); access refused."],
+    "hold.err.HOLDINGS_INTERNAL": ["服务内部错误。", "Internal error."]
+  };
+  window.HOLDINGS_I18N = {
+    has(key) { return Object.hasOwn(holdingsTranslations, key); },
+    keys() { return Object.keys(holdingsTranslations); },
+    text(key, values = {}, lang = language) {
+      const pair = holdingsTranslations[key];
+      const template = pair ? pair[lang === "en" ? 1 : 0] : key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+    }
+  };
+  // 盯盘页文案（T006 S3）：键成对 [中文, 英文]，由 app.js 的 mText 取用；占位符只做文本替换。
+  const monitorTranslations = {
+    "mon.title": ["实时盯盘", "Live Monitor"],
+    "mon.note": ["监控范围 = 我的持仓 + 自选 + 今日买卖信号前 N 只（上限 60 只）。价格来自腾讯公开接口，无许可、延迟与准确性未验证，仅限个人少量股票；只在 A 股连续竞价时段采集，收盘自动停止；默认关闭，重启后需手动开启。不构成投资建议。", "Scope = my holdings + watchlist + top N of today's signals (max 60). Prices come from an unlicensed public Tencent endpoint with unverified delay and accuracy; personal, small-scale use only. Polling runs during A-share continuous trading only and stops after the close; off by default and must be started manually after a restart. Not investment advice."],
+    "mon.ctl.title": ["运行状态", "Status"],
+    "mon.state.stopped": ["已停止", "Stopped"],
+    "mon.state.running": ["运行中", "Running"],
+    "mon.state.paused": ["已暂停", "Paused"],
+    "mon.phase.idle": ["空闲", "Idle"],
+    "mon.phase.waiting_session": ["等待开盘时段（北京时间 9:30–11:30、13:00–15:00）", "Waiting for trading hours (Beijing 9:30–11:30, 13:00–15:00)"],
+    "mon.phase.polling": ["采集中", "Polling"],
+    "mon.status.line": ["状态：{state} · {phase}", "State: {state} · {phase}"],
+    "mon.status.stats": ["已请求 {used} / 预算 {budget} 次 · 监控 {count} 只（上限 {max}） · 已完成 {rounds} 轮", "{used} / {budget} requests used · {count} stocks watched (max {max}) · {rounds} rounds done"],
+    "mon.status.truncated": ["名单超过上限，已截断（持仓优先，其次自选，最后信号）。", "The list exceeded the limit and was truncated (holdings first, then watchlist, then signals)."],
+    "mon.reason.line": ["暂停原因：{reason}", "Pause reason: {reason}"],
+    "mon.reason.budget_exhausted": ["本次启动的请求预算已用完，需手动重新启动", "The request budget for this run is used up; start again manually"],
+    "mon.reason.storage_error": ["存储异常", "Storage error"],
+    "mon.reason.service_error": ["服务内部异常", "Internal service error"],
+    "mon.reason.quality_error": ["连续三次数据质量异常", "Three consecutive data-quality failures"],
+    "mon.reason.timeout": ["连续三次请求超时", "Three consecutive request timeouts"],
+    "mon.reason.network_error": ["连续三次网络错误", "Three consecutive network errors"],
+    "mon.reason.worker_exit": ["连续三次采集进程异常退出", "Three consecutive worker exits"],
+    "mon.reason.http_status": ["连续三次上游返回非 200", "Three consecutive non-200 upstream responses"],
+    "mon.reason.redirect_refused": ["上游要求跳转，已拒绝", "Upstream redirect refused"],
+    "mon.reason.invalid_record": ["连续三次返回记录无效", "Three consecutive invalid records"],
+    "mon.reason.provider_error": ["连续三次采集失败", "Three consecutive fetch failures"],
+    "mon.btn.start": ["开始盯盘", "Start monitoring"],
+    "mon.btn.stop": ["停止盯盘", "Stop monitoring"],
+    "mon.cfg.title": ["配置", "Settings"],
+    "mon.cfg.interval": ["采样间隔（秒，逐只模式 30–3600，批量模式 10–3600）", "Sampling interval (seconds; 30–3600 single, 10–3600 batch)"],
+    "mon.cfg.top_n": ["信号前 N 只（0–名单上限）", "Top N signals (0 to the watch limit)"],
+    "mon.cfg.provider": ["数据源", "Data source"],
+    "mon.cfg.provider.tencent": ["tencent（腾讯逐只，兜底）", "tencent (Tencent, one by one; fallback)"],
+    "mon.cfg.provider.easy": ["easy（easyquotation 批量）", "easy (easyquotation, batch)"],
+    "mon.cfg.max_watch": ["名单上限 max_watch（1–5500）", "Watch limit max_watch (1–5500)"],
+    "mon.cfg.batch_mode": ["批量模式（与数据源联动）", "Batch mode (linked to data source)"],
+    "mon.cfg.hint_provider": ["建议先把名单上限设为 10 只试跑，确认稳定再放开；批量模式依赖本机已安装 easyquotation，未安装时会自动退回 tencent。出问题时把数据源改回 tencent 即可回滚。", "Start with a watch limit of 10 and raise it only once it is stable. Batch mode needs easyquotation installed locally and falls back to tencent otherwise. If anything goes wrong, set the data source back to tencent to roll back."],
+    "mon.cfg.save": ["保存配置", "Save settings"],
+    "mon.cfg.hint": ["每只股票最短 60 秒才会再请求一次、相邻请求至少隔 10 秒，不受此处间隔影响；修改在下一轮生效。", "Each stock is requested at most once per 60 s and requests are at least 10 s apart regardless of this interval; changes apply from the next round."],
+    "mon.cfg.err_easy": ["切换到 easy 失败：最常见的原因是本机没有安装 easyquotation（也可能是其他参数不合法）。数据源保持不变。", "Switching to easy failed: most often easyquotation is not installed on this machine (or another value is invalid). The data source is unchanged."],
+    "mon.status.degraded": ["批量模式连续失败，已自动降级为 tencent 逐只模式。要回滚请选 tencent 并保存；要重试 easy 请先停止再重新开始。", "Batch mode failed repeatedly and fell back to tencent one-by-one mode. To roll back, choose tencent and save; to retry easy, stop and start again."],
+    "mon.status.easy_missing": ["已请求批量模式，但本机没有安装 easyquotation，当前实际在用 tencent。", "Batch mode was requested but easyquotation is not installed, so tencent is in use."],
+    "mon.cfg.saved": ["配置已保存。", "Settings saved."],
+    "mon.q.title": ["监控股票", "Watched stocks"],
+    "mon.q.empty": ["暂无监控股票（持仓、自选和信号名单都为空，或尚未开始）。", "No watched stocks (holdings, watchlist and signal lists are empty, or monitoring has not started)."],
+    "mon.q.time_note": ["时间均为北京时间；价格是盘中采样价，不是收盘价，也不会用来重算策略信号。", "All times are Beijing time. Prices are intraday samples, not closing prices, and are never used to recompute strategy signals."],
+    "mon.col.code": ["代码", "Code"],
+    "mon.col.name": ["名称", "Name"],
+    "mon.col.price": ["现价", "Price"],
+    "mon.col.pct": ["涨跌", "Change"],
+    "mon.col.time": ["采集时间", "Collected at"],
+    "mon.col.alert": ["告警状态", "Alert"],
+    "mon.col.source": ["来源", "Source"],
+    "mon.col.quality": ["数据质量", "Quality"],
+    "mon.src.holding": ["持仓", "Holding"],
+    "mon.src.watchlist": ["自选", "Watchlist"],
+    "mon.src.signal": ["信号", "Signal"],
+    "mon.quality.valid": ["正常", "OK"],
+    "mon.quality.stale": ["数据过旧", "Stale"],
+    "mon.quality.invalid": ["数据异常", "Invalid"],
+    "mon.quality.off_session": ["非交易时段", "Off session"],
+    "mon.quality.pending": ["等待采集", "Pending"],
+    "mon.alert.none": ["无目标价", "No target"],
+    "mon.alert.armed": ["已布防", "Armed"],
+    "mon.alert.triggered": ["已触发", "Triggered"],
+    "mon.a.title": ["告警历史", "Alert history"],
+    "mon.a.empty": ["暂无告警。", "No alerts."],
+    "mon.a.col.time": ["触发时间", "Triggered at"],
+    "mon.a.col.code": ["代码", "Code"],
+    "mon.a.col.dir": ["方向", "Direction"],
+    "mon.a.col.threshold": ["目标价", "Target"],
+    "mon.a.col.price": ["前价 → 现价", "Previous → current"],
+    "mon.dir.down": ["跌破买入目标价", "Fell through buy target"],
+    "mon.dir.up": ["突破卖出目标价", "Rose through sell target"],
+    "mon.ia.title": ["实时分析", "Live analysis"],
+    "mon.ia.note": ["约每分钟更新一次；盘中价格不是收盘价，以下全部仅参考，不构成投资建议。", "Updated about once a minute; intraday prices are not closing prices. Everything below is for reference only, not investment advice."],
+    "mon.ia.exec.title": ["执行提醒", "Execution hints"],
+    "mon.ia.exec.empty": ["暂无执行提醒。", "No execution hints."],
+    "mon.ia.track.title": ["信号追踪", "Signal tracking"],
+    "mon.ia.track.empty": ["今日清单暂无可追踪的信号（或尚无报价）。", "No trackable signals in today's list yet (or no quotes)."],
+    "mon.ia.opp.title": ["新机会", "New opportunities"],
+    "mon.ia.opp.empty": ["暂无新信号。", "No new signals."],
+    "mon.ia.summary": ["实时正确率：{total} 条买入信号，赢 {winners}、亏 {losers}，平均 {mean}%，中位数 {median}%（赢 = 现价高于开盘价；样本很小，仅供观察）", "Live hit rate: {total} buy signals, {winners} winners, {losers} losers, mean {mean}%, median {median}% (winner = price above the open; tiny sample, observation only)"],
+    "mon.ia.summary_empty": ["实时正确率：暂无买入信号可统计。", "Live hit rate: no buy signals to count yet."],
+    "mon.ia.write_error": ["追踪记录写入失败（不影响盯盘）。", "Writing the tracking log failed (monitoring is unaffected)."],
+    "mon.ia.col.code": ["代码", "Code"],
+    "mon.ia.col.action": ["动作", "Action"],
+    "mon.ia.col.open": ["开盘价", "Open"],
+    "mon.ia.col.price": ["现价", "Price"],
+    "mon.ia.col.chg": ["相对开盘%", "vs open %"],
+    "mon.ia.col.cum": ["累计收益%", "Return %"],
+    "mon.ia.col.up": ["距涨停%", "To limit-up %"],
+    "mon.ia.col.down": ["距跌停%", "To limit-down %"],
+    "mon.ia.act.buy": ["买入", "Buy"],
+    "mon.ia.act.sell": ["卖出", "Sell"],
+    "mon.ia.act.add": ["加仓", "Add"],
+    "mon.ia.act.trim": ["减仓", "Trim"],
+    "mon.ev.buy_window": ["{code} 买入窗口打开（开盘后 {minutes} 分钟内）", "{code} buy window open (first {minutes} minutes after the open)"],
+    "mon.ev.limit_up_no_buy": ["{code} 涨停不可买，追不进", "{code} is limit-up: cannot buy, do not chase"],
+    "mon.ev.limit_down_no_sell": ["{code} 跌停不可卖", "{code} is limit-down: cannot sell"],
+    "mon.ev.holding_drop": ["{code} 持仓异常波动，当日跌 {pct}%，考虑止损", "{code} holding fell {pct}% today; consider a stop-loss"],
+    "mon.ev.watch": ["{code} 关注：{triggers}", "{code} on watch: {triggers}"],
+    "mon.ev.consider_sell": ["{code} 持仓出现负向信号：{triggers}，考虑卖出", "{code} holding shows a negative signal: {triggers}; consider selling"],
+    "mon.ev.trig.momentum": ["动量", "momentum"],
+    "mon.ev.trig.volume": ["放量", "volume surge"],
+    "mon.ev.trig.breakout": ["突破", "breakout"],
+    "mon.ev.since_trigger": ["自触发 {ret}", "since trigger {ret}"],
+    "mon.ev.note": ["仅参考，未经分钟级回测", "reference only, not minute-level backtested"],
+    "mon.loading": ["加载中…", "Loading…"],
+    "mon.err.generic": ["操作失败，请稍后重试。", "The operation failed; please try again."],
+    "mon.err.FORBIDDEN": ["请求被拒绝（仅个人模式、仅本机、需登录）。", "Request refused (personal mode, this machine and login only)."],
+    "mon.err.AUTH": ["未登录，请从终端脚本重新打开网页。", "Not signed in; reopen the page from the terminal script."],
+    "mon.err.UNAVAILABLE": ["盯盘功能不可用（仅个人模式）。", "Monitoring is unavailable (personal mode only)."],
+    "mon.err.NETWORK": ["网络错误，请稍后重试。", "Network error; please try again."],
+    "mon.err.INVALID_INPUT": ["输入无效：请检查间隔（逐只 30–3600、批量 10–3600）、前 N 只（0–名单上限）、名单上限（1–5500）和数据源（tencent/easy）。", "Invalid input: check interval (30–3600 single, 10–3600 batch), top N (0 to the watch limit), watch limit (1–5500) and data source (tencent/easy)."],
+    "mon.err.RATE_LIMITED": ["操作过于频繁，请稍后再试。", "Too many requests; please wait a moment."],
+    "mon.err.MONITOR_INTERNAL": ["服务内部错误。", "Internal error."],
+    "usmon.title": ["美股盯盘", "US Live Monitor"],
+    "usmon.note": ["监控范围 = 美股自选（上限 30 只；美股持仓与买卖信号第一版为空）。价格来自 Yahoo 的非官方公开接口（yfinance），无行情许可，延迟与准确性未验证，仅限个人少量自用；每只约 5 分钟更新一次；只在美东常规时段（周一至周五 09:30–16:00，夏令时对应北京 21:30–04:00，冬令时 22:30–05:00）采集，收盘自动停止；默认关闭，重启后需手动开启。休市日没有日历，靠行情过旧判断。不构成投资建议。", "Scope = US watchlist (max 30; US holdings and signals are empty in this first version). Prices come from Yahoo's unofficial public endpoint via yfinance, with no market-data license and unverified delay and accuracy; personal, small-scale use only; each stock refreshes about every 5 minutes. Polling runs during the US regular session only (Mon-Fri 09:30-16:00 Eastern, i.e. 21:30-04:00 Beijing in summer time and 22:30-05:00 in winter time) and stops after the close; off by default and must be started manually after a restart. There is no holiday calendar; stale quotes are the only holiday signal. Not investment advice."],
+    "usmon.ia.note": ["约每个采集轮次更新一次；盘中价格不是收盘价，以下全部仅参考，不构成投资建议。美股没有涨跌停，也没有 T+1 限制。", "Updated once per polling round; intraday prices are not closing prices. Everything below is for reference only, not investment advice. US stocks have no daily price limits and no T+1 rule."],
+    "usmon.ia.exec.empty": ["暂无执行提醒（美股暂无信号来源；持仓为空时不会出现持仓异常波动）。", "No execution hints (no US signal source yet; holding-drop hints need holdings)."],
+    "usmon.ia.opp.empty": ["暂无新信号。", "No new signals."],
+    "usmon.ia.track.empty": ["暂无美股信号可追踪。", "No US signals to track yet."],
+    "usmon.ia.col.high": ["距当日高点%", "To day high %"],
+    "usmon.ia.col.low": ["距当日低点%", "To day low %"],
+    "usmon.ev.display_only": ["流动性不足（价格过低或成交额偏小），仅展示", "low liquidity (low price or small turnover), display only"],
+    "usmon.cfg.interval": ["采样轮次间隔（秒，60–3600）", "Round interval (seconds, 60–3600)"],
+    "usmon.cfg.top_n": ["信号前 N 只（0–30）", "Top N signals (0–30)"],
+    "usmon.cfg.hint": ["每只股票最短 300 秒才会再请求一次、相邻请求至少隔 10 秒，不受此处间隔影响；连续失败会自动拉长等待，限流后冷却 10 分钟；修改在下一轮生效。", "Each stock is requested at most once per 300 s and requests are at least 10 s apart regardless of this interval; consecutive failures lengthen the wait automatically and rate limiting triggers a 10-minute cooldown; changes apply from the next round."],
+    "usmon.q.time_note": ["时间均为美东时间（夏令时自动切换）；价格是盘中采样价，不是收盘价，也不会用来重算策略信号。", "All times are US Eastern time (daylight saving handled automatically). Prices are intraday samples, not closing prices, and are never used to recompute strategy signals."],
+    "usmon.q.empty": ["暂无监控股票：美股自选里没有有效代码（持仓与信号第一版为空），或尚未开始。这是正常状态，不是故障。", "No watched stocks: the US watchlist has no valid symbols (holdings and signals are empty in this version), or monitoring has not started. This is normal, not a fault."],
+    "usmon.phase.idle": ["空闲", "Idle"],
+    "usmon.phase.waiting_session": ["等待开盘时段（美东 09:30–16:00，周一至周五）", "Waiting for trading hours (US Eastern 09:30–16:00, Mon–Fri)"],
+    "usmon.phase.polling": ["采集中", "Polling"],
+    "usmon.phase.cooling_down": ["冷却等待中（失败或限流后暂缓请求）", "Cooling down (requests deferred after a failure or rate limit)"],
+    "usmon.reason.budget_exhausted": ["本次启动的请求预算已用完，需手动重新启动", "The request budget for this run is used up; start again manually"],
+    "usmon.reason.storage_error": ["存储异常", "Storage error"],
+    "usmon.reason.service_error": ["服务内部异常", "Internal service error"],
+    "usmon.reason.quality_error": ["连续三次数据质量异常（可能是休市日或行情过旧）", "Three consecutive data-quality failures (possibly a market holiday or stale quotes)"],
+    "usmon.reason.timeout": ["连续三次请求超时", "Three consecutive request timeouts"],
+    "usmon.reason.rate_limited": ["上游限流（429），已暂停以免加重限流", "Upstream rate limit (429); paused to avoid making it worse"],
+    "usmon.reason.network": ["连续三次网络错误", "Three consecutive network errors"],
+    "usmon.reason.worker_exit": ["连续三次采集进程异常退出", "Three consecutive worker exits"],
+    "usmon.reason.empty": ["连续三次返回空数据", "Three consecutive empty responses"],
+    "usmon.reason.symbol_missing": ["连续三次上游判定代码无数据", "Three consecutive no-data answers for the symbol"],
+    "usmon.reason.bad_response": ["连续三次返回格式异常", "Three consecutive malformed responses"],
+    "usmon.reason.invalid_record": ["连续三次返回记录无效", "Three consecutive invalid records"],
+    "usmon.reason.provider_error": ["连续三次采集失败", "Three consecutive fetch failures"],
+    "usmon.reason.yfinance_not_installed": ["未安装 yfinance，无法采集（pip install yfinance 后重新开始）", "yfinance is not installed; cannot poll (install it and start again)"],
+    "usmon.quality.valid": ["正常", "OK"],
+    "usmon.quality.stale": ["数据过旧", "Stale"],
+    "usmon.quality.invalid": ["数据异常", "Invalid"],
+    "usmon.quality.off_session": ["非交易时段", "Off session"],
+    "usmon.quality.after_hours": ["盘前/盘后数据", "Pre/after-hours data"],
+    "usmon.quality.pending": ["等待采集", "Pending"],
+    "usmon.err.INVALID_INPUT": ["输入无效：间隔 60–3600 的整数，前 N 只 0–30 的整数。", "Invalid input: interval must be an integer 60–3600 and top N an integer 0–30."]
+  };
+  window.MONITOR_I18N = {
+    has(key) { return Object.hasOwn(monitorTranslations, key); },
+    keys() { return Object.keys(monitorTranslations); },
+    text(key, values = {}, lang = language) {
+      const pair = monitorTranslations[key];
+      const template = pair ? pair[lang === "en" ? 1 : 0] : key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+    }
+  };
+  const personalNavLabels = { "今日": "Today", "信号": "Signals", "全市场": "Market", "自选": "Watchlist", "回测": "Backtest", "持仓": "Holdings", "盯盘": "Monitor", "美股盯盘": "US Monitor" };
   const sourceTitle = document.title;
 
   function translate(value) {
@@ -1052,16 +1615,16 @@
     if (root.nodeType === Node.TEXT_NODE) nodes.push(root);
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const node of nodes) {
-      if (node.parentElement?.closest("script, style, .editor")) continue;
+      if (node.parentElement?.closest("script, style, .editor, .ai-translator, .ai-translator-nav, .personal-copy")) continue;
       if (!originals.has(node) || (renderedText.has(node) && node.nodeValue !== renderedText.get(node))) originals.set(node, node.nodeValue);
       const source = originals.get(node);
-      const rendered = language === "en" ? translate(source) : source;
+      const rendered = language === "en" ? (node.parentElement?.closest(".personal-nav") ? (personalNavLabels[source] || translate(source)) : translate(source)) : source;
       if (node.nodeValue !== rendered) node.nodeValue = rendered;
       renderedText.set(node, rendered);
     }
     const elements = root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll("*")] : root.querySelectorAll?.("*") || [];
     for (const el of elements) {
-      if (el.closest(".editor")) continue;
+      if (el.closest(".editor, .ai-translator, .ai-translator-nav, .personal-copy")) continue;
       for (const attr of ["placeholder", "title", "aria-label", "alt"]) {
         if (el.id === "languageToggle") continue;
         if (!el.hasAttribute(attr)) continue;
@@ -1069,7 +1632,7 @@
         if (!saved) { saved = {}; originalAttrs.set(el, saved); }
         const current = el.getAttribute(attr);
         if (!(attr in saved) || (renderedAttrs.get(el)?.[attr] !== undefined && current !== renderedAttrs.get(el)[attr])) saved[attr] = current;
-        const rendered = language === "en" ? translate(saved[attr]) : saved[attr];
+        const rendered = language === "en" ? (el.classList.contains("personal-nav") ? (personalNavLabels[saved[attr]] || translate(saved[attr])) : translate(saved[attr])) : saved[attr];
         if (current !== rendered) el.setAttribute(attr, rendered);
         const renderedForEl = renderedAttrs.get(el) || {};
         renderedForEl[attr] = rendered;
@@ -1085,6 +1648,7 @@
     visit(document.body);
     const button = document.getElementById("languageToggle");
     if (button) button.setAttribute("aria-label", next === "en" ? "Switch language / 切换语言" : "切换语言 / Switch language");
+    window.dispatchEvent(new Event("dashboard-language-change"));
   }
 
   setLanguage(language);

@@ -18,3 +18,10 @@ CLAUDE.md
 项目交接.md
 handoff/
 AGENTS.md
+
+CLAUDE.local.md
+
+# 通宵脚本产出 (不进接力器机械检查范围)
+reports/overnight_*/
+
+dashboard/mockups/

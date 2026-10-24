@@ -37,6 +37,7 @@ import pandas as pd
 from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
 from src import admin, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
+from src import personal_mode
 import tunnel
 
 ROOT = Path(__file__).resolve().parent
@@ -74,6 +75,29 @@ def _local_trade_positions():
 _price_cache: dict = {}
 _lock = threading.Lock()
 _offline_lock = threading.Lock()
+_monitor_lock = threading.Lock()
+_monitor_sched = None
+_us_monitor_sched = None
+
+
+def us_market_monitor_scheduler():
+    """美股盯盘调度器：第一次被个人模式请求时才构造；构造不启动线程，只有 /start 才启动。"""
+    global _us_monitor_sched
+    with _monitor_lock:
+        if _us_monitor_sched is None:
+            from src.us_market_monitor.scheduler import USMonitorScheduler
+            _us_monitor_sched = USMonitorScheduler()
+        return _us_monitor_sched
+
+
+def market_monitor_scheduler():
+    """实时盯盘调度器：第一次被个人模式请求时才构造；构造不启动线程，只有 /start 才启动。"""
+    global _monitor_sched
+    with _monitor_lock:
+        if _monitor_sched is None:
+            from src.market_monitor.scheduler import MonitorScheduler
+            _monitor_sched = MonitorScheduler()
+        return _monitor_sched
 
 
 def prices_for(market: str) -> dict:
@@ -471,6 +495,8 @@ class Handler(BaseHTTPRequestHandler):
         """HTML：把 <script src>/<link href> 里的 ?v=… 换成文件内容哈希，HTML 本身每次向服务器确认（no-cache + ETag）。"""
         raw = (DASH / name).read_bytes()
         html = raw.decode("utf-8")
+        if getattr(self, "_personal_mode", False) and name == "index.html":
+            html = re.sub(r'<script\b[^>]*\bsrc="/(?:ai_translator|engines)\.js(?:\?[^"\s]*)?"[^>]*>\s*</script>', "", html)
 
         def fix(m):
             f = m.group(2)
@@ -602,14 +628,196 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
+    def _ai(self, method, u):
+        if not admin.is_local_request(self.headers, ALLOWED_HOSTS):
+            admin.audit_blocked(u.path)
+            return self._send(404, b"not found", "text/plain")
+        from src.ai_translator import api, httpgate
+
+        authenticated = self._authed()
+        requested_with = authenticated and (method != "POST" or self.headers.get("X-Requested-With") == "dashboard")
+        origin_ok = requested_with and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS))
+        rate_limited = origin_ok and members.hit("ai_translate", "local", 10, 60)
+        rejected = httpgate.check_access(method, is_local=True, authenticated=authenticated,
+                                         requested_with=requested_with, origin_ok=origin_ok, rate_limited=rate_limited)
+        if rejected:
+            code, obj = rejected
+            return self._send(code, obj, "text/plain") if isinstance(obj, bytes) else self._json(obj, code)
+        body = b""
+        if method == "POST":
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 <= n <= 64 * 1024:
+                    raise ValueError()
+                body = self.rfile.read(n)
+            except (ValueError, OSError):
+                self.close_connection = True
+                return self._json({"error": "TRANSLATOR_INPUT_INVALID", "message": "TRANSLATOR_INPUT_INVALID"}, 400)
+        code, obj = api.handle(method, u.path, body, is_local=True, authenticated=True,
+                               requested_with=requested_with, origin_ok=origin_ok)
+        return self._json(obj, code)
+
+    # ---------- 持仓台账(T013):仅个人模式、仅可信本机;鉴权与校验都在 src/holdings/api.py,这里只接线
+    def _holdings_price(self, code):
+        """只读本地日线缓存的最近收盘价(去掉盘中半根 K 线);取不到返回 None,不联网。"""
+        try:
+            cfg = MARKETS["cn"]
+            df = datasource.drop_incomplete_bar(datasource.load_cached("cn", code), cfg["tz"], cfg["close_ready"])
+            if df.empty:
+                return None
+            return float(df["Close"].iloc[-1]), df.index[-1].strftime("%Y-%m-%d")
+        except Exception:   # 缓存损坏/缺列都当作取不到现价,不让整个持仓页失败
+            return None
+
+    def _holdings(self, method, u):
+        """所有失败只返回固定码/固定文本,不回显异常文本;持仓内容不写日志、不进审计。"""
+        try:
+            from src.holdings import api as hapi
+            from src import simtrade
+            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            header = self.headers.get("X-Requested-With") == "dashboard"
+            ctx = hapi.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
+                           origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)),
+                           last_price_fn=self._holdings_price,
+                           name_fn=lambda c: datasource.stock_name(c),
+                           fee_fn=lambda c, side, amount: simtrade.fees(c, side, amount)["total"])
+            passed = hapi._gate(ctx, method == "POST") is None
+            if passed and members.hit("holdings", "local", 60, 60):
+                code, obj = hapi._err("HOLDINGS_RATE_LIMITED")
+            elif method == "GET":
+                code, obj = hapi.handle_get(ctx, {k: v[0] for k, v in parse_qs(u.query).items()})
+            else:
+                handler = {"/api/holdings/add": hapi.handle_add, "/api/holdings/void": hapi.handle_void,
+                           "/api/holdings/capital": hapi.handle_capital}[u.path]
+                body = b""
+                if passed:   # 鉴权通过才读请求体
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if not 0 <= n <= hapi.MAX_BODY_BYTES:
+                        self.close_connection = True
+                        code, obj = hapi._err("HOLDINGS_TOO_LARGE")
+                        return self._json(obj, code)
+                    body = self.rfile.read(n)
+                code, obj = handler(ctx, body)
+        except Exception:
+            code, obj = 500, {"error": "HOLDINGS_INTERNAL", "message": "内部错误"}
+        if isinstance(obj, str):
+            return self._send(code, obj.encode(), "text/plain")
+        return self._json(obj, code)
+
+    # ---------- 实时盯盘(T006 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/market_monitor/wiring.py,这里只接线
+    MONITOR_ROUTES = {("GET", "/api/market_monitor/status"): "handle_status",
+                      ("GET", "/api/market_monitor/quotes"): "handle_quotes",
+                      ("GET", "/api/market_monitor/alerts"): "handle_alerts",
+                      ("POST", "/api/market_monitor/start"): "handle_start",
+                      ("POST", "/api/market_monitor/stop"): "handle_stop",
+                      ("POST", "/api/market_monitor/config"): "handle_config"}
+
+    def _market_monitor(self, method, u):
+        """个人模式关闭时由调用方直接 404;这里的任何失败只返回固定码,不回显异常、不记录报价。"""
+        name = self.MONITOR_ROUTES.get((method, u.path))
+        if name is None:
+            return self._send(404, b"not found", "text/plain")
+        try:
+            from src.market_monitor import wiring
+            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            header = self.headers.get("X-Requested-With") == "dashboard"
+            ctx = wiring.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
+                             origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)))
+            handler = getattr(wiring, name)
+            passed = wiring._gate(ctx, method == "POST") is None
+            if passed and members.hit("market_monitor", "local", 120, 60):
+                code, obj = 429, {"error": "RATE_LIMITED"}
+            elif name == "handle_config":
+                body = b""
+                if passed:   # 鉴权通过才读请求体
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if not 0 <= n <= wiring.MAX_BODY_BYTES:
+                        self.close_connection = True
+                        return self._json(dict(wiring.INVALID[1]), 400)
+                    body = self.rfile.read(n)
+                code, obj = handler(ctx, market_monitor_scheduler(), body)
+            else:
+                code, obj = handler(ctx, market_monitor_scheduler()) if passed else wiring.FORBIDDEN
+        except Exception:
+            code, obj = 500, {"error": "MONITOR_INTERNAL"}
+        return self._json(obj, code)
+
+    # ---------- 美股盯盘(T015 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/us_market_monitor/wiring.py,这里只接线
+    US_MONITOR_ROUTES = {("GET", "/api/us_market_monitor/status"): "handle_status",
+                         ("GET", "/api/us_market_monitor/quotes"): "handle_quotes",
+                         ("GET", "/api/us_market_monitor/alerts"): "handle_alerts",
+                         ("POST", "/api/us_market_monitor/start"): "handle_start",
+                         ("POST", "/api/us_market_monitor/stop"): "handle_stop",
+                         ("POST", "/api/us_market_monitor/config"): "handle_config"}
+
+    def _us_market_monitor(self, method, u):
+        """个人模式关闭时由调用方直接 404;这里的任何失败只返回固定码,不回显异常、不记录报价。"""
+        name = self.US_MONITOR_ROUTES.get((method, u.path))
+        if name is None:
+            return self._send(404, b"not found", "text/plain")
+        try:
+            from src.us_market_monitor import wiring
+            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            header = self.headers.get("X-Requested-With") == "dashboard"
+            ctx = wiring.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
+                             origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)))
+            handler = getattr(wiring, name)
+            passed = wiring._gate(ctx, method == "POST") is None
+            if passed and members.hit("us_market_monitor", "local", 120, 60):
+                code, obj = 429, {"error": "RATE_LIMITED"}
+            elif name == "handle_config":
+                body = b""
+                if passed:   # 鉴权通过才读请求体
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if not 0 <= n <= wiring.MAX_BODY_BYTES:
+                        self.close_connection = True
+                        return self._json(dict(wiring.INVALID[1]), 400)
+                    body = self.rfile.read(n)
+                code, obj = handler(ctx, us_market_monitor_scheduler(), body)
+            else:
+                code, obj = handler(ctx, us_market_monitor_scheduler()) if passed else wiring.FORBIDDEN
+        except Exception:
+            code, obj = 500, {"error": "MONITOR_INTERNAL"}
+        return self._json(obj, code)
+
     # ---------- 路由
+    def _personal_blocked(self) -> bool:
+        """在早分派及请求体读取前隐藏；关闭时不改变既有分派。"""
+        self._personal_mode = personal_mode.is_enabled()
+        if not self._personal_mode:
+            return False
+        path = urlparse(self.path).path
+        readonly_member = (self.command == "GET" and
+                           path in ("/api/member/me", "/api/member/portfolio") and
+                           not self._external())
+        if not readonly_member and any(
+                path == route or (route.endswith("/") and path.startswith(route))
+                for route in personal_mode.hidden_routes()):
+            self._send(404, b"not found", "text/plain")
+            return True
+        return False
+
     def do_GET(self):
         if not self._guard():
+            return
+        if self._personal_blocked():
             return
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if u.path in ("/admin", "/admin.js") or u.path.startswith("/api/admin/"):
             return self._admin_get(u, q)
+        if u.path.startswith("/api/ai/"):
+            return self._ai("GET", u)
+        if getattr(self, "_personal_mode", False) and u.path == "/api/holdings":   # 持仓台账:关闭个人模式时不分派
+            return self._holdings("GET", u)
+        if u.path.startswith("/api/market_monitor/"):   # 盯盘:个人模式关闭时 404,不启动任何线程
+            if not getattr(self, "_personal_mode", False):
+                return self._send(404, b"not found", "text/plain")
+            return self._market_monitor("GET", u)
+        if u.path.startswith("/api/us_market_monitor/"):   # 美股盯盘:同上
+            if not getattr(self, "_personal_mode", False):
+                return self._send(404, b"not found", "text/plain")
+            return self._us_market_monitor("GET", u)
         if self._share_gate(u):
             return
         if self._remote():              # 通过分享链接来的访客
@@ -641,10 +849,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._page("index.html")
             elif u.path == "/terminal.css":
                 self._static("terminal.css", "text/css; charset=utf-8")
-            elif u.path in ("/app.js", "/engines.js", "/i18n.js", "/analysis.js", "/skin.js"):
+            elif u.path in ("/app.js", "/engines.js", "/i18n.js", "/analysis.js", "/skin.js", "/ai_translator.js"):
                 self._static(u.path[1:], "text/javascript; charset=utf-8")
             elif u.path == "/api/meta":
-                self._json(meta())
+                self._json({**meta(), "personal_mode": self._personal_mode})
             elif u.path == "/api/summary":
                 m = q.get("market", "")
                 if m not in MARKETS:
@@ -774,8 +982,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._guard():
             return
+        if self._personal_blocked():
+            return
         if urlparse(self.path).path.startswith("/api/admin/"):
             return self._admin_post(urlparse(self.path))
+        if urlparse(self.path).path.startswith("/api/ai/"):
+            return self._ai("POST", urlparse(self.path))
+        if getattr(self, "_personal_mode", False) and urlparse(self.path).path in (
+                "/api/holdings/add", "/api/holdings/void", "/api/holdings/capital"):
+            return self._holdings("POST", urlparse(self.path))
+        if urlparse(self.path).path.startswith("/api/market_monitor/"):
+            if not getattr(self, "_personal_mode", False):
+                return self._send(404, b"not found", "text/plain")
+            return self._market_monitor("POST", urlparse(self.path))
+        if urlparse(self.path).path.startswith("/api/us_market_monitor/"):
+            if not getattr(self, "_personal_mode", False):
+                return self._send(404, b"not found", "text/plain")
+            return self._us_market_monitor("POST", urlparse(self.path))
         if urlparse(self.path).path == "/__share_login":
             return self._share_login()
         if self._share_gate(urlparse(self.path)):
@@ -830,10 +1053,16 @@ class Handler(BaseHTTPRequestHandler):
     def _share_gate(self, u) -> bool:
         """返回 True 表示已经拦住并回复了（没通过密码）。"""
         if not self._external() or not sharepass.is_set():
+            if getattr(self, "_personal_mode", False) and self._external():
+                self._send(404, b"not found", "text/plain")
+                return True
             return False
         v = SimpleCookie(self.headers.get("Cookie", "")).get("qb_share")
         if sharepass.check_cookie(v.value if v else None):
             return False
+        if getattr(self, "_personal_mode", False):
+            self._send(404, b"not found", "text/plain")
+            return True
         if u.path == "/share_gate.js":
             self._send(200, (DASH / "share_gate.js").read_bytes(), "text/javascript; charset=utf-8")
         elif u.path.startswith("/api/") or self.command == "POST":

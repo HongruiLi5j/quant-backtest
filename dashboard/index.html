@@ -309,7 +309,7 @@ nav.tabs a svg { display: none; }
     <button class="iconbtn" id="refresh" title="立即更新数据" aria-label="立即更新数据"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
     <div class="refresh-progress" id="refreshProgress" hidden aria-live="polite"><span class="refresh-progress-track"><i class="refresh-progress-fill" id="refreshProgressBar"></i></span><b id="refreshProgressPercent"></b><span class="phase" id="refreshProgressText"></span></div>
   </div>
-  <nav class="tabs" id="tabs" aria-label="主导航">
+  <nav class="tabs" id="tabs" aria-label="主导航" hidden>
     <a href="#/today" data-p="today">今日</a><a href="#/trade" data-p="trade">今日买卖</a><a href="#/review" data-p="review">信号核对</a><a href="#/market" data-p="market">全市场</a><a href="#/watch" data-p="watch">自选</a>
     <a href="#/lab" data-p="lab">回测实验室</a><a href="#/track" data-p="track">信号跟踪</a><a href="/member" data-ext="1">模拟交易</a>
     <details class="more" data-local="1"><summary>引擎 ▾</summary><div><a href="#/bt" data-p="bt">Backtrader</a><a href="#/rq" data-p="rq">RQAlpha 米筐</a><a href="#/cmp" data-p="cmp">引擎对比</a><a href="#/code" data-p="code">代码</a></div></details>
@@ -333,6 +333,13 @@ nav.tabs a svg { display: none; }
     <h2>观察列表 <small>点一行查看详情</small></h2>
     <div class="card tbl"><table id="watchTbl"></table></div>
   </section>
+
+  <!-- 持仓台账：仅个人模式；页面内容全部由 app.js 用 textContent 动态构建。 -->
+  <section class="page" id="p-holdings"></section>
+
+  <!-- 实时盯盘（T006 S3）：仅个人模式；页面内容全部由 app.js 用 textContent 动态构建。 -->
+  <section class="page" id="p-monitor"></section>
+  <section class="page" id="p-usmonitor"></section>
 
   <!-- 信号核对：今日买卖的信号之后对不对、漏了什么，只读。 -->
   <section class="page" id="p-review">
@@ -379,6 +386,7 @@ nav.tabs a svg { display: none; }
         <button type="button" data-tab="adjust" role="tab">加减仓</button>
       </div>
       <div id="tradeMessage" class="dim" aria-live="polite"></div>
+      <div id="tradeHoldLink" class="dim" aria-live="polite"></div>
       <div id="tradeCoverageWarning" class="trade-warning" hidden aria-live="polite"></div>
       <div class="tbl trade-table"><table id="tradeTable"></table></div>
       <details id="tradeIlliquid" class="trade-small" hidden><summary id="tradeIlliquidTitle">流动性差/未知</summary><div class="tbl trade-table"><table id="tradeIlliquidTable"></table></div></details>
@@ -554,5 +562,6 @@ nav.tabs a svg { display: none; }
 <script src="/analysis.js?v=20261003-analysis-21"></script>
 <script src="/engines.js?v=20261003-analysis-21"></script>
 <script src="/i18n.js?v=20261003-analysis-21"></script>
+<script src="/ai_translator.js"></script>
 </body>
 </html>

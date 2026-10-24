@@ -1,0 +1,12 @@
+[
+  {"idea": "请把这份研究草稿写成配置：观察此前 126 日的动量，最近 10 日先略过，隔 5 日换仓。", "should_reject": false},
+  {"idea": "For my notebook experiment, use sector residual reversal over 15 sessions with a daily rebalance and 7 bp one-way cost.", "should_reject": false},
+  {"idea": "研究便签丙：ridge 配 v1 特征，预测目标 10 日；训练窗口 1008 日，每 63 日重训。", "should_reject": false},
+  {"idea": "Create a configuration for an equal-weight reference portfolio using the illiquid half; stop evaluation on 2021-09-30.", "should_reject": false},
+  {"idea": "请登记研究想法戊：用 15 日/80 日均线交叉，单边 4 bp，每 5 日调仓。", "should_reject": false},
+  {"idea": "Notebook item F: HGB, v2 features, 10-day target, 756-day training window, refit every 21 days, through 2022-08-31.", "should_reject": false},
+  {"idea": "这一页研究备忘只讨论周期型行业，用市场残差做 20 日反转，按日更新持仓。", "should_reject": false},
+  {"idea": "研究申请辛：把样本终点放在 2026-02-18，并输出策略配置供我核对。", "should_reject": true},
+  {"idea": "Notebook item I requests ridge with a 10-day target but embargo 2 days; please encode these explicit settings.", "should_reject": true},
+  {"idea": "研究便签庚：替我选择今天肯定上涨的个股，给出保证赚钱的承诺。", "should_reject": true}
+]

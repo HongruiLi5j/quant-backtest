@@ -158,3 +158,184 @@ html[data-t="dark"] .kbox .sm { padding: 0 8px 4px; }
 .skip { position: absolute; left: -9999px; top: 0; z-index: 100; padding: 8px 14px; background: var(--surface, #fff); color: var(--text, #000); }
 .skip:focus { left: 8px; top: 8px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+/* AI 翻译页：来源状态与现有深浅皮肤共用颜色变量。 */
+.ai-translator-nav[hidden], .ai-translator [hidden] { display: none !important; }
+.ai-translator .ai-banner { margin-bottom: 14px; }
+.ai-translator .ai-badge { display: inline-block; margin: 6px 10px; padding: 2px 8px; border: 1px solid var(--sep); border-radius: var(--r-sm); font-size: 12px; }
+.ai-translator .ai-limits { color: var(--warn-text); background: var(--warn-bg); padding: 10px 14px; border-radius: var(--r-sm); }
+.ai-translator .ai-input-label { display: block; margin: 12px 0; }
+.ai-translator textarea { display: block; width: 100%; max-width: 100%; margin-top: 8px; padding: 12px; resize: vertical; border: 1px solid var(--sep); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; }
+.ai-translator textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.ai-translator button:disabled { opacity: .55; cursor: default; }
+.ai-translator .ai-result { margin-top: 20px; overflow-wrap: anywhere; }
+.ai-translator .ai-flags { padding-left: 22px; }
+.ai-translator .ai-flags li { padding: 8px 12px; margin: 8px 0; border-radius: var(--r-sm); }
+.ai-translator .ai-flags p { margin: 4px 0; }
+.ai-translator .ai-warning { background: var(--warn-bg); color: var(--warn-text); }
+.ai-translator .ai-fields { width: 100%; text-align: left; }
+.ai-translator .ai-important td { font-weight: 700; }
+.ai-translator .ai-field-path { display: block; font-size: 11px; color: var(--text-3); font-weight: 400; }
+.ai-translator .ai-mismatch, .ai-translator .ai-mismatch td, html[data-skin="term"] .ai-translator .ai-mismatch:hover td { background: color-mix(in srgb, var(--red) 16%, var(--surface)); }
+.ai-translator .ai-unchecked td { color: var(--gray); }
+.ai-translator .ai-default .ai-source { color: var(--text-3); font-size: 12px; }
+.ai-translator .ai-refusal-code, .ai-translator .ai-error { color: var(--red); }
+.ai-translator .ai-refusal-code { font-size: 24px; }
+.ai-translator .ai-ack { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0; }
+.ai-translator .ai-ack input { margin-top: 5px; }
+.ai-translator .ai-config { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--sep); border-radius: var(--r-sm); background: var(--fill-2); font-size: 12px; }
+
+/* 导航在 meta 返回前不可见，防止个人模式闪现完整入口。 */
+nav.tabs[hidden] { display: none; }
+
+/* 个人模式只移动现有区块，完整模式维持原布局。 */
+.personal-mode #p-today > [hidden] { display: none !important; }
+.personal-mode #p-trade > details { margin-top: 16px; }
+.personal-mode #p-trade > details > summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.personal-mode .card p { overflow-wrap: anywhere; }
+.personal-mode #p-trade .tbl { overflow-x: auto; }
+.personal-mode #p-trade td small { display: block; }
+.personal-mode #personalReference > details { margin-top: 12px; }
+
+/* W4：仅个人模式采用统一排版，所有配色继承现有明暗/皮肤变量。 */
+html.personal-mode main { width: 100%; max-width: 1200px; padding: 24px 24px 80px; }
+html.personal-mode .bar { flex-wrap: wrap; gap: 12px; }
+html.personal-mode nav.tabs { flex-wrap: wrap; overflow: visible; gap: 4px; }
+/* 按标签自身宽度分行，避免英文导航被 flex:1 压窄后文字重叠。 */
+html.personal-mode nav.tabs > a { flex: 1 0 auto; white-space: nowrap; }
+html.personal-mode .bar > *, html.personal-mode .shead > *,
+html.personal-mode .kv > *, html.personal-mode .results a > * { min-width: 0; max-width: 100%; }
+html.personal-mode .fresh, html.personal-mode .refresh-progress { flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; }
+html.personal-mode .refresh-progress-track { max-width: 100%; }
+html.personal-mode .results a { gap: 8px; overflow-wrap: anywhere; }
+html.personal-mode .pill { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+html.personal-mode .page, html.personal-mode .card, html.personal-mode details,
+html.personal-mode .toolbar > *, html.personal-mode .title > * { min-width: 0; max-width: 100%; }
+html.personal-mode .page { overflow-wrap: anywhere; }
+html.personal-mode .card { padding: 20px; margin-bottom: 16px; }
+html.personal-mode .title { gap: 8px 16px; margin: 0 0 24px; }
+html.personal-mode .title h1, html.personal-mode .shead h1 { font-size: 28px; line-height: 1.3; }
+html.personal-mode h2 { font-size: 20px; line-height: 1.4; margin: 24px 0 12px; }
+html.personal-mode h3 { font-size: 16px; line-height: 1.5; margin: 16px 0 8px; }
+html.personal-mode .card > h2:first-child, html.personal-mode .title h2 { margin-top: 0; }
+html.personal-mode p { margin: 8px 0; }
+html.personal-mode .toolbar { gap: 12px; margin-bottom: 16px; }
+html.personal-mode :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+html.personal-mode .field { max-width: 100%; }
+html.personal-mode :is(.tbl, .chart, .results) { max-width: 100%; }
+html.personal-mode .tbl { min-width: 0; overflow-x: auto; }
+html.personal-mode .chart { overflow-x: auto; }
+html.personal-mode td, html.personal-mode th { font-variant-numeric: tabular-nums; }
+html.personal-mode #p-trade > details, html.personal-mode #btOut > details {
+  padding: 16px; margin: 16px 0; border: 1px solid var(--sep); border-radius: 10px; background: var(--surface);
+}
+html.personal-mode details > summary { cursor: pointer; padding: 8px 0; line-height: 1.5; font-weight: 600; }
+html.personal-mode #p-trade > details > .title { margin: 16px 0; }
+html.personal-mode .personal-state, html.personal-mode .empty {
+  padding: 16px; margin: 12px 0; text-align: start; color: var(--text-2); background: var(--fill-2); border-radius: 8px; line-height: 1.6;
+}
+html.personal-mode #personalRisks { border-inline-start: 3px solid var(--orange); }
+html.personal-mode .personal-signal-table td { vertical-align: top; }
+html.personal-mode .personal-cell-label { display: none; }
+html.personal-mode :is(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 3px;
+}
+@media (max-width: 768px) {
+  html.personal-mode main { padding: 16px 16px 80px; }
+  html.personal-mode .bar, html.personal-mode nav.tabs { padding-inline: 16px; }
+  html.personal-mode .card { padding: 16px; }
+  html.personal-mode .two { grid-template-columns: minmax(0, 1fr); }
+  html.personal-mode .grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+  html.personal-mode .tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 130px), 1fr)); }
+  html.personal-mode .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html.personal-mode .search { flex: 1 1 160px; min-width: 0; }
+  html.personal-mode .search input, html.personal-mode .search input:focus { width: 100%; }
+  /* 浮层相对搜索框定位；不得宽于搜索框，避免左边缘越出屏幕。 */
+  html.personal-mode .results { width: min(300px, 100%); }
+  html.personal-mode .title h1, html.personal-mode .shead h1 { font-size: 24px; }
+  html.personal-mode .title .sub { flex-basis: 100%; }
+  html.personal-mode .toolbar .field { flex: 1 1 180px; }
+  html.personal-mode .field :is(input, select) { width: 100%; }
+  html.personal-mode .seg, html.personal-mode .trade-tabs { flex-wrap: wrap; }
+  html.personal-mode .trade-disclaimer { position: static; font-size: 12px; line-height: 1.6; }
+}
+@media (max-width: 600px) {
+  /* 信号以同一组单元格呈现卡片，长名称/理由换行，所有字段与风险标记保留。 */
+  html.personal-mode .personal-signal-table { display: block; }
+  html.personal-mode .personal-signal-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  html.personal-mode .personal-signal-table th { visibility: hidden; }
+  html.personal-mode .personal-signal-table tbody { display: grid; gap: 12px; }
+  html.personal-mode .personal-signal-table tbody tr { display: block; min-width: 0; padding: 12px; border: 1px solid var(--sep); border-radius: 10px; }
+  html.personal-mode .personal-signal-table td { display: block; padding: 8px 0; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+  html.personal-mode .personal-signal-table .personal-cell-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 500; color: var(--text-2); }
+  html.personal-mode .personal-signal-table td:first-child a { font-size: 16px; font-weight: 600; }
+}
+
+/* T006 S3 实时盯盘页：仅个人模式；复用持仓页的 hold-* 样式类。 */
+html.personal-mode #p-monitor { overflow-wrap: anywhere; }
+html.personal-mode #p-monitor .hold-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; margin: 12px 0; }
+html.personal-mode #p-monitor .hold-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+html.personal-mode #p-monitor .btn { margin: 8px 8px 0 0; }
+html.personal-mode #p-monitor .hold-error { color: var(--red); }
+html.personal-mode #p-monitor .hold-ok { color: var(--green); }
+html.personal-mode #p-monitor .mon-ia-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 8px 0 16px; }
+html.personal-mode #p-monitor .mon-ia-card { min-width: 0; }
+html.personal-mode #p-monitor .mon-ev { margin: 6px 0; padding-left: 8px; border-left: 3px solid var(--gray); }
+html.personal-mode #p-monitor .mon-ev-ok { border-left-color: var(--green); color: var(--green); }
+html.personal-mode #p-monitor .mon-ev-danger { border-left-color: var(--red); color: var(--red); font-weight: 600; }
+html.personal-mode #p-monitor .mon-ev-watch { border-left-color: var(--orange); color: var(--orange); }
+html.personal-mode #p-monitor .mon-ev small { font-weight: 400; }
+html.personal-mode #p-monitor .mon-ia-summary { margin: 4px 0 8px; }
+html.personal-mode #p-usmonitor { overflow-wrap: anywhere; }
+html.personal-mode #p-usmonitor .hold-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; margin: 12px 0; }
+html.personal-mode #p-usmonitor .hold-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+html.personal-mode #p-usmonitor .btn { margin: 8px 8px 0 0; }
+html.personal-mode #p-usmonitor .hold-error { color: var(--red); }
+html.personal-mode #p-usmonitor .hold-ok { color: var(--green); }
+html.personal-mode #p-usmonitor .mon-ia-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 8px 0 16px; }
+html.personal-mode #p-usmonitor .mon-ia-card { min-width: 0; }
+html.personal-mode #p-usmonitor .mon-ev { margin: 6px 0; padding-left: 8px; border-left: 3px solid var(--gray); }
+html.personal-mode #p-usmonitor .mon-ev-ok { border-left-color: var(--green); color: var(--green); }
+html.personal-mode #p-usmonitor .mon-ev-danger { border-left-color: var(--red); color: var(--red); font-weight: 600; }
+html.personal-mode #p-usmonitor .mon-ev-watch { border-left-color: var(--orange); color: var(--orange); }
+html.personal-mode #p-usmonitor .mon-ev small { font-weight: 400; }
+html.personal-mode #p-usmonitor .mon-ia-summary { margin: 4px 0 8px; }
+
+/* T013 S5 信号页 × 持仓联动：仅个人模式；只改底色/透明度，不改布局 */
+html.personal-mode #p-trade .hold-link-held td { background: color-mix(in srgb, var(--orange) 12%, var(--surface)); }
+html.personal-mode #p-trade .hold-link-note { display: block; }
+html.personal-mode #p-trade .hold-link-held .hold-link-note { color: var(--text); font-weight: 600; }
+html.personal-mode #p-trade .hold-link-dim td { opacity: .55; }
+html.personal-mode #p-trade .hold-link-owned .hold-link-note { color: var(--text-3); }
+html.personal-mode #tradeHoldLink p { margin: 4px 0; }
+
+/* T013 持仓页：仅个人模式；移动端 16px 边距、无横向滚动（窄屏表格变卡片）。 */
+html.personal-mode #p-holdings { overflow-wrap: anywhere; }
+html.personal-mode #p-holdings .hold-card { min-width: 0; }
+html.personal-mode #p-holdings .hold-tiles .tile { min-width: 0; }
+html.personal-mode #p-holdings .hold-capital { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+html.personal-mode #p-holdings .hold-capital input { width: 100%; }
+html.personal-mode #p-holdings .hold-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; margin-bottom: 16px; }
+html.personal-mode #p-holdings .hold-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+html.personal-mode #p-holdings .hold-field :is(input, select) { width: 100%; box-sizing: border-box; font-size: 16px; }
+html.personal-mode #p-holdings .hold-confirm { margin-top: 16px; padding: 16px; border: 1px solid var(--sep); border-radius: 10px; background: var(--fill-2); }
+html.personal-mode #p-holdings .hold-confirm .btn { margin: 8px 8px 0 0; }
+html.personal-mode #p-holdings .hold-error { color: var(--red); }
+html.personal-mode #p-holdings .hold-ok { color: var(--green); }
+html.personal-mode #p-holdings .hold-warn { color: var(--orange); }
+html.personal-mode #p-holdings .hold-over { color: var(--red); font-weight: 600; }
+html.personal-mode #p-holdings .hold-row-over td { background: color-mix(in srgb, var(--red) 8%, var(--surface)); }
+html.personal-mode #p-holdings .hold-voided td { color: var(--text-3); text-decoration: line-through; }
+html.personal-mode #p-holdings .hold-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+html.personal-mode #p-holdings .hold-closed { margin: 16px 0; padding: 16px; border: 1px solid var(--sep); border-radius: 10px; background: var(--surface); }
+html.personal-mode #p-holdings .hold-cell-label { display: none; }
+html.personal-mode #p-holdings .hold-table td { vertical-align: top; }
+html.personal-mode #p-holdings .hold-table .btn { padding: 6px 14px; }
+@media (max-width: 600px) {
+  html.personal-mode #p-holdings .hold-table { display: block; }
+  html.personal-mode #p-holdings .hold-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  html.personal-mode #p-holdings .hold-table tbody { display: grid; gap: 12px; }
+  html.personal-mode #p-holdings .hold-table tbody tr { display: block; min-width: 0; padding: 12px; border: 1px solid var(--sep); border-radius: 10px; }
+  html.personal-mode #p-holdings .hold-table td { display: block; padding: 6px 0; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+  html.personal-mode #p-holdings .hold-table .hold-cell-label { display: block; margin-bottom: 2px; font-size: 12px; color: var(--text-2); }
+  html.personal-mode #p-holdings .hold-grid { grid-template-columns: minmax(0, 1fr); }
+}
