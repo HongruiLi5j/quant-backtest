@@ -26,9 +26,8 @@ export const NAV = [
   { id: 'monitor', key: 'ui.nav.monitor', href: 'monitor.html', classic: '/#/monitor' },
   { id: 'usmonitor', key: 'ui.nav.usmonitor', href: 'monitor.html?market=us', classic: '/#/usmonitor' },
   { id: 'research', key: 'ui.nav.research', href: 'research.html', classic: '/#/cmp' },
-  { id: 'reports', key: 'ui.nav.reports', href: 'reports.html', classic: '/#/today' },
-  { id: 'system', key: 'ui.nav.system', href: 'system.html', classic: '/#/today' },
   { id: 'settings', key: 'ui.nav.settings', href: 'settings.html', classic: '/#/today' },
+  // 报告、系统两页的新页面还没做，先不放进导航（点了只会回到今日）；做好后在这里加回两项
   { id: 'admin', key: 'ui.nav.admin', href: 'admin.html', classic: '/admin' },   // 新后台页；/admin 旧页面保留作退路（设置页里有链接）
 ];
 
@@ -38,6 +37,7 @@ const mockOn = () => new URLSearchParams(window.location.search).get('mock') ===
 export function navTarget(item) {
   if (item.external) return item.href;
   if (mockOn()) return item.href.includes('?') ? `${item.href}&mock=1` : `${item.href}?mock=1`;
+  if (item.id === 'admin') return '/admin?enter=1&to=%2Fui%2Fw%2Fadmin.html';   // 本机本人点击自动登录后台，再回到新后台页
   const page = item.id === 'usmonitor' ? 'monitor' : item.id;
   return BUILT.has(page) ? item.href : item.classic;
 }
@@ -83,7 +83,7 @@ export function renderTopnav(host, opt = {}) {
       el('span', { class: 'kbd', 'aria-hidden': 'true' }, '⌘K')),
     iconBtn('toggle-lang', 'lang', 'common.toggle_lang', iconsHref),
     iconBtn('toggle-theme', 'moon', 'common.toggle_theme', iconsHref),
-    el('a', { class: 'btn btn--sm btn--ghost topnav__classic', href: '/', title: t('ui.nav.classic_tip') }, t('ui.nav.classic')));
+    el('a', { class: 'btn btn--sm btn--ghost topnav__classic', href: '/?classic=1', title: t('ui.nav.classic_tip') }, t('ui.nav.classic')));
 
   host.replaceChildren(el('div', { class: 'topnav__inner' }, brand, nav, tools));
   // 注意：不要设 host.dataset.mode = 'workspace'——那套规则是给 10 项居中导航写的，13 项会压到搜索框

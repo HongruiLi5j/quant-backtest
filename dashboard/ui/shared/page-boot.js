@@ -128,7 +128,7 @@ async function boot() {
     pages: NAV.map((n) => ({ key: n.key, href: navTarget(n), group: 'palette.group.pages' })),
     stockHref: (code) => `stock.html?code=${encodeURIComponent(code)}`,   // 新个股页 w/stock.html；不带 market 时用默认市场
   });
-  initCursor();
+  // 自定义鼠标圆圈已去掉（不再调用 initCursor），保留系统鼠标
   document.addEventListener('keydown', onKey);
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="retry"]')) renderPage();

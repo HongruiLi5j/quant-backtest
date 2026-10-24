@@ -23,6 +23,8 @@ DEFAULTS = {
     "share_links_on": True,
     "registration_open": False,     # 默认关：所有者在后台打开之前，任何人都不能注册
     "maintenance_on": False,        # 维护模式：默认关（读不到设置时网站保持开放）
+    "new_ui_home": True,            # 首页默认进新界面（N18）；关掉就回到旧首页。所有者批准的「默认开」例外
+    "admin_quick_enter": True,      # 新界面「后台」按钮本机点击即登录（N17）；关掉就要用管理令牌登录。同上例外
     "maintenance_until": "",        # 预计恢复时间（文本，≤ 40 字）；用来算 Retry-After
     "features": {"member_backtest": True, "engines": True, "translate": True},
     "quota": {"free_backtest": 3, "pro_backtest": 30, "free_translate": 5, "pro_translate": 50},
@@ -30,7 +32,7 @@ DEFAULTS = {
     "sections": {sid: {"on": True} for sid in SECTION_IDS},
 }
 TIERS = ("free", "pro")
-_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on")
+_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter")
 UNTIL_MAX = 40
 DEFAULT_RETRY_AFTER = 3600
 _lock = threading.RLock()
@@ -83,6 +85,16 @@ def get_all() -> dict:
 def registration_open() -> bool:
     """注册接口用：只有明确等于 True 才放行，任何异常/脏数据都当作关闭。"""
     return get_all().get("registration_open") is True
+
+
+def new_ui_home_on() -> bool:
+    """首页跳新界面用：只有明确关掉（False）才算关；读失败、脏数据都按默认（开）。"""
+    return get_all().get("new_ui_home") is not False
+
+
+def admin_quick_enter_on() -> bool:
+    """「后台」按钮本机免令牌登录用：只有明确关掉（False）才算关；读失败、脏数据都按默认（开）。"""
+    return get_all().get("admin_quick_enter") is not False
 
 
 def section_open(sid: str) -> bool:

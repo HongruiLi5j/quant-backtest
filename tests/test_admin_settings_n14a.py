@@ -112,6 +112,27 @@ def test_defaults_registration_closed(db):
     assert admin_settings.registration_open() is False
 
 
+def test_new_ui_home_and_quick_enter_default_on_and_switchable(db):
+    """N17/N18 的两个开关：默认开（所有者批准的例外），能关；脏数据和读失败都按默认（开），只有明确 False 才算关。"""
+    assert admin_settings.new_ui_home_on() is True and admin_settings.admin_quick_enter_on() is True
+    r = admin_settings.update({"new_ui_home": False, "admin_quick_enter": False})
+    assert sorted(r["changed"]) == ["admin_quick_enter", "new_ui_home"]
+    assert admin_settings.new_ui_home_on() is False and admin_settings.admin_quick_enter_on() is False
+    admin_settings.update({"new_ui_home": True})
+    assert admin_settings.new_ui_home_on() is True and admin_settings.admin_quick_enter_on() is False
+    with members._conn() as c:
+        c.execute("INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES(?,?,?)", ("admin_quick_enter", '"false"', "x"))
+    assert admin_settings.admin_quick_enter_on() is True            # 字符串 "false" 不是布尔值，当作没设置
+
+
+@pytest.mark.parametrize("key", ["new_ui_home", "admin_quick_enter"])
+def test_new_switches_reject_non_bool(db, key):
+    for bad in ("yes", 0, 1, None, "false"):
+        with pytest.raises(admin_settings.SettingError) as e:
+            admin_settings.update({key: bad})
+        assert e.value.key == key
+
+
 def test_migration_repeatable(db):
     for _ in range(3):
         admin_settings.get_all()

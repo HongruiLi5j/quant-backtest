@@ -39,6 +39,8 @@ export function rows() {
     live('registration_open', 'site', () => toggle('registration_open', t('adm.row.registration_open'))),
     live('maintenance_on', 'site', () => toggle('maintenance_on', t('adm.row.maintenance_on'))),
     live('maintenance_until', 'site', untilInput),
+    live('new_ui_home', 'site', () => toggle('new_ui_home', t('adm.row.new_ui_home'))),
+    live('admin_quick_enter', 'site', () => toggle('admin_quick_enter', t('adm.row.admin_quick_enter'))),
     need('online', 'site', lockedSw('online', true)),
     need('guest', 'site', lockedSw('guest', false)),
     need('showcase', 'site', lockedSw('showcase', false)),

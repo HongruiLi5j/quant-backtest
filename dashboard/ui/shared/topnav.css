@@ -56,7 +56,26 @@
   transition: color var(--motion-fast);
 }
 
-.topnav__link:hover { color: var(--text-primary); }
+.topnav__link { transition: color var(--motion-fast), transform var(--motion-fast); }
+
+.topnav__link::before {
+  content: "";
+  position: absolute;
+  inset: 12px -8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  opacity: 0;
+  transition: opacity var(--motion-fast);
+  z-index: -1;
+}
+
+.topnav__link:hover { color: var(--text-primary); transform: scale(1.1); }
+
+.topnav__link:hover::before { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .topnav__link:hover { transform: none; }
+}
 
 .topnav__link[aria-current="page"] { color: var(--text-primary); }
 

@@ -192,8 +192,78 @@ def test_shipped_config_is_sane():
 
 
 # ---------- app.py 级测试：直接构造 Handler，不起服务
+# 不导入 app.py：app 在导入时会读取 .secret 里的真实令牌，测试不能碰。
+# 做法同 tests/test_ui_static.py：用 AST 只摘出要测的方法（及它们互相调用的方法）和几个常量，
+# 放进带假令牌的命名空间。会碰数据库 / 密码文件的模块换成「一碰就报错」的替身；
+# 审计相关函数换成空函数，不会写真实的 data/admin_audit.jsonl。
+import ast  # noqa: E402
+import gzip  # noqa: E402
+import hmac  # noqa: E402
+import threading  # noqa: E402
+import types  # noqa: E402
+from http.cookies import SimpleCookie  # noqa: E402
+from http.server import BaseHTTPRequestHandler  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
+
+from src import admin as _real_admin  # noqa: E402   导入时只用标准库，不读密钥
+from src import personal_mode as _personal_mode  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parent.parent
+_TREE = ast.parse((_ROOT / "app.py").read_text(encoding="utf-8"))
+_HANDLER_NODE = next(n for n in _TREE.body if isinstance(n, ast.ClassDef) and n.name == "Handler")
+_METHODS = {n.name: n for n in _HANDLER_NODE.body if isinstance(n, ast.FunctionDef)}
+_SEEDS = ("_external", "_https", "_owner", "_local_or_owner", "_authed", "_admin_authed",
+          "_personal_blocked", "_share_gate")
+_CONSTS = ("DASH", "COOKIE", "MEMBER_COOKIE", "ADMIN_COOKIE", "ALLOWED_HOSTS", "COMPRESSIBLE")
+_FUNCS = ("_gzip_cached",)
+
+
+class _Forbidden:
+    """替身：这个测试不该用到的模块。一碰就报错，免得悄悄读写真实数据库或密码文件。"""
+
+    def __init__(self, name):
+        self._name = name
+
+    def __getattr__(self, attr):
+        raise AssertionError(f"测试不应该调用 {self._name}.{attr}（会碰真实状态）")
+
+
+def _method_closure():
+    seen, todo = set(), list(_SEEDS)
+    while todo:
+        n = todo.pop()
+        if n in seen or n not in _METHODS:
+            continue
+        seen.add(n)
+        for x in ast.walk(_METHODS[n]):
+            if isinstance(x, ast.Attribute) and isinstance(x.value, ast.Name) and x.value.id == "self":
+                todo.append(x.attr)
+    return sorted(seen)
+
+
+def _build_app():
+    top = [n for n in _TREE.body
+           if (isinstance(n, ast.FunctionDef) and n.name in _FUNCS)
+           or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in _CONSTS for t in n.targets))]
+    cls = ast.ClassDef(name="Handler", bases=[ast.Name(id="BaseHTTPRequestHandler", ctx=ast.Load())],
+                       keywords=[], decorator_list=[], body=[_METHODS[n] for n in _method_closure()])
+    admin = types.SimpleNamespace(**{k: getattr(_real_admin, k) for k in dir(_real_admin) if not k.startswith("__")})
+    admin.audit = admin.audit_blocked = admin.set_actor_from_request = lambda *a, **k: None
+    ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, urlparse=urlparse, SimpleCookie=SimpleCookie,
+              hashlib=hashlib, hmac=hmac, json=json, gzip=gzip, time=time, SERVER_PORT=8765, ROOT=_ROOT,
+              TOKEN="synthetic-token", ADMIN_TOKEN="synthetic-admin-token", _gz_cache={},
+              _trade_session_lock=threading.Lock(), owner_access=oa, personal_mode=_personal_mode, admin=admin,
+              members=_Forbidden("members"), admin_settings=_Forbidden("admin_settings"),
+              sharepass=types.SimpleNamespace(is_set=lambda: False, check_cookie=lambda v: False))     # 真实的会读 .secret/share_password
+    exec(compile(ast.fix_missing_locations(ast.Module(body=top + [cls], type_ignores=[])), "<handler>", "exec"), ns)
+    return types.SimpleNamespace(**ns)
+
+
+APP = _build_app()
+
+
 def _handler(headers):
-    import app
+    app = APP
     h = app.Handler.__new__(app.Handler)
     h.headers = headers
     h.path = "/api/status"

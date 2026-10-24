@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,7 +21,7 @@ TREE = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
 HANDLER = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == "Handler")
 METHODS = {n.name: n for n in HANDLER.body if isinstance(n, ast.FunctionDef)}
 NAMES = ("do_GET", "do_HEAD", "_maintenance_blocked", "_section_blocked", "_send", "_ui_static", "_authed", "_remote", "_https",
-         "_owner_cfg", "_owner", "_local_or_owner", "_origin_ok")
+         "_owner_cfg", "_owner", "_local_or_owner", "_origin_ok", "_wants_new_ui")
 TOKEN = "synthetic-token"
 COOKIE_HDR = {"Cookie": f"qb={TOKEN}"}
 
@@ -43,7 +44,8 @@ def build_class(ui_dir):
     ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, urlparse=urlparse, parse_qs=parse_qs,
               unquote=unquote, hashlib=hashlib, hmac=hmac, Path=Path, SimpleCookie=SimpleCookie,
               UI_DIR=ui_dir, COOKIE="qb", MEMBER_COOKIE="qm", TOKEN=TOKEN, owner_access=None, ROOT=None,
-              _bad_login=[], _alive={}, time=time, _gz_cache={})
+              _bad_login=[], _alive={}, time=time, _gz_cache={},
+              admin_settings=types.SimpleNamespace(new_ui_home_on=lambda: True))      # 首页跳新界面的开关：默认开
     exec(compile(ast.fix_missing_locations(ast.Module(body=body, type_ignores=[])), "<handler>", "exec"), ns)
 
     class Test(ns["Handler"]):
@@ -148,17 +150,27 @@ class UiStaticTests(unittest.TestCase):
         self.assertEqual(self.req("/ui/U.JS")[0], 200)
 
     def test_unauthenticated_same_as_home(self):
-        home = self.req("/", auth=False)
+        home = self.req("/?classic=1", auth=False)      # 首页默认会跳新界面，对照旧首页要带 classic=1
         for path in ("/ui/", "/ui", "/ui/app.js", "/ui/missing.js", "/ui/../outside.js"):
             got = self.req(path, auth=False)
             self.assertEqual((got[0], got[1], got[2]), (home[0], home[1], home[2]), path)
         self.assertEqual(home[0], 401)
         wrong = self.req("/ui/", headers={"Cookie": "qb=wrong"}, auth=False)
         self.assertEqual(wrong[0], 401)
-        self.assertEqual(self.req("/", headers={"Cookie": "qb=wrong"}, auth=False)[2], wrong[2])
+        self.assertEqual(self.req("/?classic=1", headers={"Cookie": "qb=wrong"}, auth=False)[2], wrong[2])
 
     def test_authed_status_matches_home(self):
-        self.assertEqual(self.req("/ui/")[0], self.req("/")[0])
+        self.assertEqual(self.req("/ui/")[0], self.req("/?classic=1")[0])
+
+    def test_home_redirects_to_new_ui_unless_classic(self):
+        code, _, _, r = self.req("/")
+        self.assertEqual((code, r.getheader("Location")), (302, "/ui/"))
+        self.assertEqual(self.req("/?classic=1")[0], 200)                 # 明确要旧界面
+        host = f"127.0.0.1:{self.srv.server_port}"
+        from_ui = {"Referer": f"http://{host}/ui/w/today.html"}           # 从新界面里点出来的旧页链接
+        self.assertEqual(self.req("/", headers=from_ui)[0], 200)
+        other = {"Referer": "http://evil.example/ui/w/today.html"}        # 别的网站的来源页不算
+        self.assertEqual(self.req("/", headers=other)[0], 302)
 
     def test_head_has_no_body(self):
         code, ct, body, r = self.req("/ui/index.html", method="HEAD")

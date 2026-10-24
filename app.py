@@ -71,6 +71,7 @@ def get_token() -> str:
 TOKEN = get_token()
 ADMIN_TOKEN = admin.get_admin_token()      # 后台 /admin 用的独立令牌（.secret/admin_token）
 ADMIN_COOKIE = "qb_admin"
+ADMIN_ENTER_TARGETS = ("/admin", "/ui/w/admin.html")      # 「后台」按钮登录后只能回到这两个地址
 ALLOWED_HOSTS = {f"127.0.0.1:{SERVER_PORT}", f"localhost:{SERVER_PORT}"}
 
 # ---- 行情缓存：文件没变就不重复读
@@ -502,6 +503,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, ctype, {"ETag": etag},
                    cache="private, max-age=31536000, immutable" if long else "private, no-cache")
 
+    def _wants_new_ui(self, q) -> bool:
+        """首页 / 默认进新界面；?classic=1，或从新界面里点出来的旧页链接（来源页在 /ui/ 下）才给旧界面。
+        后台设置里的「首页默认进新界面」关掉后，一律给旧界面。"""
+        if q.get("classic") == "1" or not UI_DIR.is_dir() or not admin_settings.new_ui_home_on():
+            return False
+        ref = urlparse(self.headers.get("Referer", ""))
+        from_ui = ref.netloc == self.headers.get("Host", "") and (ref.path == "/ui" or ref.path.startswith("/ui/"))
+        return not from_ui
+
     def _ui_static(self, u):
         """/ui/ 只读静态文件。到这里时登录 / 分享门 / 个人模式判断已经和首页 / 一样走完了。
         任何不合规的请求都只返回 404，不透露原因。"""
@@ -639,6 +649,24 @@ class Handler(BaseHTTPRequestHandler):
         if not self._local_or_owner():     # 分享链接 / 隧道来的请求：装作没有这个页面
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
+        if u.path == "/admin" and q.get("enter") == "1" and admin_settings.admin_quick_enter_on():     # 新界面「后台」按钮：本机本人点击 = 登录，不必再跑 open_admin.sh；后台设置里可一键关
+            dest = q.get("to", "")
+            dest = dest if dest in ADMIN_ENTER_TARGETS else "/admin"
+            if self.headers.get("Sec-Fetch-Site") not in ("same-origin", "none"):     # 别的网站发起的、或根本没带来源信息的都不算（缺头不能当同源）
+                return self._send(403, b"forbidden", "text/plain")
+            if self._owner():                                              # 主人通道：本来就已通过校验，直接跳转
+                return self._send(303, b"", "text/plain", {"Location": dest})
+            if admin.is_local_request(self.headers, ALLOWED_HOSTS):
+                admin.audit("login", detail={"how": "local_enter"})
+                sess = admin.make_session(ADMIN_TOKEN)
+                try:
+                    admin_settings.register_session(sess, self.headers, self.client_address[0])
+                except Exception:
+                    pass
+                return self._send(303, b"", "text/plain", {
+                    "Location": dest,
+                    "Set-Cookie": f"{ADMIN_COOKIE}={sess}; HttpOnly; SameSite=Strict; "
+                                  f"Path=/; Max-Age={admin.SESSION_SECONDS}"})
         if u.path == "/admin" and "t" in q:                              # 用管理令牌登录
             if admin.login_blocked():
                 return self._send(429, "尝试太多次，请 10 分钟后再试".encode(), "text/plain; charset=utf-8")
@@ -1030,7 +1058,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._section_blocked(u.path):
                     self._ui_static(u)
             elif u.path == "/":
-                self._page("index.html")
+                if self._wants_new_ui(q):
+                    self._send(302, b"", "text/plain", {"Location": "/ui/"}, cache="no-store")
+                else:
+                    self._page("index.html")
             elif u.path == "/terminal.css":
                 self._static("terminal.css", "text/css; charset=utf-8")
             elif u.path in ("/app.js", "/engines.js", "/i18n.js", "/analysis.js", "/skin.js", "/ai_translator.js"):
