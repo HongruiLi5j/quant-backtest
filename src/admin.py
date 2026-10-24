@@ -162,8 +162,50 @@ def origin_ok(headers, allowed_hosts) -> bool:
 _last_blocked = 0.0
 
 
+# 操作人 / 来源：每个请求开头由 app.py 设置（线程本地，请求结束清掉），audit() 写记录时自动带上。
+# 记录文件是 jsonl，没有表结构要迁移；旧记录没有这三个字段，读出来时补空字符串。
+_ctx = threading.local()
+ACTOR_MAX, IP_MAX, COUNTRY_MAX = 80, 45, 8
+
+
+def _clean(v, n: int) -> str:
+    """来源信息一律当文本：去掉控制字符、截断，防止日志注入。"""
+    return "".join(ch for ch in str(v or "") if ord(ch) >= 32 and ord(ch) != 127).strip()[:n]
+
+
+def set_actor(actor: str = "", ip: str = "", country: str = ""):
+    _ctx.v = (_clean(actor, ACTOR_MAX), _clean(ip, IP_MAX), _clean(country, COUNTRY_MAX).upper())
+
+
+def clear_actor():
+    _ctx.v = ("", "", "")
+
+
+def set_actor_from_request(headers, client_ip: str = "", is_owner=None):
+    """按请求设置操作人：主人通道（is_owner() 为真，签名已在那里验过）= JWT 里的邮箱 + Cloudflare 给的 IP/国家；
+    没有任何代理头的本机请求 = local + 连接地址；其余（马上会被 404 的外网请求）= anonymous，来源头只当文本记。任何异常都留空。"""
+    try:
+        cf_ip = (headers.get("CF-Connecting-IP") or "").split(",")[0]
+        cf_cc = headers.get("CF-IPCountry") or ""
+        if callable(is_owner) and is_owner():
+            email = ""
+            try:
+                import base64
+                seg = (headers.get("Cf-Access-Jwt-Assertion") or "").split(".")[1]
+                email = str(json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4))).get("email") or "")
+            except Exception:
+                pass
+            return set_actor(email or "owner", cf_ip, cf_cc)
+        if not ({k.lower() for k in headers.keys()} & PROXY_HEADERS):
+            return set_actor("local", client_ip, "")
+        set_actor("anonymous", cf_ip, cf_cc)
+    except Exception:
+        clear_actor()
+
+
 def audit(action: str, detail: dict | None = None, ok: bool = True, error: str | None = None):
-    rec = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "action": action, "ok": ok}
+    actor, ip, country = getattr(_ctx, "v", ("", "", ""))
+    rec = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "action": action, "ok": ok, "actor": actor, "ip": ip, "country": country}
     if detail:
         rec["detail"] = {k: (str(v)[:200]) for k, v in detail.items()}
     if error:
@@ -189,9 +231,13 @@ def audit_tail(n: int = 100) -> list[dict]:
     out = []
     for ln in reversed(tail_lines(AUDIT, n)):
         try:
-            out.append(json.loads(ln))
+            rec = json.loads(ln)
         except ValueError:
-            pass
+            continue
+        if isinstance(rec, dict):
+            for k in ("actor", "ip", "country"):
+                rec.setdefault(k, "")          # 旧记录没有的字段补空
+            out.append(rec)
     return out
 
 

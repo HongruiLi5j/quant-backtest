@@ -58,7 +58,8 @@ function drawSummary(m) {
     return tr;
   });
   ui.summary.replaceChildren(el('thead', {}, el('tr', {}, ...head.map((k, i) => el('th', { scope: 'col', class: i ? 'num' : null }, t(k))))), el('tbody', {}, ...rows));
-  const split = m.split ? '2020' : null;
+  // 真实接口的 meta.split 是分割日期字符串（如 "2020-01-01"），取年份；老数据里是布尔值时退回 2020
+  const split = m.split ? (typeof m.split === 'string' ? m.split.slice(0, 4) : '2020') : null;
   ui.explain.replaceChildren(
     el('p', {}, el('strong', {}, t('u4.x.how')), ' ', t('u4.x.beat')),
     el('p', {}, split ? t('u4.x.split', { y: split }) : t('u4.x.half')),

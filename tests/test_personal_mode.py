@@ -65,7 +65,7 @@ class PersonalModeTests(unittest.TestCase):
         self.config.write_text(json.dumps({"enabled": value}), encoding="utf-8")
 
     def handler(self, method, path, authenticated=True, external=False, guard=True):
-        cls = extracted(["do_GET", "do_POST", "_personal_blocked"],
+        cls = extracted(["do_GET", "do_POST", "_personal_blocked", "_maintenance_blocked"],
                         meta=lambda: {"markets": ["synthetic"]},
                         MARKETS={"cn": {}}, time=SimpleNamespace(time=lambda: 0),
                         _bad_login=[], _alive={}, refresh_status=lambda: {"ok": True},

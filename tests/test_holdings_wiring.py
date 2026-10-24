@@ -36,7 +36,7 @@ GOOD = {"trade_date": "2026-10-20", "code": "600000", "side": "buy", "qty": 100,
 def build_class():
     cls = ast.ClassDef(name="Handler", bases=[], keywords=[], decorator_list=[],
                        body=ASSIGNS + [METHODS[n] for n in
-                                       ("do_GET", "do_POST", "_personal_blocked", "_holdings",
+                                       ("do_GET", "do_POST", "_personal_blocked", "_maintenance_blocked", "_holdings",
                                         "_holdings_price", "_authed", "_remote", "_external",
                                         "_owner_cfg", "_owner", "_local_or_owner", "_origin_ok", "_https")])
     ns = dict(personal_mode=personal_mode, urlparse=urlparse, parse_qs=parse_qs, json=json, re=re,

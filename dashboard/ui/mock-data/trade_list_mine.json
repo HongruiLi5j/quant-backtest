@@ -19,5 +19,7 @@
    "in_member_positions": false
   }
  ],
+ "strategy": "blend2",
+ "data_date": "2026-03-27",
  "member_logged_in": false
 }

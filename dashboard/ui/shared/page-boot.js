@@ -63,6 +63,9 @@ async function renderPage() {
   if (forced === 'error') { showError(null); return; }
   if (forced === 'empty') { setState('empty'); return; }
   const body = document.querySelector('[data-ws-body]') ?? main();
+  if (params.get('debug') === '1') {   // 页脚「接口字段核对」：每次重绘前清空，接口返回时 api.js 会逐个登记
+    try { (await import('./debug-fields.js')).resetDebug(); } catch (err) { console.warn('debug-fields 加载失败', err); }
+  }
   try {
     if (!mod) mod = await import(`../pages/${page}.js`);
     const result = await mod.render(body);
@@ -123,7 +126,7 @@ async function boot() {
   drawNav();
   initPalette({
     pages: NAV.map((n) => ({ key: n.key, href: navTarget(n), group: 'palette.group.pages' })),
-    stockHref: (code) => `/#/stock/${encodeURIComponent(code)}`,   // 个股详情先用旧界面，新界面没有这一页
+    stockHref: (code) => `stock.html?code=${encodeURIComponent(code)}`,   // 新个股页 w/stock.html；不带 market 时用默认市场
   });
   initCursor();
   document.addEventListener('keydown', onKey);

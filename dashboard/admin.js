@@ -2,16 +2,18 @@
    所有文字都用 textContent 写入（日志、股票名里可能有任意字符），不使用 innerHTML，所以不会被注入脚本。 */
 (() => {
 'use strict';
-const TABS = [['overview', '概览'], ['tasks', '任务'], ['data', '数据'], ['access', '访问与分享'], ['logs', '日志'], ['audit', '审计']];
+const TABS = [['overview', '概览'], ['site', '站点开关'], ['sections', '分区开关'], ['members', '会员'], ['access', '分享与访问'], ['tasks', '回测与任务'], ['data', '数据'], ['system', '系统'], ['logs', '日志'], ['audit', '操作记录']];
+const NAV_GROUPS = [['', ['overview']], ['站点', ['site', 'sections']], ['人与分享', ['members', 'access']], ['运行', ['tasks', 'data', 'system']], ['记录', ['logs', 'audit']]];
+const NEED_BACKEND = '需要后端改动';
 const ACTION_LABEL = {
   login: '登录后台', refresh: '立即更新（联网）', kick_update: '触发每日检查', task_start: '启动任务', task_stop: '中止任务',
   scan_start: '启动全市场扫描', scan_stop: '中止全市场扫描', watch_add: '添加自选股', watch_remove: '移除自选股',
   update_stock: '更新个股', gap_start: '数据缺口检查', backup_make: '生成备份', backup_download: '下载备份',
   restart_server: '重启网页服务', share_start: '开启分享', share_stop: '停止分享', share_pass_set: '设置分享密码', share_pass_clear: '取消分享密码', clear_visits: '清空访客记录', member_disable: '停用会员', member_enable: '启用会员', member_delete: '删除会员',
-  rotate_main_token: '更换主令牌', rotate_admin_token: '更换管理令牌', blocked_remote: '拦截了外网来的访问'
+  rotate_main_token: '更换主令牌', rotate_admin_token: '更换管理令牌', setting: '修改后台设置', blocked_remote: '拦截了外网来的访问'
 };
 const MARKET_LABEL = { cn: 'A 股', us: '美股' };
-const state = { tab: 'overview', log: { name: 'daily', n: 200, filter: '', auto: true }, gapRunning: false };
+const state = { tab: 'overview', log: { name: 'daily', n: 200, filter: '', auto: true }, gapRunning: false, draft: {}, site: null, saving: false, sessions: [], sysOverview: null };
 const $ = (s, r = document) => r.querySelector(s);
 
 // ---------- 小工具
@@ -37,7 +39,7 @@ const ago = ts => { if (!ts) return '—'; const s = Math.max(0, Math.floor(Date
 const dt = ts => ts ? new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false }) : '—';
 const pill = (text, kind) => h('span', { class: 'pill ' + (kind || '') }, text);
 const tile = (k, v, s, p) => h('div', { class: 'tile' }, h('div', { class: 'k' }, k, p || ''), h('div', { class: 'v' }, v), h('div', { class: 's' }, s || ''));
-const busy = () => { const a = document.activeElement || {}; if (a.tagName === 'INPUT' && !['checkbox', 'button', 'radio'].includes(a.type)) return true; return [...document.querySelectorAll('#view input')].some(x => ['text', 'password', 'search', 'number'].includes(x.type) && x.value); };   // 正在输入（或输入框里已有内容）时不自动刷新：刷新会重建页面、丢掉输入
+const busy = () => { if (Object.keys(state.draft).length) return true; const a = document.activeElement || {}; if (a.tagName === 'INPUT' && !['checkbox', 'button', 'radio'].includes(a.type)) return true; return [...document.querySelectorAll('#view input')].some(x => ['text', 'password', 'search', 'number'].includes(x.type) && x.value); };   // 正在输入（或输入框里已有内容）时不自动刷新：刷新会重建页面、丢掉输入
 
 function toast(msg, err) {
   const d = h('div', { class: err ? 'err' : '' }, msg);
@@ -86,6 +88,12 @@ async function act(action, body = {}, ask) {
     return j;
   } catch (e) { toast(e.message, true); return null; }
 }
+// 设计稿里的开关行：live=本机已有接口可用；否则灰色不可点，旁边写“需要后端改动”
+const swOff = (on) => h('span', { class: 'sw off', 'aria-disabled': 'true', title: NEED_BACKEND }, h('span', { class: 'knob' }), on === true ? '开' : '关', h('span', { class: 'tag wait' }, NEED_BACKEND));
+const swRow = (title, hint, ctl, tag) => h('div', { class: 'swrow', 'data-q': (title + ' ' + hint).toLowerCase() },
+  h('div', {}, h('div', { class: 't' }, title, tag ? h('span', { class: 'tag ' + (tag === '本机已有' ? 'live' : 'wait') }, tag) : null), h('div', { class: 'd' }, hint)), ctl);
+const offRow = (title, hint, on) => swRow(title, hint, swOff(on), '接入后可用');
+const offCard = (title, desc, rows) => h('div', { class: 'card' }, h('h3', {}, title), desc ? h('p', { class: 'desc' }, desc) : null, ...rows);
 const btn = (label, onclick, cls = '', disabled) => h('button', { class: 'btn ' + cls, onclick, disabled: !!disabled }, label);
 
 // ---------- 概览
@@ -161,6 +169,7 @@ function viewTasks(o) {
         scan.running ? pill('运行中', 'warn') : sp.finished ? pill('上次完成于 ' + sp.finished, 'ok') : pill('未运行', '')),
       sp.total ? h('div', {}, h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: `width:${spct}%` })),
         h('div', { class: 'dim' }, `${(sp.done || 0).toLocaleString()} / ${sp.total.toLocaleString()} 只 · ${spct}%${sp.started ? ' · 开始于 ' + sp.started : ''}`)) : null),
+    offCard('队列与配额', '会员回测队列、配额、功能开关等后端做好后接入。', [offRow('暂停回测队列', '暂停后新任务排队不执行。', false), offRow('会员可跑回测', '', true), offRow('可用引擎', '', true), offRow('每日配额', '免费 / Pro 的回测与翻译次数。', true)]),
     h('div', { class: 'card' }, h('h3', {}, '服务维护'),
       h('p', { class: 'desc' }, '改了代码后服务会在 5 秒内自动重启，一般不用手动重启。' + (o.server.managed ? '' : '（当前不是 launchd 启动的，重启会被拒绝。）')),
       btn('重启网页服务', () => act('restart_server', {}, { title: '重启网页服务？', body: '服务会中断几秒，launchd 会自动拉起。正在跑的网页回测任务会中断，后台子进程（更新、扫描）不受影响。', ok: '重启' }), 'danger', !o.server.managed)));
@@ -234,6 +243,7 @@ function viewAccess(o, v, mem) {   // mem = { members, feed }
           h('td', { class: 'dim' }, x.first), h('td', { class: 'dim' }, x.last), h('td', { class: 'num' }, x.n))))))
         : h('div', { class: 'dim', style: 'margin-top:8px' }, '还没有访客记录'),
       h('div', { class: 'row', style: 'margin-top:12px' }, btn('清空访客记录', () => act('clear_visits', {}, { title: '清空访客记录？', body: '会先把现有记录备份成 data/share_visits.*.bak，再清空。', ok: '清空' }), 'sm danger'))),
+    offCard('分享链接管理', '按链接撤销、设置到期需要后端。', [offRow('只读分享链接', '为单个页面生成可撤销的链接。', false)]),
     ...memberCards(mem),
     h('div', { class: 'card' }, h('h3', {}, '令牌与登录安全'),
       h('p', { class: 'desc' }, `后台令牌和主页面令牌是分开的，页面上不显示任何令牌。后台会话 ${t.session_hours} 小时过期；10 分钟内输错 5 次令牌会暂停登录。`),
@@ -275,12 +285,13 @@ async function viewLogs() {
 
 // ---------- 审计
 function viewAudit(items) {
-  return h('div', {}, h('h1', {}, '审计'), h('p', { class: 'lead' }, '后台上的每一个操作都会记录在这里（data/admin_audit.jsonl），最近 100 条。'),
-    h('div', { class: 'card' }, h('div', { class: 'scroll', style: 'max-height:640px' }, h('table', {}, h('thead', {}, h('tr', {}, ['时间', '操作', '参数', '结果'].map(x => h('th', {}, x)))),
+  return h('div', {}, h('h1', {}, '审计'), h('p', { class: 'lead' }, '后台上的每一个操作都会记录在这里（data/admin_audit.jsonl），最近 100 条。每条带操作人（所有者邮箱或本机）、来源 IP 和国家；改开关的记录写在“保存设置”那一步，旧记录这三栏为空。'),
+    h('div', { class: 'card' }, h('div', { class: 'scroll', style: 'max-height:640px' }, h('table', {}, h('thead', {}, h('tr', {}, ['时间', '操作', '参数', '操作人', 'IP', '国家', '结果'].map(x => h('th', {}, x)))),
       h('tbody', {}, items.length ? items.map(i => h('tr', {}, h('td', { class: 'dim', style: 'white-space:nowrap' }, i.t), h('td', {}, ACTION_LABEL[i.action] || i.action),
         h('td', { class: 'dim' }, i.detail ? Object.entries(i.detail).map(([k, v]) => k + '=' + v).join(' ') : ''),
+        h('td', { class: 'dim' }, i.actor || '—'), h('td', { class: 'dim' }, i.ip || '—'), h('td', { class: 'dim' }, i.country || '—'),
         h('td', {}, i.ok ? pill('成功', 'ok') : pill('失败', 'bad'), i.error ? h('span', { class: 'dim' }, ' ' + i.error) : null)))
-        : h('tr', {}, h('td', { colSpan: 4, class: 'dim' }, '还没有记录')))))));
+        : h('tr', {}, h('td', { colSpan: 7, class: 'dim' }, '还没有记录')))))));
 }
 
 
@@ -306,7 +317,8 @@ function memberCards(d) {
     h('div', { class: 'card' }, h('h3', {}, '最近的所有操作（最新 150 条）'), actTable(d.feed || [], true))];
 }
 function viewMembers(d) {
-  return h('div', {}, h('h1', {}, '会员'), h('p', { class: 'lead' }, '点名字查看这个人的账户、持仓、全部成交和每一次操作。'), ...memberCards(d));
+  return h('div', {}, h('h1', {}, '会员'), h('p', { class: 'lead' }, '点名字查看这个人的账户、持仓、全部成交和每一次操作。'),
+    offCard('会员功能总开关与申请', '升降 Pro、申请审批要等后端。', [offRow('会员功能总开关', '关闭后只剩所有者视角。', true), offRow('Pro 申请审批', '审批会员的 Pro 申请。', false)]), ...memberCards(d));
 }
 function viewMember(d) {
   const u = d.user, mk = { cn: '¥', us: '$' }, mn = { cn: 'A 股', us: '美股' };
@@ -325,6 +337,145 @@ function viewMember(d) {
     h('div', { class: 'card' }, h('h3', {}, '操作记录（最近 400 条）'), actTable(d.activity || [], false)));
 }
 
+
+// ---------- 可用的开关：先进“草稿”，底部出现“有 N 项修改还没保存”，点保存时集中确认一次再 POST
+const SETTING_LABEL = { registration_open: '开放注册', maintenance_on: '维护模式', maintenance_until: '预计恢复时间' };
+// 分区开关的草稿键写成 'sections:<页面id>'，保存时再合成 sections: {id: {on}}
+const savedValue = (key) => key.startsWith('sections:') ? (((state.site || {}).sections || {})[key.slice(9)] || { on: true }).on : (state.site || {})[key];
+const settingValue = (key) => key in state.draft ? state.draft[key] : savedValue(key);
+function toggleDraft(key) {
+  const saved = savedValue(key), next = !settingValue(key);
+  if (next === saved) delete state.draft[key]; else state.draft[key] = next;
+  repaintSite();
+}
+const swLive = (key, label) => {
+  const on = settingValue(key) === true;
+  return h('button', { type: 'button', class: 'sw live' + (on ? ' on' : '') + (key in state.draft ? ' changed' : ''), role: 'switch', 'aria-checked': String(on), 'aria-label': label, onclick: () => toggleDraft(key) },
+    h('span', { class: 'knob' }), on ? '开' : '关');
+};
+// 预计恢复时间（文本，≤ 40 字）：失焦后进草稿；和已保存的一样就撤销草稿
+const untilInput = () => h('input', { type: 'text', maxlength: '40', placeholder: '如 2026-11-01 18:00（北京时间）', 'aria-label': '预计恢复时间',
+  value: String(settingValue('maintenance_until') || ''),
+  onchange: (e) => { const v = e.target.value.trim(), saved = (state.site || {}).maintenance_until || ''; if (v === saved) delete state.draft.maintenance_until; else state.draft.maintenance_until = v; repaintSite(); } });
+async function saveDraft() {
+  const keys = Object.keys(state.draft);
+  if (!keys.length || state.saving) return;
+  // 有影响的开关（打开注册）在保存时集中确认一次
+  if (state.draft.registration_open === true && !await confirmDialog({ title: '开放注册？', body: '保存后，任何能打开本站的人都可以注册新账号（同一网络地址每小时最多 5 次，会员总数上限 200）。已有会员不受影响。', ok: '开放注册', danger: true })) return;
+  // 关闭分区页面也集中确认一次（访客会看到“暂未开放”页）
+  const closing = Object.entries(state.draft).filter(([k, v]) => k.startsWith('sections:') && v === false).map(([k]) => SECTION_LABEL[k.slice(9)]);
+  if (closing.length && !await confirmDialog({ title: '关闭 ' + closing.length + ' 个页面？', body: '保存后，除你自己以外的访问者打开「' + closing.join('、') + '」会看到“该页面暂未开放”。你自己（本机或主人通道）不受影响。', ok: '关闭页面', danger: true })) return;
+  // 开启维护模式也在保存时集中确认（访客会看到 503，所有者不受影响）
+  if (state.draft.maintenance_on === true && !await confirmDialog({ title: '开启维护模式？', body: '保存后，除你自己（本机或主人通道）以外的访问都会看到“网站维护中”（503）。搜索引擎的 robots.txt 仍可访问。', ok: '开启维护模式', danger: true })) return;
+  // 退出登录设备：集中确认一次（点“退出此设备”只是进草稿）
+  const revokes = Object.keys(state.draft).filter(k => k.startsWith('revoke:'));
+  if (revokes.length && !await confirmDialog({ title: '退出 ' + revokes.length + ' 台登录设备？', body: '保存后，这些设备上的后台登录立刻失效，需要重新登录。当前正在用的这台不会被退出。', ok: '退出 ' + revokes.length + ' 台设备', danger: true })) return;
+  state.saving = true;
+  try {
+    const body = {}, secs = {};
+    for (const [k, v] of Object.entries(state.draft)) { if (k.startsWith('revoke:')) continue; if (k.startsWith('sections:')) secs[k.slice(9)] = { on: v }; else body[k] = v; }
+    if (Object.keys(secs).length) body.sections = secs;
+    let msg = '';
+    if (Object.keys(body).length) {
+      const j = await api('/api/admin/settings', { body });
+      state.site = j.settings;
+      msg = j.changed && j.changed.length ? '已保存 ' + j.changed.length + ' 项修改' : '没有实际变化';
+    }
+    let out = 0;
+    for (const k of revokes) {
+      try { await api('/api/admin/owner/sessions/' + encodeURIComponent(k.slice(7)) + '/revoke', { body: {} }); out++; delete state.draft[k]; }
+      catch (e) { toast(e.message, true); }      // 失败的留在草稿里，其余继续
+    }
+    if (revokes.length) { msg = (msg ? msg + '；' : '') + '已退出 ' + out + ' 台设备'; try { state.sessions = await api('/api/admin/owner/sessions'); } catch (e) { /* 下次刷新再取 */ } }
+    for (const k of Object.keys(state.draft)) if (!k.startsWith('revoke:')) delete state.draft[k];
+    toast(msg);
+  } catch (e) { toast(e.message, true); }
+  state.saving = false;
+  repaintSite();
+}
+function saveBar() {
+  const n = Object.keys(state.draft).length;
+  return n ? h('div', { class: 'savebar', id: 'savebar' }, h('span', {}, '有 ' + n + ' 项修改还没保存'),
+    h('span', { class: 'row' }, btn('放弃修改', () => { state.draft = {}; repaintSite(); }, 'sm'), btn('保存', saveDraft, 'sm primary', state.saving))) : null;
+}
+function repaintSite() {
+  if (state.tab === 'sections' && state.site) { const sx = window.scrollX, sy = window.scrollY; $('#view').replaceChildren(viewSections()); applySearch(); window.scrollTo(sx, sy); return; }
+  if (state.tab === 'system' && state.sysOverview) { const sx = window.scrollX, sy = window.scrollY; $('#view').replaceChildren(viewSystem(state.sysOverview)); applySearch(); window.scrollTo(sx, sy); return; }
+  if (state.tab !== 'site' || !state.siteOverview) return;
+  const sx = window.scrollX, sy = window.scrollY;
+  $('#view').replaceChildren(viewSite(state.siteOverview));
+  applySearch();
+  window.scrollTo(sx, sy);
+}
+window.addEventListener('beforeunload', e => { if (Object.keys(state.draft).length) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---------- 站点开关 / 分区开关 / 系统（设计稿布局；后端还没有的开关灰显）
+function viewSite(o) {
+  const sh = o.share || {};
+  state.siteOverview = o;
+  return h('div', {}, h('h1', {}, '站点开关'), h('p', { class: 'lead' }, '全站级别的开关。灰色的需要后端先加接口，现在不能点，也不会假装生效。'),
+    offCard('站点状态', '', [
+      offRow('站点在线', '关闭后访客看到“暂未开放”页。', true),
+      swRow('维护模式', '开启后访客看到 503 维护页（带 Retry-After），所有者不受影响。', swLive('maintenance_on', '维护模式'), '本机已有'),
+      swRow('预计恢复时间', '可不填（不填时 Retry-After 为 3600 秒）。格式 YYYY-MM-DD HH:MM，北京时间，最多 40 字。', untilInput(), '本机已有'),
+      swRow('开放注册', '关闭时新用户不能注册，已有会员不受影响。默认关闭。', swLive('registration_open', '开放注册'), '本机已有'),
+      offRow('允许游客浏览', '未登录的人是否能看公开页面。', true),
+      offRow('展示页', '对外展示的示例页面。', false),
+      offRow('站点公告', '同一时间只显示一条，可设到期日。', false),
+      offRow('新会员默认档位', '注册后是免费还是 Pro。', false),
+      swRow('私人模式', '仅所有者可见全部功能，由配置文件决定，这里只读。', h('span', { class: 'pill' }, '只读'), '本机已有')]),
+    saveBar(),
+    h('div', { class: 'card' }, h('h3', {}, '外网分享（已有功能）'), h('p', { class: 'desc' }, '这个开关是真的：和「分享与访问」页里是同一个。'),
+      swRow('分享隧道（Cloudflare）', '开启后拿到链接的人可以只读查看主页面。', sh.running
+        ? btn('停止分享', () => act('share_stop'), 'sm danger')
+        : btn('开启分享', () => act('share_start', {}, { title: '把网站开到外网？', body: '会生成一个临时公网链接，任何拿到链接的人都能查看你的行情和回测结果。\\n后台、代码编辑、分享管理不会对外开放。', ok: '开启分享' }), 'sm primary'), '本机已有')));
+}
+const SECTION_LABEL = { today: '今日', signals: '信号', market: '行情', watch: '自选', backtest: '回测', holdings: '持仓', monitor: '监控', research: '研究', settings: '设置' };
+function viewSections() {
+  const groups = [['行情', ['today', 'market', 'watch']], ['研究与交易', ['backtest', 'research', 'signals']], ['账户', ['holdings', 'monitor', 'settings']]];
+  return h('div', {}, h('h1', {}, '分区开关'), h('p', { class: 'lead' }, '关掉的页面，访客打开时看到“该页面暂未开放”（不是 404）；你自己（本机或主人通道）不受影响。修改先进草稿，点保存时集中确认。'),
+    ...groups.map(([g, ids]) => offCard(g, '', ids.map(id => swRow(SECTION_LABEL[id], '整页开关（新界面 /ui/w/' + id + '.html）。', swLive('sections:' + id, SECTION_LABEL[id]), '本机已有')))),
+    saveBar());
+}
+// 我的登录设备：退出单台先进草稿（和开关一样底部出现“有 N 项修改还没保存”），点保存时集中确认；当前这台不能退出
+function sessionsCard() {
+  const rows = (state.sessions || []).map(x => {
+    const key = 'revoke:' + x.id, queued = key in state.draft;
+    const ctl = x.current ? pill('当前设备', 'ok')
+      : queued ? btn('撤销退出', () => { delete state.draft[key]; repaintSite(); }, 'sm')
+        : btn('退出此设备', () => { state.draft[key] = true; repaintSite(); }, 'sm danger');
+    return swRow(x.device + (queued ? '（待退出）' : ''), `${x.ip || '—'}${x.country ? ' · ' + x.country : ''} · 最近活动 ${dt(x.last_active)}`, ctl, '本机已有');
+  });
+  return h('div', { class: 'card' }, h('h3', {}, '我的登录设备'),
+    h('p', { class: 'desc' }, '用管理令牌登录过的浏览器（8 小时有效）。可以退出别的设备，不能退出当前这台；通过 Cloudflare 主人通道进来的访问不在此列。'),
+    ...(rows.length ? rows : [h('p', { class: 'dim' }, '没有登录记录')]));
+}
+function viewSystem(o) {
+  state.sysOverview = o;
+  const t = o.token || {};
+  return h('div', {}, h('h1', {}, '系统'), h('p', { class: 'lead' }, '重启、换令牌、备份下载。这些是本机已有功能，会弹出确认框。'),
+    h('div', { class: 'card' }, h('h3', {}, '系统操作'),
+      swRow('重启网页服务', '服务会中断几秒，launchd 自动拉起。' + (o.server.managed ? '' : '（当前不是 launchd 启动的，已禁用。）'),
+        btn('重启', () => act('restart_server', {}, { title: '重启网页服务？', body: '服务会中断几秒，launchd 会自动拉起。正在跑的网页回测任务会中断，后台子进程（更新、扫描）不受影响。', ok: '重启' }), 'sm danger', !o.server.managed), '本机已有'),
+      swRow('更换主页面令牌', '上次更换：' + dt(t.main_rotated),
+        btn('更换', () => act('rotate_main_token', {}, { title: '更换主页面令牌？', body: '旧令牌和所有已登录的浏览器会立刻失效，正在开启的分享会被停止。之后需运行 bash scripts/open_dashboard.sh 重新打开。', ok: '更换' }), 'sm danger'), '本机已有'),
+      swRow('更换后台令牌', '上次更换：' + dt(t.admin_rotated),
+        btn('更换', () => act('rotate_admin_token', {}, { title: '更换后台令牌？', body: '当前后台会话会失效，需运行 cd ~/Documents/Projects/quant-backtest && bash scripts/open_admin.sh 重新登录。', ok: '更换' }), 'sm danger'), '本机已有'),
+      swRow('下载备份', '备份文件在「数据」页生成并下载。', h('a', { class: 'btn sm', href: '#/data', style: 'color:var(--text)' }, '去数据页'), '本机已有'),
+      ),
+    sessionsCard(),
+    saveBar(),
+    h('div', { class: 'card' }, h('h3', {}, '运行状态'), h('p', { class: 'desc' }, `PID ${o.server.pid} · 已运行 ${dur(o.server.uptime)} · 磁盘可用 ${bytes(o.disk.free)}。更多见「概览」。`)));
+}
+
+// ---------- 顶部搜索：过滤侧栏分区、当前页的开关行和表格行
+function applySearch() {
+  const q = $('#search').value.trim().toLowerCase();
+  document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('nomatch', !!q && !a.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('#view .swrow').forEach(r => r.classList.toggle('hide', !!q && !(r.dataset.q || r.textContent.toLowerCase()).includes(q)));
+  document.querySelectorAll('#view tbody tr').forEach(r => { r.style.display = q && !r.textContent.toLowerCase().includes(q) ? 'none' : ''; });
+}
+
 // ---------- 路由与刷新
 let seq = 0;
 async function refresh() {
@@ -333,6 +484,9 @@ async function refresh() {
   try {
     if (tab === 'overview') node = viewOverview(await api('/api/admin/overview'));
     else if (tab === 'tasks') node = viewTasks(await api('/api/admin/overview'));
+    else if (tab === 'site') { const [o, s] = await Promise.all([api('/api/admin/overview'), api('/api/admin/settings')]); state.site = s; node = viewSite(o); }
+    else if (tab === 'sections') { state.site = await api('/api/admin/settings'); node = viewSections(); }
+    else if (tab === 'system') { const [o, ss] = await Promise.all([api('/api/admin/overview'), api('/api/admin/owner/sessions').catch(() => state.sessions)]); state.sessions = ss; node = viewSystem(o); }
     else if (tab === 'data') node = viewData(await api('/api/admin/data'));
     else if (tab === 'access') { const [o, v, mm] = await Promise.all([api('/api/admin/overview'), api('/api/admin/visits'), api('/api/admin/members')]); node = viewAccess(o, v, mm); }
     else if (tab === 'members') node = state.member ? viewMember(await api('/api/admin/member?id=' + state.member)) : viewMembers(await api('/api/admin/members'));
@@ -342,17 +496,21 @@ async function refresh() {
   if (my !== seq || tab !== state.tab || !node) return;      // 期间切了页面：丢弃过期结果
   const sx = window.scrollX, sy = window.scrollY;
   $('#view').replaceChildren(node);
+  applySearch();
   window.scrollTo(sx, sy);
 }
 function route() {
   const mt = location.hash.match(/^#\/(\w+)(?:\/(\d+))?/) || [], t = mt[1];
   state.member = mt[2] ? +mt[2] : 0;
   state.tab = t === 'members' ? 'members' : TABS.some(x => x[0] === t) ? t : 'overview';
-  $('#tabs').replaceChildren(...TABS.map(([k, label]) => h('a', { class: (k === state.tab || (state.tab === 'members' && k === 'access')) ? 'on' : '', href: '#/' + k }, label)));
+  const label = Object.fromEntries(TABS);
+  $('#tabs').replaceChildren(...NAV_GROUPS.flatMap(([g, ks]) => [g ? h('div', { class: 'grp' }, g) : null,
+    ...ks.map(k => h('a', { class: k === state.tab ? 'on' : '', href: '#/' + k }, label[k]))]));
+  applySearch();
   refresh();
 }
 function schedule() {
-  const wait = state.tab === 'data' ? (state.gapRunning ? 2000 : 0) : state.tab === 'logs' ? (state.log.auto ? 4000 : 0) : state.tab === 'audit' ? 0 : 5000;
+  const wait = state.tab === 'sections' ? 0 : state.tab === 'data' ? (state.gapRunning ? 2000 : 0) : state.tab === 'logs' ? (state.log.auto ? 4000 : 0) : state.tab === 'audit' ? 0 : 5000;
   setTimeout(async () => {
     if (wait && !document.hidden && !busy() && !document.querySelector('.modal-bg')) await refresh();
     schedule();
@@ -361,6 +519,7 @@ function schedule() {
 function clock() { $('#clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
 
 window.addEventListener('hashchange', route);
+$('#search').addEventListener('input', applySearch);
 setInterval(clock, 1000); clock();
 route(); schedule();
 })();

@@ -40,6 +40,9 @@ INDUSTRY = ROOT / "data" / "industry_cn.json"
 DAILY = ROOT / "data" / "daily" / "cn_all"
 CODES = ROOT / "data" / "daily" / "cn_all_list.csv"
 S14_STATE = ROOT / "handoff" / "auto" / "state_T014.json"
+# 淘汰冻结文件:正式跑与稳健性变体共用同一份固定文件。训练段淘汰判定与 universe/top-n 无关,
+# 且写进的是全局固定的 TrialLog(外部锚点,见 src/replay/selection.py),换一份新文件会被当成"换文件重来淘汰"拒绝。
+FREEZE_SHARED = ROOT / "handoff" / "data" / "replay" / "eliminated_registry.json"
 
 
 def out_dir(mode: str) -> Path:
@@ -55,10 +58,10 @@ def build_tasks(mode: str, with_fund: bool):
     pre = mode == "preflight"
     T = []
 
-    def add(name, lane, cmd, timeout, requires=(), produces="", clean_dirs=()):
+    def add(name, lane, cmd, timeout, requires=(), produces="", clean_dirs=(), env=None):
         T.append(dict(name=name, lane=lane, cmd=[PY, "-B"] + [str(c) for c in cmd],
                       timeout=timeout, requires=[str(r) for r in requires], produces=produces,
-                      clean_dirs=[str(c) for c in clean_dirs]))
+                      clean_dirs=[str(c) for c in clean_dirs], env=env))
 
     # ---------- 快任务(两条通道都排在最前,保证早上至少有东西) ----------
     add("EOD-收盘分析", "cpu",
@@ -80,15 +83,19 @@ def build_tasks(mode: str, with_fund: bool):
         rp = ["--universe", "100", "--n-boot", "200", "--null-k", "100",
               "--strategies", "mom_01,rev_01,ind_01"]
         rp_t = 1500
+        rp_freeze = o / "freeze_replay.json"           # 试跑自己的冻结文件,不碰正式跑那份
+        rp_env = {"T008_TRIAL_LOG_PATH": str(o / "trial_log_preflight.jsonl")}  # 试跑的淘汰账本也隔离,不污染正式跑用的固定账本
     else:
         rp = ["--universe", "500", "--top-n", "20", "--n-boot", "300", "--null-k", "1000"]
         rp_t = 5 * 3600
+        rp_freeze = FREEZE_SHARED                      # 正式跑用固定冻结文件(要跨夜持久,也要和稳健性变体共用)
+        rp_env = None
     add("回放-正式", "cpu",
         ["scripts/replay_run.py", "--start", "2024-01-01", "--end", VALID_END, "--out", o / "replay_500",
-         "--industry-json", INDUSTRY, "--freeze-file", o / "freeze_replay.json", "--execute"] + rp,
+         "--industry-json", INDUSTRY, "--freeze-file", rp_freeze, "--execute"] + rp,
         rp_t, [DAILY, INDUSTRY],
         "训练段淘汰 + 验证段只看:幸存策略、经验 p 值(Holm)、组合净值、报告 replay_500/",
-        clean_dirs=[o / "replay_500"])  # 脚本拒绝覆盖非空输出目录,重跑前自己清空(上次失败的半成品也会被清掉)
+        clean_dirs=[o / "replay_500"], env=rp_env)  # 脚本拒绝覆盖非空输出目录,重跑前自己清空(上次失败的半成品也会被清掉)
     add("因子检验-验证段", "cpu",
         ["scripts/replay_factor_check.py", "--daily-dir", DAILY, "--output", o / "fc_valid.md",
          "--segment", "valid", "--industry-json", INDUSTRY,
@@ -97,11 +104,13 @@ def build_tasks(mode: str, with_fund: bool):
         "验证段各因子分组单调性 + bootstrap 置信区间(train 段昨晚已有,这次是 valid)")
     if not pre:
         # 稳健性回放:换流动性门槛、换持仓集中度,看幸存策略是不是同一批(不是重复,是敏感性分析)
+        # 淘汰判定与 universe/top-n 无关,这两个变体必须和"回放-正式"共用 FREEZE_SHARED,不能各用各的文件——
+        # 否则正式跑新冻的策略,在这两个变体眼里就是"账本里有、文件里没有",同样会被当成换文件作弊重跑而拒绝。
         for tag, extra in (("universe300", ["--universe", "300", "--top-n", "20"]),
                            ("top10", ["--universe", "500", "--top-n", "10"])):
             add(f"回放-稳健性-{tag}", "cpu",
                 ["scripts/replay_run.py", "--start", "2024-01-01", "--end", VALID_END, "--out", o / f"replay_{tag}",
-                 "--industry-json", INDUSTRY, "--freeze-file", o / f"freeze_{tag}.json", "--execute",
+                 "--industry-json", INDUSTRY, "--freeze-file", FREEZE_SHARED, "--execute",
                  "--n-boot", "300", "--null-k", "1000"] + extra,
                 5 * 3600, [DAILY, INDUSTRY], f"稳健性:{tag} 下的幸存策略与正式回放对比",
                 clean_dirs=[o / f"replay_{tag}"])
@@ -222,10 +231,13 @@ class Runner:
         logf = self.o / "logs" / (name.replace("/", "_") + ".log")
         t0 = time.time()
         try:
+            run_env = {**os.environ, **t["env"]} if t.get("env") else None
             with open(logf, "a", encoding="utf-8") as lf:
                 lf.write(f"\n===== {dt.datetime.now():%Y-%m-%d %H:%M:%S} cmd: {' '.join(t['cmd'])}\n")
+                if run_env is not None:
+                    lf.write(f"===== env override: {t['env']}\n")
                 lf.flush()
-                r = subprocess.run(t["cmd"], cwd=ROOT, stdout=lf, stderr=subprocess.STDOUT, timeout=t["timeout"])
+                r = subprocess.run(t["cmd"], cwd=ROOT, stdout=lf, stderr=subprocess.STDOUT, timeout=t["timeout"], env=run_env)
             rc = r.returncode
             status = "OK" if rc == 0 else "FAIL"
         except subprocess.TimeoutExpired:

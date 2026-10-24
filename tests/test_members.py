@@ -22,6 +22,15 @@ class T(unittest.TestCase):
         m.set_disabled(self.u, True)
         self.assertIsNone(m.user_for(tok))
 
+    def test_email_login(self):
+        m.set_email(self.u, "A@b.com")
+        who, _ = m.login("a@B.com", "password123")
+        self.assertEqual(who["name"], "tester")
+        with self.assertRaises(m.MemberError): m.login("a@b.com", "wrongpass1")
+        with self.assertRaises(m.MemberError): m.set_email(self.u, "bad")
+        v = m.register("other", "password123", "o@x.com")["id"]
+        with self.assertRaises(m.MemberError): m.set_email(v, "a@b.com")
+
     def test_trade_rules(self):
         m.order(self.u, "cn", "600000", "buy", 1000, Q)
         with self.assertRaises(m.MemberError): m.order(self.u, "cn", "600000", "sell", 100, Q)       # T+1

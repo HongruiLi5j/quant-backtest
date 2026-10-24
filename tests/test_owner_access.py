@@ -351,3 +351,22 @@ def test_personal_mode_off_does_not_block(monkeypatch):
     h.path, h.command = "/admin", "GET"
     monkeypatch.setattr(app.personal_mode, "is_enabled", lambda: False)
     assert h._personal_blocked() is False
+
+
+# ---------- 外网没有凭证：连 /api/health 这样的普通路径也被挡（个人模式下一律 404）
+def test_external_without_credentials_blocked_on_api_health(monkeypatch):
+    from urllib.parse import urlparse
+    app, h = _handler({"Host": HOST, "cf-ray": "abc-LAX"})   # 外网请求，没有 Cf-Access 凭证
+    h.path, h.command = "/api/health", "GET"
+    sent = []
+    h._send = lambda code, *a, **k: sent.append(code)
+    h._personal_mode = True
+    monkeypatch.setattr(app.owner_access, "load_config", lambda root=None: CFG)   # 用真实的 is_owner 校验
+    assert h._owner() is False and h._external() is True
+    assert h._share_gate(urlparse(h.path)) is True and sent == [404]
+
+
+def test_non_owner_email_credential_rejected_for_every_path():
+    for path in ("/", "/api/health", "/admin", "/admin.js", "/api/admin/status"):
+        for aud in (AUD, ADMIN_AUD):
+            assert not oa.is_owner(hdr(make_jwt(aud=aud, email="stranger@example.com")), path, CFG), (path, aud)

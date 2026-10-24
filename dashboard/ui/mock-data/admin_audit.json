@@ -1,0 +1,10 @@
+{
+ "items": [
+  { "t": "2026-10-24 22:10:03", "action": "setting", "ok": true, "actor": "local", "ip": "127.0.0.1", "country": "", "detail": { "change": "registration_open false->true" } },
+  { "t": "2026-10-24 21:58:41", "action": "session_revoke", "ok": true, "actor": "local", "ip": "127.0.0.1", "country": "", "detail": { "id": "0f1e2d3c4b5a6978", "device": "iPhone · Safari" } },
+  { "t": "2026-10-24 21:40:12", "action": "setting", "ok": false, "actor": "local", "ip": "127.0.0.1", "country": "", "detail": { "change": "quota.free_backtest" }, "error": "SETTING_INVALID" },
+  { "t": "2026-10-24 20:05:55", "action": "login", "ok": true, "actor": "local", "ip": "127.0.0.1", "country": "" },
+  { "t": "2026-10-24 19:12:30", "action": "blocked_remote", "ok": false, "actor": "anonymous", "ip": "203.0.113.50", "country": "US", "detail": { "path": "/api/admin/settings" } },
+  { "t": "2026-10-24 18:00:00", "action": "rotate_admin_token", "ok": true, "actor": "local", "ip": "127.0.0.1", "country": "" }
+ ]
+}

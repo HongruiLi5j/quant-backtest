@@ -25,17 +25,18 @@ import sys
 import threading
 import time
 import warnings
+from html import escape as html_escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 warnings.filterwarnings("ignore")
 
 import pandas as pd
 
 from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
-from src import admin, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
+from src import admin, admin_settings, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
 from src import personal_mode
 try:
@@ -48,6 +49,12 @@ ROOT = Path(__file__).resolve().parent
 SECRET = ROOT / ".secret" / "token"
 DASH = ROOT / "dashboard"
 COOKIE = "qb_session"
+UI_DIR = ROOT / "dashboard" / "ui"       # 新界面（只读静态文件），挂在 /ui/；目录不存在时 /ui/ 全部 404
+UI_TYPES = {                               # 后缀白名单 → Content-Type；不在表里的一律 404
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2",
+}
 
 
 def get_token() -> str:
@@ -495,6 +502,30 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, ctype, {"ETag": etag},
                    cache="private, max-age=31536000, immutable" if long else "private, no-cache")
 
+    def _ui_static(self, u):
+        """/ui/ 只读静态文件。到这里时登录 / 分享门 / 个人模式判断已经和首页 / 一样走完了。
+        任何不合规的请求都只返回 404，不透露原因。"""
+        if u.path == "/ui":
+            return self._send(301, b"", "text/plain", {"Location": "/ui/"})
+        nf = lambda: self._send(404, b"not found", "text/plain")
+        rel = unquote(u.path[len("/ui/"):]) or "index.html"      # 只解码一次，再逐段检查
+        parts = rel.split("/")
+        if "\x00" in rel or "\\" in rel or any(p == "" or p.startswith(".") for p in parts):
+            return nf()                                          # 绝对路径（空段）/ ../ / 点开头 / 目录请求
+        ctype = UI_TYPES.get(Path(rel).suffix.lower())
+        if ctype is None:
+            return nf()
+        try:
+            root = UI_DIR.resolve(strict=True)
+            f = (root / rel).resolve(strict=True)
+            if not f.is_relative_to(root) or not f.is_file():    # 符号链接跑出目录也在这里被拦
+                return nf()
+            data = f.read_bytes()
+        except (OSError, ValueError):
+            return nf()
+        etag = '"' + hashlib.sha1(data).hexdigest() + '"'
+        self._send(200, data, ctype, {"ETag": etag}, cache="private, no-cache")
+
     def _page(self, name: str):
         """HTML：把 <script src>/<link href> 里的 ?v=… 换成文件内容哈希，HTML 本身每次向服务器确认（no-cache + ETag）。"""
         raw = (DASH / name).read_bytes()
@@ -598,9 +629,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._owner_audited = self.headers
                 admin.audit("owner_remote", {"path": urlparse(self.path).path})
             return True
-        return bool(v) and admin.check_session(v.value, ADMIN_TOKEN)
+        if not (v and admin.check_session(v.value, ADMIN_TOKEN)):
+            return False
+        # 我的登录列表：被“退出单台”的 cookie 即使签名没过期也不再放行（库出错时放行，见 session_allowed）
+        return admin_settings.session_allowed(v.value, self.headers, getattr(self, "client_address", ("",))[0])
 
     def _admin_get(self, u, q):
+        admin.set_actor_from_request(self.headers, self.client_address[0], getattr(self, "_owner", None))   # 操作记录的操作人/IP/国家
         if not self._local_or_owner():     # 分享链接 / 隧道来的请求：装作没有这个页面
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
@@ -609,9 +644,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(429, "尝试太多次，请 10 分钟后再试".encode(), "text/plain; charset=utf-8")
             if hmac.compare_digest(q["t"], ADMIN_TOKEN):
                 admin.audit("login")
+                sess = admin.make_session(ADMIN_TOKEN)
+                try:
+                    admin_settings.register_session(sess, self.headers, self.client_address[0])     # 登记进“我的登录列表”
+                except Exception:
+                    pass
                 return self._send(303, b"", "text/plain", {
                     "Location": "/admin",
-                    "Set-Cookie": f"{ADMIN_COOKIE}={admin.make_session(ADMIN_TOKEN)}; HttpOnly; SameSite=Strict; "
+                    "Set-Cookie": f"{ADMIN_COOKIE}={sess}; HttpOnly; SameSite=Strict; "
                                   f"Path=/; Max-Age={admin.SESSION_SECONDS}"})
             admin.record_bad_login()
             admin.audit("login", ok=False, error="令牌不对")
@@ -645,6 +685,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "没有这个会员"}, 404)
                 pf = {m: members.portfolio(uid, m, _member_last_price(m), time.strftime("%Y-%m-%d")) for m in members.INITIAL_CASH}
                 return self._json({"user": info, "portfolio": pf, "activity": members.activity(uid, 400)})
+            elif u.path == "/api/admin/settings":
+                self._json(admin_settings.get_all())
+            elif u.path == "/api/admin/owner/sessions":
+                self._json(self._owner_sessions_list())
             elif u.path == "/api/admin/visits":
                 self._json(share_visits())
             elif u.path == "/api/admin/backup/download":
@@ -662,12 +706,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def _admin_post(self, u):
+        admin.set_actor_from_request(self.headers, self.client_address[0], getattr(self, "_owner", None))
         if not self._local_or_owner():
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
         if (not self._admin_authed() or self.headers.get("X-Requested-With") != "dashboard"
                 or not self._origin_ok()):
             return self._send(401, b"unauthorized", "text/plain")
+        if u.path == "/api/admin/settings":
+            return self._admin_settings_post()
+        if u.path.startswith("/api/admin/owner/sessions/") and u.path.endswith("/revoke"):
+            return self._owner_session_revoke(u.path[len("/api/admin/owner/sessions/"):-len("/revoke")])
         if u.path != "/api/admin/action":
             return self._send(404, b"not found", "text/plain")
         try:
@@ -678,6 +727,42 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(e)}, 400)
         except Exception as e:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+
+    def _admin_cookie_value(self) -> str:
+        v = SimpleCookie(self.headers.get("Cookie", "")).get(ADMIN_COOKIE)
+        return v.value if v else ""
+
+    def _owner_sessions_list(self) -> list:
+        """GET /api/admin/owner/sessions → [{id, device, ip, country, last_active, current}]（和 _admin_get 同一道门：外网无主人身份一律 404）。"""
+        return admin_settings.list_sessions(self._admin_cookie_value())
+
+    def _owner_session_revoke(self, sid: str):
+        """POST /api/admin/owner/sessions/<id>/revoke：退出单台；当前这一台 400 CANNOT_REVOKE_CURRENT，没有这个 id 404。"""
+        try:
+            res = admin_settings.revoke_session(sid, self._admin_cookie_value())
+        except admin_settings.SessionError as e:
+            admin.audit("session_revoke", {"id": sid[:32]}, ok=False, error=e.code)
+            return self._json({"error": e.code}, 404 if e.code == "NOT_FOUND" else 400)
+        except Exception as e:
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        admin.audit("session_revoke", {"id": res["id"], "device": res["device"]})
+        self._json({"ok": True, "id": res["id"]})
+
+    def _admin_settings_post(self):
+        """POST /api/admin/settings：只接受白名单键；失败 400 SETTING_INVALID 并带出错的键名。"""
+        try:
+            body = self._body()
+        except (ValueError, OSError):
+            return self._json({"error": "SETTING_INVALID", "key": "body"}, 400)
+        try:
+            res = admin_settings.update(
+                body, lambda k, old, new: admin.audit("setting", {"change": f"{k} {json.dumps(old, ensure_ascii=False)}->{json.dumps(new, ensure_ascii=False)}"}))
+        except admin_settings.SettingError as e:
+            admin.audit("setting", {"change": e.key}, ok=False, error="SETTING_INVALID")
+            return self._json({"error": "SETTING_INVALID", "key": e.key}, 400)
+        except Exception as e:
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        self._json({"ok": True, **res})
 
     def _ai(self, method, u):
         if not self._local_or_owner():
@@ -852,10 +937,51 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return False
 
+    def _maintenance_blocked(self) -> bool:
+        """维护模式（§2.10 第 1 条）：开启时对非所有者返回 503 + Retry-After，不返回 404/403。
+        绕过：本机或主人通道；/robots.txt 永远 200；后台路径不在这里处理（外网无主人身份仍由后台自己返回 404）。
+        读不到设置时 admin_settings 会回退到上次的值或“维护关”，这里再包一层，任何异常都当作没开维护。"""
+        path = urlparse(self.path).path
+        if path in ("/admin", "/admin.js") or path.startswith("/api/admin/"):
+            return False
+        try:
+            on, until = admin_settings.maintenance()
+            if not on or self._local_or_owner():
+                return False
+        except Exception:
+            return False
+        if path == "/robots.txt":
+            self._send(200, b"User-agent: *\nDisallow: /api/\n", "text/plain; charset=utf-8")
+            return True
+        retry = str(admin_settings.retry_after_seconds(until))
+        note = ("预计恢复：" + until) if until else "请稍后再来"
+        body = ("<!doctype html><meta charset=utf-8><title>维护中</title><h1>网站维护中</h1><p>"
+                + html_escape(note) + "</p>").encode("utf-8")
+        self._send(503, body, "text/html; charset=utf-8", {"Retry-After": retry})
+        return True
+
+    def _section_blocked(self, path: str) -> bool:
+        """分区开关：/ui/w/<id>.html 在后台被关掉时，非所有者拿到 200 的“暂未开放”页（不是 404）。
+        所有者（本机或主人通道）照常打开，方便预览；读不到设置、不认识的页面一律放行。"""
+        try:
+            m = re.fullmatch(r"/ui/w/([a-z]+)\.html", path)
+            if not m or m.group(1) not in admin_settings.SECTION_IDS:
+                return False
+            if admin_settings.section_open(m.group(1)) or self._local_or_owner():
+                return False
+        except Exception:
+            return False
+        body = ("<!doctype html><meta charset=utf-8><meta name=robots content=noindex><title>暂未开放</title>"
+                "<h1>该页面暂未开放</h1><p>请稍后再来。</p>").encode("utf-8")
+        self._send(200, body, "text/html; charset=utf-8")
+        return True
+
     def do_GET(self):
         if not self._guard():
             return
         if self._personal_blocked():
+            return
+        if self._maintenance_blocked():
             return
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -900,7 +1026,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path in ("/member", "/member.js") or u.path.startswith("/api/member/"):
             return self._member_get(u, q)
         try:
-            if u.path == "/":
+            if u.path == "/ui" or u.path.startswith("/ui/"):
+                if not self._section_blocked(u.path):
+                    self._ui_static(u)
+            elif u.path == "/":
                 self._page("index.html")
             elif u.path == "/terminal.css":
                 self._static("terminal.css", "text/css; charset=utf-8")
@@ -1034,10 +1163,19 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
+    def do_HEAD(self):
+        """只有 /ui/ 支持 HEAD（_send 在 HEAD 时不写正文）；其他路径保持原来的 501。"""
+        p = urlparse(self.path).path
+        if p == "/ui" or p.startswith("/ui/"):
+            return self.do_GET()
+        self.send_error(501, "Unsupported method ('HEAD')")
+
     def do_POST(self):
         if not self._guard():
             return
         if self._personal_blocked():
+            return
+        if self._maintenance_blocked():
             return
         if urlparse(self.path).path.startswith("/api/admin/"):
             return self._admin_post(urlparse(self.path))
@@ -1204,9 +1342,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             b = self._body()
             if u.path == "/api/member/register":
+                if not admin_settings.registration_open():     # 默认关；不建账号、不计限频
+                    return self._json({"error": "REGISTRATION_CLOSED", "message": "暂未开放注册"}, 403)
                 if members.hit("reg", ip, 5, 3600):
                     return self._json({"error": "注册太频繁，请一小时后再试"}, 429)
-                user = members.register(str(b.get("name", "")), str(b.get("password", "")))
+                user = members.register(str(b.get("name", "")), str(b.get("password", "")), str(b.get("email", "")))
                 who, tok = members.login(user["name"], str(b.get("password", "")))
                 self._mlog(who, "register", "注册并登录")
                 return self._send(200, json.dumps({"user": who}, ensure_ascii=False).encode(), "application/json; charset=utf-8", {

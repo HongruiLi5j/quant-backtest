@@ -173,7 +173,7 @@ ROUTES = (('GET', '/api/us_market_monitor/status'), ('GET', '/api/us_market_moni
 
 
 def build_class(us_scheduler, a_scheduler):
-    names = ('do_GET', 'do_POST', '_personal_blocked', '_market_monitor', '_us_market_monitor', '_authed', '_remote', '_external',
+    names = ('do_GET', 'do_POST', '_personal_blocked', '_maintenance_blocked', '_market_monitor', '_us_market_monitor', '_authed', '_remote', '_external',
              '_owner_cfg', '_owner', '_local_or_owner', '_origin_ok', '_https')
     cls = ast.ClassDef(name='Handler', bases=[], keywords=[], decorator_list=[],
                        body=ASSIGNS + [METHODS[n] for n in names])

@@ -1,0 +1,5 @@
+[
+ { "id": "a1b2c3d4e5f60718", "device": "Mac · Chrome", "ip": "127.0.0.1", "country": "", "last_active": 1789990000, "current": true },
+ { "id": "0f1e2d3c4b5a6978", "device": "iPhone · Safari", "ip": "203.0.113.7", "country": "US", "last_active": 1789900000, "current": false },
+ { "id": "9988776655443322", "device": "Windows · Edge", "ip": "198.51.100.23", "country": "CN", "last_active": 1789500000, "current": false }
+]

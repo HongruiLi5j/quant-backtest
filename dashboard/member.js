@@ -38,14 +38,15 @@
     var mode = "login", box = h("div", { class: "login" });
     function draw() {
       box.textContent = "";
-      var name = h("input", { placeholder: "用户名（3–20 位）", autocomplete: "username" });
+      var name = h("input", { placeholder: mode === "login" ? "邮箱或用户名" : "用户名（3–20 位）", autocomplete: "username" });
+      var em = h("input", { type: "email", placeholder: "邮箱（选填，以后可用邮箱登录）", autocomplete: "email" });
       var pw = h("input", { type: "password", placeholder: "密码（至少 8 位）", autocomplete: mode === "login" ? "current-password" : "new-password" });
       var msg = h("div", { class: "warn" });
-      function go() { msg.textContent = ""; api("/api/member/" + mode, { name: name.value, password: pw.value }).then(function (j) { S.user = j.user; boot(); }).catch(function (e) { msg.textContent = e.message; }); }
+      function go() { msg.textContent = ""; api("/api/member/" + mode, { name: name.value, password: pw.value, email: mode === "register" ? em.value : "" }).then(function (j) { S.user = j.user; boot(); }).catch(function (e) { msg.textContent = e.message; }); }
       pw.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
       box.appendChild(h("div", { style: "font-size:22px;font-weight:700" }, "模拟交易"));
       box.appendChild(h("div", { class: "mut sm" }, mode === "login" ? "登录你的模拟账户" : "注册后获得模拟账户：A 股 ¥1,000,000，美股 $100,000（全部是虚拟资金）"));
-      box.appendChild(name); box.appendChild(pw);
+      box.appendChild(name); if (mode === "register") box.appendChild(em); box.appendChild(pw);
       if (mode === "register") box.appendChild(h("div", { class: "mut sm" }, "说明：站长可以看到会员的登录时间、网络地址、查看过的策略信号和模拟交易记录。请不要使用你在其他网站用的密码。"));
       box.appendChild(h("button", { class: "btn", onclick: go }, mode === "login" ? "登录" : "注册并登录"));
       box.appendChild(h("button", { class: "btn g", onclick: function () { mode = mode === "login" ? "register" : "login"; draw(); } }, mode === "login" ? "没有账号？去注册" : "已有账号？去登录"));

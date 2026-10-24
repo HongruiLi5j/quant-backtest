@@ -951,7 +951,7 @@ vm.runInContext('S.meta = {strategies: input.strategies}; S.market = "cn";', con
         # 只编译 Handler 需要的方法，不导入 app.py；该模块顶层会读取令牌。
         tree = ast.parse((ROOT / 'app.py').read_text())
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Handler')
-        methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('do_GET', '_guard', '_authed', '_remote')]
+        methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('do_GET', '_guard', '_authed', '_remote', '_maintenance_blocked')]
         safe_class = ast.ClassDef(name='SafeHandler', bases=[], keywords=[], body=methods, decorator_list=[])
         code = ast.fix_missing_locations(ast.Module(body=[safe_class], type_ignores=[]))
         namespace = {'urlparse': urlparse, 'parse_qs': parse_qs, 'SimpleCookie': SimpleCookie,

@@ -5,7 +5,7 @@
  *   - 新页面还没做好的项，点了跳旧页面：靠下面 BUILT 这份静态清单判断
  *     新页面做好后，把它的 id 加进 BUILT（共用文件，各终端把需求写进 AQ-ui-status/requests.md，由 U5 统一改）
  *   - 开发预览（地址栏带 ?mock=1）时所有项都当作已做好，并把 ?mock=1 带到下一页，方便点着看
- *   - 右上角「旧版界面」链到 /；「后台」直接链到 /admin（另一套页面，管理令牌登录）
+ *   - 右上角「旧版界面」链到 /；「后台」指向新页面 admin.html（w/admin.html，未登录时页面里给 /admin 的登录链接）；旧 /admin 保留作退路
  *   - 所有文字 textContent，走 i18n（词条在 i18n/parts/U0.*.json）
  * ========================================================== */
 
@@ -13,7 +13,7 @@ import { el, svg } from './shared/dom.js';
 import { t } from './shared/i18n.js';
 
 /** 新页面已经做好的页面 id；不在这里的项点了会去旧页面 */
-export const BUILT = new Set([]);
+export const BUILT = new Set(['today', 'signals', 'market', 'watch', 'backtest', 'holdings', 'monitor', 'research', 'settings', 'admin']);
 
 /** 导航顺序即快捷键：前 9 项对应 1–9 */
 export const NAV = [
@@ -29,7 +29,7 @@ export const NAV = [
   { id: 'reports', key: 'ui.nav.reports', href: 'reports.html', classic: '/#/today' },
   { id: 'system', key: 'ui.nav.system', href: 'system.html', classic: '/#/today' },
   { id: 'settings', key: 'ui.nav.settings', href: 'settings.html', classic: '/#/today' },
-  { id: 'admin', key: 'ui.nav.admin', href: '/admin', classic: '/admin', external: true },
+  { id: 'admin', key: 'ui.nav.admin', href: 'admin.html', classic: '/admin' },   // 新后台页；/admin 旧页面保留作退路（设置页里有链接）
 ];
 
 const mockOn = () => new URLSearchParams(window.location.search).get('mock') === '1';

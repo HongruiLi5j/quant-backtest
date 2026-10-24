@@ -1,0 +1,15 @@
+{
+ "default_tier": "free",
+ "membership_on": true,
+ "share_links_on": true,
+ "registration_open": false,
+ "maintenance_on": false,
+ "maintenance_until": "",
+ "features": { "member_backtest": true, "engines": true, "translate": true },
+ "quota": { "free_backtest": 3, "pro_backtest": 30, "free_translate": 5, "pro_translate": 50 },
+ "sections": {
+  "today": { "on": true }, "signals": { "on": true }, "market": { "on": true },
+  "watch": { "on": true }, "backtest": { "on": false }, "holdings": { "on": true },
+  "monitor": { "on": true }, "research": { "on": true }, "settings": { "on": true }
+ }
+}

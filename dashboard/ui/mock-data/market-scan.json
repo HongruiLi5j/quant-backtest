@@ -327,7 +327,7 @@
   },
   "excluded_st": 0,
   "delisted": 120,
-  "split": true,
+  "split": "2020-01-01",
   "strategies": {
    "blend2": {
     "label": "组合：趋势集成 + RSI2 + 海龟",

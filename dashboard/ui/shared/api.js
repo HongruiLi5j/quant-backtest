@@ -50,10 +50,17 @@ async function readMock(name, fallback) {
   throw new ApiError(res.status, `mock-data/${name}.json 不存在`);
 }
 
+/** ?debug=1 时把 GET 返回交给字段核对（debug-fields.js 才会被加载，平时不影响） */
+const isDebug = () => new URLSearchParams(window.location.search).get('debug') === '1';
+function debugRecord(path, init, body) {
+  if (init.method === 'GET' && isDebug()) import('./debug-fields.js').then((m) => m.record(path, body)).catch(() => {});
+  return body;
+}
+
 async function request(path, init, opts) {
   checkPath(path);
   if (isMock()) {
-    return readMock(mockName(path, opts.mock), init.method === 'POST' ? { ok: true, mock: true } : undefined);
+    return debugRecord(path, init, await readMock(mockName(path, opts.mock), init.method === 'POST' ? { ok: true, mock: true } : undefined));
   }
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
@@ -78,7 +85,7 @@ async function request(path, init, opts) {
     throw new ApiError(res.status, typeof text === 'string' ? text : `HTTP ${res.status}`, body);
   }
   if (body === null) throw new ApiError(res.status, '返回内容不是 JSON');
-  return body;
+  return debugRecord(path, init, body);
 }
 
 /** GET，返回解析后的 JSON */

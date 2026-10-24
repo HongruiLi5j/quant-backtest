@@ -12,9 +12,6 @@ import { store } from './dom.js';
 const DICTS = {};
 let current = 'zh';
 
-/** 各终端的增量词条：i18n/parts/<终端号>.<lang>.json，缺文件就跳过 */
-const PARTS = ['U0', 'U1', 'U2', 'U3', 'U4', 'U5'];
-
 async function fetchJSON(url) {
   try {
     const res = await fetch(url, { credentials: 'same-origin' });
@@ -24,13 +21,12 @@ async function fetchJSON(url) {
   }
 }
 
-/** 拉取一份字典 = 基础字典 + 所有 parts（同一语言只拉一次）；基础字典失败才算失败 */
+/** 拉取一份字典（同一语言只拉一次）；U5 已把 parts/ 合进基础字典，这里只读基础字典，失败即抛错 */
 async function loadDict(lang) {
   if (DICTS[lang]) return DICTS[lang];
   const base = await fetchJSON(new URL(`../i18n/${lang}.json`, import.meta.url));
   if (!base) throw new Error(`i18n ${lang} 加载失败`);
-  const parts = await Promise.all(PARTS.map((id) => fetchJSON(new URL(`../i18n/parts/${id}.${lang}.json`, import.meta.url))));
-  DICTS[lang] = Object.assign({}, base, ...parts.filter(Boolean));
+  DICTS[lang] = base;
   return DICTS[lang];
 }
 

@@ -1,0 +1,8 @@
+{
+ "now": 1790000000,
+ "server": { "pid": 12345, "started": 1789700000, "uptime": 300000, "python": "3.11.9", "managed": true },
+ "share": { "running": false, "password_set": false },
+ "daily_running": false,
+ "refresh": { "running": false },
+ "pending": []
+}

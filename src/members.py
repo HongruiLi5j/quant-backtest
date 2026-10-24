@@ -25,6 +25,7 @@ MAX_POSITIONS = 50
 MAX_WEIGHT = 0.30      # 单只股票买入后不超过总资产的 30%
 HALT_DD = 0.20         # 账户从最高点回撤超过 20%，暂停买入（只能卖）
 USER_RE = re.compile(r"^[A-Za-z0-9_一-龥]{3,20}$")
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s.]{2,}$")
 _lock = threading.RLock()
 _hits: dict = {}   # (kind, ip) -> [时间戳]
 
@@ -63,6 +64,9 @@ def _conn():
     CREATE TABLE IF NOT EXISTS equity(uid INTEGER REFERENCES users(id) ON DELETE CASCADE, market TEXT, day TEXT,
         value REAL, PRIMARY KEY(uid, market, day));
     """)
+    if "email" not in [r[1] for r in c.execute("PRAGMA table_info(users)")]:
+        c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email COLLATE NOCASE) WHERE email IS NOT NULL")
     return c
 
 
@@ -84,8 +88,11 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def register(name: str, pw: str) -> dict:
+def register(name: str, pw: str, email: str = "") -> dict:
     name = (name or "").strip()
+    email = (email or "").strip() or None
+    if email and not EMAIL_RE.match(email):
+        raise MemberError("邮箱格式不对")
     if not USER_RE.match(name):
         raise MemberError("用户名 3–20 位，只能用字母、数字、下划线或汉字")
     if not (8 <= len(pw or "") <= 64):
@@ -97,9 +104,9 @@ def register(name: str, pw: str) -> dict:
         if c.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= MAX_USERS:
             raise MemberError("会员已满，请联系站长")
         try:
-            cur = c.execute("INSERT INTO users(name,salt,pw,created) VALUES(?,?,?,?)", (name, salt, _hash(pw, salt), _now()))
+            cur = c.execute("INSERT INTO users(name,salt,pw,created,email) VALUES(?,?,?,?,?)", (name, salt, _hash(pw, salt), _now(), email))
         except sqlite3.IntegrityError:
-            raise MemberError("用户名已被使用")
+            raise MemberError("用户名或邮箱已被使用")
         uid = cur.lastrowid
         for m, cash in INITIAL_CASH.items():
             c.execute("INSERT INTO accounts VALUES(?,?,?,?,?)", (uid, m, cash, cash, _now()))
@@ -115,7 +122,9 @@ def _new_session(c, uid: int) -> str:
 
 def login(name: str, pw: str) -> tuple[dict, str]:
     with _lock, _conn() as c:
-        r = c.execute("SELECT * FROM users WHERE name=?", ((name or "").strip(),)).fetchone()
+        ident = (name or "").strip()
+        col = "email" if "@" in ident else "name"
+        r = c.execute(f"SELECT * FROM users WHERE {col}=? COLLATE NOCASE", (ident,)).fetchone()
         # 即使用户不存在也算一次哈希，避免用耗时判断用户名是否存在
         salt = r["salt"] if r else b"\0" * 16
         ok = hmac.compare_digest(_hash(pw or "", salt), r["pw"] if r else b"\0" * 32) and r is not None
@@ -331,6 +340,17 @@ def list_users() -> list:
             "(SELECT ip FROM activity a WHERE a.uid=u.id ORDER BY a.id DESC LIMIT 1) AS last_ip, "
             "(SELECT country FROM activity a WHERE a.uid=u.id ORDER BY a.id DESC LIMIT 1) AS last_country, "
             "(SELECT MAX(ts) FROM activity a WHERE a.uid=u.id) AS last_active FROM users u ORDER BY u.id")]
+
+
+def set_email(uid: int, email: str):
+    email = (email or "").strip()
+    if not EMAIL_RE.match(email):
+        raise MemberError("邮箱格式不对")
+    with _lock, _conn() as c:
+        try:
+            c.execute("UPDATE users SET email=? WHERE id=?", (email, uid))
+        except sqlite3.IntegrityError:
+            raise MemberError("这个邮箱已被别的账号使用")
 
 
 def set_disabled(uid: int, disabled: bool):
