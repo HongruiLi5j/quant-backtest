@@ -1,0 +1,200 @@
+{
+ "ok": true,
+ "status": {
+  "state": "running",
+  "reason": null,
+  "phase": "polling",
+  "requests_used": 132,
+  "request_budget": 2000,
+  "interval": 60,
+  "top_n": 20,
+  "watch_count": 4,
+  "missing_count": 0,
+  "missing_codes": [],
+  "max_watch": 500,
+  "batch_mode": false,
+  "provider": "tencent",
+  "batch_requested": false,
+  "degraded": false,
+  "truncated": false,
+  "rounds": 33,
+  "timezone": "北京时间"
+ },
+ "quotes": [
+  {
+   "code": "600000",
+   "name": "示例银行",
+   "price": 11.2,
+   "pct": 0.9,
+   "source_time": "2026-10-23T10:30:02+08:00",
+   "received_at": "2026-10-23T10:30:02+08:00",
+   "quality": "valid",
+   "reasons": [],
+   "sources": [
+    "holding"
+   ],
+   "alert": "armed"
+  },
+  {
+   "code": "000001",
+   "name": "示例科技",
+   "price": 26.3,
+   "pct": -1.25,
+   "source_time": "2026-10-23T10:30:03+08:00",
+   "received_at": "2026-10-23T10:30:03+08:00",
+   "quality": "valid",
+   "reasons": [],
+   "sources": [
+    "holding",
+    "watchlist"
+   ],
+   "alert": "none"
+  },
+  {
+   "code": "300001",
+   "name": "示例医药",
+   "price": 28.6,
+   "pct": 2.4,
+   "source_time": "2026-10-23T10:30:04+08:00",
+   "received_at": "2026-10-23T10:30:04+08:00",
+   "quality": "stale",
+   "reasons": [],
+   "sources": [
+    "signal"
+   ],
+   "alert": "triggered"
+  },
+  {
+   "code": "688001",
+   "name": "示例芯片",
+   "price": null,
+   "pct": null,
+   "source_time": null,
+   "received_at": null,
+   "quality": "pending",
+   "reasons": [],
+   "sources": [
+    "watchlist"
+   ],
+   "alert": "none"
+  }
+ ],
+ "intraday": {
+  "events": [
+   {
+    "timestamp": "2026-10-23T09:35:00+08:00",
+    "code": "300001",
+    "kind": "buy_window",
+    "severity": "ok",
+    "message": "",
+    "params": {
+     "minutes": 30
+    }
+   },
+   {
+    "timestamp": "2026-10-23T10:05:00+08:00",
+    "code": "600000",
+    "kind": "limit_up_no_buy",
+    "severity": "watch",
+    "message": "",
+    "params": {},
+    "reference_only": true
+   },
+   {
+    "timestamp": "2026-10-23T10:20:00+08:00",
+    "code": "000001",
+    "kind": "holding_drop",
+    "severity": "danger",
+    "message": "",
+    "params": {
+     "pct": -6.2
+    }
+   },
+   {
+    "timestamp": "2026-10-23T10:05:00+08:00",
+    "code": "300001",
+    "kind": "watch",
+    "severity": "watch",
+    "message": "",
+    "params": {
+     "triggers": [
+      "momentum",
+      "volume"
+     ]
+    },
+    "reference_only": true
+   },
+   {
+    "timestamp": "2026-10-23T10:12:00+08:00",
+    "code": "000001",
+    "kind": "consider_sell",
+    "severity": "danger",
+    "message": "",
+    "params": {
+     "triggers": [
+      "breakout"
+     ]
+    }
+   }
+  ],
+  "tracking": {
+   "day": "2026-10-23",
+   "rows": [
+    {
+     "type": "track",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:30:00+08:00",
+     "code": "300001",
+     "name": "",
+     "action": "买入",
+     "open": 27.9,
+     "price": 28.6,
+     "change_vs_open_pct": 1.1,
+     "return_since_open": 2.5,
+     "to_limit_up_pct": 12.4,
+     "to_limit_down_pct": -8.6
+    },
+    {
+     "type": "track",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:30:00+08:00",
+     "code": "600000",
+     "name": "",
+     "action": "加仓",
+     "open": 11.0,
+     "price": 11.2,
+     "change_vs_open_pct": 0.4,
+     "return_since_open": 1.8,
+     "to_limit_up_pct": 9.1,
+     "to_limit_down_pct": -10.9
+    },
+    {
+     "type": "trigger",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:05:00+08:00",
+     "code": "300001",
+     "kind": "watch",
+     "trigger_price": 10.0,
+     "return_since_trigger": 1.6
+    },
+    {
+     "type": "trigger",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:05:00+08:00",
+     "code": "000001",
+     "kind": "consider_sell",
+     "trigger_price": 10.0,
+     "return_since_trigger": -0.8
+    }
+   ],
+   "summary": {
+    "total": 2,
+    "winners": 2,
+    "losers": 0,
+    "mean_return": 2.15,
+    "median_return": 2.15
+   },
+   "write_error": null
+  }
+ }
+}

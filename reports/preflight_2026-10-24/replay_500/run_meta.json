@@ -1,0 +1,42 @@
+{
+ "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+ "cost": {
+  "approx_limit_pct": 0.099,
+  "commission_rate": 0.00025,
+  "enforce_limits": true,
+  "enforce_suspension": true,
+  "enforce_t1": true,
+  "limit_extra_slippage_bps": 20.0,
+  "lot": 100,
+  "min_commission": 5.0,
+  "slippage_bps": 5.0,
+  "stamp_rate": 0.0005,
+  "transfer_rate": 1e-05
+ },
+ "created": "2026-10-24T16:07:49+08:00",
+ "end": "2026-03-31",
+ "kind": "T008_S5_run_meta",
+ "mask_source": "approx_open_vs_prev_close_0.099",
+ "n_boot": 200,
+ "n_codes": 100,
+ "n_grid_combos": 13,
+ "null_k": 100,
+ "replay": {
+  "cost_source": "validation.costs(CostParams/trade_fees/lot_round)",
+  "last_date": "2026-03-27",
+  "n_strategies": 18,
+  "processed": 539,
+  "universe": 100
+ },
+ "seed": "0",
+ "start": "2024-01-01",
+ "strategy_ids": [
+  "mom_01",
+  "rev_01",
+  "ind_01"
+ ],
+ "survivor_bias_warning": "存在幸存者偏差/状态未过滤",
+ "top_n": 20,
+ "universe": 100,
+ "universe_codes_hash": "7a8e84195be1a288686ba66b638f7b3321c9719d"
+}

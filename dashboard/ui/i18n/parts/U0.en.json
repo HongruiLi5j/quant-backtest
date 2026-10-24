@@ -1,0 +1,23 @@
+{
+  "ui.nav.today": "Today",
+  "ui.nav.signals": "Signals",
+  "ui.nav.market": "Market",
+  "ui.nav.watch": "Watchlist",
+  "ui.nav.backtest": "Backtest",
+  "ui.nav.holdings": "Holdings",
+  "ui.nav.monitor": "Monitor",
+  "ui.nav.usmonitor": "US Monitor",
+  "ui.nav.research": "Research",
+  "ui.nav.reports": "Reports",
+  "ui.nav.system": "System",
+  "ui.nav.settings": "Settings",
+  "ui.nav.admin": "Admin",
+  "ui.nav.classic": "Classic UI",
+  "ui.nav.classic_tip": "Back to the classic interface (you can switch back any time)",
+  "ui.auth.expired": "Session expired. Please re-enter from the home page.",
+  "ui.auth.home": "Back to home",
+  "ui.state.error": "Data failed to load",
+  "ui.state.empty": "No data yet",
+  "ui.template.title": "Page template",
+  "ws.keys.pages": "Go to page 1–9"
+}

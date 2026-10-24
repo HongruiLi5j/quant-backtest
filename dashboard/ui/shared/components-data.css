@@ -1,0 +1,318 @@
+/* ==========================================================
+ * 文件: shared/components-data.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 数据类组件：指标卡 / 数据表 / 月度热力图 / 进度条 / 骨架屏 / 转圈 /
+ *       提示横幅 / 空状态与错误态 / 图表容器与悬浮提示
+ * ========================================================== */
+
+/* ================= 指标卡 ================= */
+.metric {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+}
+
+.metric__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.metric__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.25rem, 0.9rem + 1.6vw, var(--fs-2xl));
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.metric__value--hero {
+  font-size: clamp(1.5rem, 1rem + 2.4vw, var(--fs-3xl));
+  text-shadow: var(--text-glow);
+}
+
+.metric__foot {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+/* 数字变化瞬间的光（number-ticker.js 加 .is-flash） */
+.is-flash { animation: flash 900ms var(--ease-out); }
+
+@keyframes flash {
+  from { text-shadow: 0 0 18px var(--accent-glow); }
+}
+
+/* 关键数据：发光描边 */
+.metric--key {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-glow-sm), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* ================= 数据表 ================= */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  font-size: var(--fs-sm);
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: left;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.table tbody tr { transition: background var(--motion-fast); }
+.table tbody tr:hover { background: var(--surface-hover); }
+.table .num { text-align: right; }
+.table th.num { text-align: right; }
+
+.table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.table__sort[aria-sort] { color: var(--text-primary); }
+
+/* ================= 月度收益热力图 ================= */
+.heatmap {
+  display: grid;
+  grid-template-columns: 44px repeat(12, minmax(28px, 1fr)) 56px;
+  gap: 3px;
+  min-width: 560px;
+  font-size: 11px;
+}
+
+.heatmap__head {
+  padding: 4px 0;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.heatmap__year {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.heatmap__cell {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+  transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast);
+}
+
+.heatmap__cell:hover { transform: scale(1.12); box-shadow: 0 0 0 1px var(--text-primary); z-index: 1; }
+
+/* 强度 --k ∈ [0,1]，颜色跟随涨跌色 */
+.heatmap__cell--pos { background: color-mix(in srgb, var(--fill-rise) calc(var(--k) * 70%), var(--bg-sunken)); }
+.heatmap__cell--neg { background: color-mix(in srgb, var(--fill-fall) calc(var(--k) * 70%), var(--bg-sunken)); }
+.heatmap__cell--total { font-weight: 700; box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+/* ================= 进度条 / 仪表 ================= */
+.progress {
+  position: relative;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.progress__bar {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-glow));
+  box-shadow: 0 0 12px var(--accent-glow);
+  transform-origin: left;
+  transform: scaleX(var(--p, 0));
+  transition: transform var(--motion-slow) var(--ease-out);
+}
+
+.progress--warn .progress__bar { background: linear-gradient(90deg, var(--amber), var(--red-fill)); box-shadow: none; }
+
+/* ================= 骨架屏（光从左扫到右） ================= */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  min-height: 1em;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text-primary) 8%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton {
+  to { transform: translateX(100%); }
+}
+
+.skeleton--text { height: 14px; margin: 6px 0; }
+.skeleton--title { height: 28px; width: 50%; }
+.skeleton--chart { height: 280px; border-radius: var(--radius-md); }
+
+/* 有骨架时隐藏真实内容；数据到了 mock-loader 去掉 [data-state="loading"] */
+[data-state="loading"] .when-ready,
+[data-state="ready"] .when-loading,
+[data-state="error"] .when-loading,
+[data-state="empty"] .when-loading { display: none; }
+
+.when-error,
+.when-empty { display: none; }
+
+[data-state="error"] .when-error,
+[data-state="empty"] .when-empty { display: flex; }
+
+[data-state="error"] .when-ready,
+[data-state="empty"] .when-ready { display: none; }
+
+/* ================= 转圈 ================= */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-glow);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ================= 提示横幅 ================= */
+.banner {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  background: color-mix(in srgb, var(--amber) 8%, var(--bg-surface));
+}
+
+.banner__icon { flex: none; width: 22px; height: 22px; color: var(--amber); }
+.banner__title { font-size: var(--fs-md); font-weight: 650; }
+.banner__body { font-size: var(--fs-sm); color: var(--text-secondary); }
+
+/* ================= 空状态 / 错误态 ================= */
+.state {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 240px;
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.state__icon { width: 40px; height: 40px; color: var(--accent-text); }
+.state__title { font-size: var(--fs-lg); font-weight: 650; color: var(--text-primary); }
+
+/* ================= 图表容器 + 玻璃提示卡 ================= */
+.chart {
+  position: relative;
+  width: 100%;
+  height: 320px;
+}
+
+.chart--sm { height: 180px; }
+.chart--lg { height: 380px; }
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  min-width: 168px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+  box-shadow: var(--shadow-card);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(var(--tx, 0), var(--ty, 0), 0);
+  transition: opacity var(--motion-fast);
+}
+
+.chart-tip.is-visible { opacity: 1; }
+.chart-tip__date { margin-bottom: 6px; color: var(--text-secondary); font-family: var(--font-mono); }
+
+.chart-tip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.chart-legend__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 2px;
+  background: var(--c);
+}
+
+.metric__info { font-size: 11px; color: var(--text-dim); }
+.is-warn { color: var(--amber); }
+
+@media (min-width: 768px) {
+  .metric { padding: var(--space-4) var(--space-5); }
+}

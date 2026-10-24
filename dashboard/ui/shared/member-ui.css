@@ -1,0 +1,89 @@
+/* ==========================================================
+ * 文件: shared/member-ui.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 会员分层用到的两个组件 + pricing 栅格。只用现有 token，不加新颜色。
+ *   - .locked-block：原地锁定态（模糊预览 + 锁 + 一行说明 + 申请按钮），不弹窗
+ *   - .quota-bar：配额条（复用 .progress），用完时变 --warn
+ *   - .plans：三张等宽卡片
+ * ========================================================== */
+
+/* ---------- locked-block ---------- */
+.locked-block {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  min-height: 180px;
+}
+
+/* 预览只是示意：模糊 + 不可交互 + 读屏跳过 */
+.locked-block__preview {
+  filter: blur(6px) saturate(0.6);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+.locked-block__veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  text-align: center;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 30%, transparent), color-mix(in srgb, var(--bg-base) 78%, transparent));
+}
+
+.locked-block__icon { width: 20px; height: 20px; color: var(--accent-text); }
+.locked-block__title { font-size: var(--fs-md); font-weight: 650; color: var(--text-primary); }
+.locked-block__line { font-size: var(--fs-sm); color: var(--text-secondary); max-width: 34ch; }
+.locked-block__tag { font-size: var(--fs-xs); color: var(--accent-text); }
+.locked-block .btn { margin-top: var(--space-2); }
+
+/* ---------- quota-bar ---------- */
+.quota-bar { display: grid; gap: var(--space-2); }
+.quota-bar__text { font-size: var(--fs-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.quota-bar.is-out .quota-bar__text { color: var(--amber); }
+.quota-bar__row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.quota-bar .progress { height: 6px; }
+
+/* ---------- pricing ---------- */
+.plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: stretch;
+}
+
+.plans .card { display: flex; flex-direction: column; gap: var(--space-4); }
+.plans .card[aria-current="true"] { border-color: var(--border-strong); }
+.plan__name { font-size: var(--fs-xl); font-weight: 700; color: var(--text-primary); }
+.plan__who { font-size: var(--fs-sm); color: var(--text-secondary); }
+.plan__list { display: grid; gap: var(--space-2); flex: 1; font-size: var(--fs-sm); }
+.plan__list li { display: flex; gap: var(--space-2); }
+.plan__list li::before { content: '·'; color: var(--accent-text); }
+.plan__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 28px; }
+
+@media (max-width: 900px) { .plans { grid-template-columns: 1fr; } }
+
+/* Public 内容页：顶栏下的主区，留白对齐 backtest.html */
+.pub-main { max-width: 1200px; margin: 0 auto; padding: var(--space-7) var(--space-6) var(--space-8); }
+.pub-main > * + * { margin-top: var(--space-7); }
+.pub-head h1 { font-size: var(--fs-2xl); font-weight: 700; color: var(--text-primary); }
+.pub-head p { margin-top: var(--space-3); max-width: 60ch; color: var(--text-secondary); }
+.pub-demo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
+@media (max-width: 900px) { .pub-demo { grid-template-columns: 1fr; } .pub-main { padding-inline: 16px; } }
+.plan__list { list-style: none; padding: 0; margin: 0; align-content: start; }
+.pub-main .section-title { margin-bottom: var(--space-4); }
+/* 链接做的分段按钮（地址栏切换）：当前项沿用 segmented 的选中样式 */
+.segmented__btn[aria-current="true"] { color: var(--text-primary); background: var(--bg-elevated); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.quota-bar__cap { font-size: var(--fs-xs); color: var(--text-dim); }
+/* 顶层 index 的链接列表 */
+.idx-list { margin-top: var(--space-4); }
+.idx-list li { flex-wrap: wrap; align-items: baseline; }
+.idx-list a { color: var(--accent-text); }
+.idx-list .mono { font-size: var(--fs-xs); }
+.pub-main .card { display: flex; flex-direction: column; gap: var(--space-3); }

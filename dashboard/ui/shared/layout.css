@@ -1,0 +1,317 @@
+/* ==========================================================
+ * 文件: shared/layout.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 页面骨架（落地页顶栏 / 应用侧栏 / 顶部工具栏 / 手机底部标签栏）、
+ *       涨跌色映射、栅格工具、页面切换动画。mobile-first，只用 min-width 媒体查询。
+ * ========================================================== */
+
+/* —— 涨跌色：A 股红涨绿跌，美股绿涨红跌（html[data-market] 切换） —— */
+:root,
+:root[data-market="cn"] {
+  --color-rise: var(--red);
+  --color-fall: var(--green);
+  --fill-rise: var(--red-fill);
+  --fill-fall: var(--green-fill);
+}
+
+:root[data-market="us"] {
+  --color-rise: var(--green);
+  --color-fall: var(--red);
+  --fill-rise: var(--green-fill);
+  --fill-fall: var(--red-fill);
+}
+
+.is-rise { color: var(--color-rise); }
+.is-fall { color: var(--color-fall); }
+.is-flat { color: var(--text-secondary); }
+
+/* —— 跨页面切换（View Transitions，Chrome 126+ / Safari 18.2+，不支持时直接跳转） —— */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: vt-out var(--motion-base) var(--ease-out) both;
+}
+
+::view-transition-new(root) {
+  animation: vt-in var(--motion-slow) var(--ease-out) both;
+}
+
+@keyframes vt-out {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes vt-in {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+/* —— 通用容器 —— */
+.container {
+  width: min(1200px, 100% - 2 * var(--space-4));
+  margin-inline: auto;
+}
+
+.stack > * + * { margin-top: var(--space-4); }
+.stack--lg > * + * { margin-top: var(--space-6); }
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+/* 指标卡在手机上也两列，信息密度更合适 */
+.grid--kpi {
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.eyebrow {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.section-title {
+  font-size: var(--fs-xl);
+  font-weight: 650;
+}
+
+.muted { color: var(--text-secondary); }
+
+/* —— 落地页顶栏 —— */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 64px;
+}
+
+.site-header__nav {
+  display: none;
+  gap: var(--space-1);
+  margin-inline: auto;
+}
+
+.site-header__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+
+.site-header__link:hover,
+.site-header__link[aria-current="page"] {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.site-header__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.brand__mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-glow), var(--accent-2));
+  box-shadow: var(--shadow-glow-sm);
+}
+
+/* —— 应用骨架：侧栏 + 主区 —— */
+.app {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100dvh;
+}
+
+.sidebar {
+  display: none;
+}
+
+.app__main {
+  min-width: 0;
+  padding-bottom: 96px;            /* 给手机底部标签栏留位置 */
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 60px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+}
+
+.topbar__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.page {
+  padding: var(--space-5) var(--space-4) var(--space-7);
+}
+
+.page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.page__title {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* 侧栏导航分组：行情 / 交易 / 研究 / 系统 */
+.nav-group + .nav-group { margin-top: var(--space-5); }
+
+.nav-group__label {
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.nav-link:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+.nav-link[aria-current="page"] {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.nav-link__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* —— 手机底部标签栏（≥ 44px 触控目标） —— */
+.tabbar {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-base) 82%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+}
+
+.tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tabbar__item[aria-current="page"] { color: var(--accent-text); }
+.tabbar__item svg { width: 22px; height: 22px; }
+
+/* —— 断点：768 平板 / 1024 小桌面 / 1440 大桌面 —— */
+@media (min-width: 768px) {
+  .grid--2 { grid-template-columns: repeat(2, 1fr); }
+  .grid--3 { grid-template-columns: repeat(2, 1fr); }
+  .grid--kpi { grid-template-columns: repeat(2, 1fr); }
+  .page { padding: var(--space-6) var(--space-6) var(--space-7); }
+}
+
+@media (min-width: 1024px) {
+  .site-header__nav { display: flex; }
+  .app { grid-template-columns: 248px 1fr; }
+  .app__main { padding-bottom: 0; }
+  .tabbar { display: none; }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    padding: var(--space-4) var(--space-3);
+    border-right: 1px solid var(--border-subtle);
+    background: var(--bg-sunken);
+    overflow-y: auto;
+  }
+
+  .sidebar__brand { margin: 0 var(--space-2) var(--space-6); }
+  .sidebar__foot { margin-top: auto; }
+  .grid--3 { grid-template-columns: repeat(3, 1fr); }
+  .grid--kpi { grid-template-columns: repeat(4, 1fr); }
+  .grid--main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+}
+
+@media (min-width: 1440px) {
+  .page { padding-inline: var(--space-7); }
+  .grid--kpi-6 { grid-template-columns: repeat(6, 1fr); }
+}

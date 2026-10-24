@@ -1,0 +1,217 @@
+/* ==========================================================
+ * 文件: quant-ai-dark/theme.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 只有 quant-ai-dark 才有的视觉：顶部紫色径向光晕、噪点纹理、
+ *       发光大标题、落地页 hero 与 bento 布局。通用组件不在这里（在 shared/）。
+ * ========================================================== */
+
+/* —— 背景：深紫黑 + 顶部光晕 + 极淡网格 + 噪点（避免大面积纯色出现色带） —— */
+body {
+  background:
+    radial-gradient(1100px 520px at 50% -180px, rgba(107, 91, 255, 0.42), transparent 70%),
+    radial-gradient(700px 420px at 100% 0%, rgba(91, 140, 255, 0.14), transparent 70%),
+    var(--bg-base);
+  background-attachment: fixed;
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 520px at 50% -180px, rgba(107, 91, 255, 0.18), transparent 70%),
+    var(--bg-base);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* —— 渐变发光标题 —— */
+.glow-title {
+  font-size: var(--fs-4xl);
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  background: linear-gradient(180deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent-text) 85%, var(--text-primary)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.glow-text { color: var(--accent-text); text-shadow: var(--text-glow); }
+
+/* Safari：玻璃卡倾斜时暂时去掉模糊，避免 3D + backdrop-filter 闪烁 */
+[data-tilt].is-tilting {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--bg-elevated);
+}
+
+/* ================= 落地页 ================= */
+.hero {
+  position: relative;
+  padding: var(--space-8) 0 var(--space-7);
+  text-align: center;
+}
+
+.hero__orb {
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  z-index: -1;
+  width: min(900px, 120vw);
+  aspect-ratio: 2 / 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(107, 91, 255, 0.35), transparent);
+  filter: blur(40px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hero__sub {
+  max-width: 640px;
+  margin: var(--space-5) auto 0;
+  font-size: var(--fs-lg);
+  color: var(--text-secondary);
+}
+
+.hero__cta {
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.hero__panel {
+  max-width: 980px;
+  margin: var(--space-7) auto 0;
+  text-align: left;
+}
+
+.hero__kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-5);
+  padding: var(--space-6) 0;
+  border-block: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.stat-strip__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  text-shadow: var(--text-glow);
+}
+
+.stat-strip__label { font-size: var(--fs-sm); color: var(--text-secondary); }
+
+.section { padding: var(--space-8) 0 0; }
+.section__head { max-width: 640px; margin-bottom: var(--space-6); }
+.section__title { margin-top: var(--space-2); font-size: var(--fs-3xl); font-weight: 720; letter-spacing: -0.03em; }
+
+.feature__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  box-shadow: var(--shadow-glow-sm);
+}
+
+.feature__icon svg { width: 22px; height: 22px; }
+.feature__title { font-size: var(--fs-lg); font-weight: 650; }
+.feature__body { margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--text-secondary); }
+
+.feature__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--accent-text);
+}
+
+.feature__link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.steps { counter-reset: step; }
+
+.step {
+  position: relative;
+  padding-left: 56px;
+}
+
+.step::before {
+  counter-increment: step;
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.cta-band {
+  margin: var(--space-8) 0;
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+}
+
+.cta-band__form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 520px;
+  margin: var(--space-5) auto 0;
+}
+
+.site-footer {
+  padding: var(--space-6) 0 var(--space-7);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+@media (min-width: 768px) {
+  .stat-strip { grid-template-columns: repeat(4, 1fr); }
+  .cta-band__form { grid-template-columns: 1fr auto; }
+  .bento { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  /* 12 列：前两张各占一半，后四张各占四分之一 */
+  .bento { grid-template-columns: repeat(12, 1fr); }
+  .bento > :nth-child(-n + 2) { grid-column: span 6; }
+  .bento > :nth-child(n + 3) { grid-column: span 3; }
+}
+
+/* 落地页在手机上也显示底部标签栏，页脚留出位置 */
+.site-footer { padding-bottom: 120px; }
+
+@media (min-width: 1024px) {
+  .site-footer { padding-bottom: var(--space-7); }
+}

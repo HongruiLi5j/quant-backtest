@@ -1,0 +1,83 @@
+/* ==========================================================
+ * 文件: ui/pages/U2.css
+ * 用途: 回测实验室（backtest.html）和个股（stock.html）两页专用样式。
+ * 只用 tokens.css / workspace.css 里已有的变量，不加新颜色。
+ * ========================================================== */
+
+.u2-gap { margin-top: var(--space-4); }
+.u2-stack { display: grid; gap: var(--space-4); min-width: 0; }
+.u2-scroll { max-height: 320px; overflow-y: auto; }
+.u2-result[hidden] { display: none; }
+
+/* —— 表单：标签在上、控件在下 —— */
+.u2-form, .u2-params { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: flex-end; }
+.u2-params { margin-top: var(--space-3); }
+.u2-field { display: grid; gap: 4px; font-size: var(--fs-sm); min-width: 0; }
+.u2-field .ws-select, .u2-field .ws-input { min-width: 150px; }
+.u2-field .u2-narrow, .u2-narrow { width: 120px; min-width: 0; }
+.u2-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
+.u2-err { color: var(--color-fall-text, var(--amber)); font-size: var(--fs-sm); }
+.u2-err a { text-decoration: underline; }
+
+/* —— 指标卡 —— */
+.u2-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-4); }
+
+/* —— 详细指标：分组 + 两列 dl —— */
+.u2-rg + .u2-rg { margin-top: var(--space-4); }
+.u2-rgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px var(--space-5);
+  margin-top: var(--space-2);
+  font-size: var(--fs-sm);
+}
+.u2-ri { display: flex; justify-content: space-between; gap: var(--space-3); padding: 4px 0; border-bottom: 1px solid var(--border-subtle); }
+.u2-ri dt { color: var(--text-secondary); }
+.u2-ri dd { margin: 0; }
+.u2-pos { margin-top: var(--space-4); font-size: var(--fs-sm); line-height: 1.7; }
+.u2-ass { text-align: left; }
+
+/* —— 图表容器 —— */
+.u2-chart { height: 180px; position: relative; }
+.u2-hist { width: 100%; }
+.u2-hist__svg { width: 100%; height: 150px; display: block; }
+.u2-bar { fill: var(--chart-2); opacity: 0.85; }
+.u2-bar--neg { fill: var(--chart-dd); }
+.u2-axis { fill: var(--chart-text); font-size: 11px; }
+.u2-exports { padding: var(--space-4) 0 0; }
+
+/* —— 个股页 —— */
+.u2-shead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+.u2-shead__name { font-size: var(--fs-xl, 22px); font-weight: 600; margin: 0; }
+.u2-code { margin-left: var(--space-3); font-size: var(--fs-sm); color: var(--text-secondary); font-weight: 400; }
+.u2-stats { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+.u2-stat { display: grid; gap: 2px; font-size: var(--fs-sm); }
+.u2-stat b { font-size: var(--fs-lg, 18px); }
+.u2-toolbar { padding: 0 0 var(--space-3); }
+.u2-k { position: relative; width: 100%; }
+.u2-pane-label {
+  position: absolute;
+  left: 8px;
+  z-index: 3;
+  pointer-events: none;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.u2-click { cursor: pointer; }
+.u2-click:hover td, .u2-click:focus-visible td { background: color-mix(in srgb, var(--accent-primary) 10%, transparent); }
+.u2-pin td { background: color-mix(in srgb, var(--accent-primary) 16%, transparent); font-weight: 600; }
+
+@media (max-width: 1000px) {
+  .u2-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .u2-form, .u2-params { display: grid; grid-template-columns: 1fr 1fr; }
+  .u2-field .ws-select, .u2-field .ws-input, .u2-field .u2-narrow { width: 100%; min-width: 0; }
+  .u2-stats { gap: var(--space-4); }
+}
+
+/* —— 防止窄屏被表格 / 图例撑出横向滚动 —— */
+.ws-main, .ws-main .ws-grid > *, .ws-main .card, .u2-stack { min-width: 0; }
+.ws-main .table-wrap { overflow-x: auto; max-width: 100%; }
+.ws-main .chart-legend { flex-wrap: wrap; }
+.u2-k, .u2-chart { max-width: 100%; }

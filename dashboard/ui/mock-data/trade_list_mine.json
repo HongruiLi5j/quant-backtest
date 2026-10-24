@@ -1,0 +1,23 @@
+{
+ "rows": [
+  {
+   "code": "600000",
+   "name": "示例股票甲",
+   "action": "卖出",
+   "now": 0.5,
+   "next": 0.0,
+   "in_watchlist": true,
+   "in_member_positions": false
+  },
+  {
+   "code": "600037",
+   "name": "示例白酒",
+   "action": null,
+   "now": null,
+   "next": null,
+   "in_watchlist": true,
+   "in_member_positions": false
+  }
+ ],
+ "member_logged_in": false
+}

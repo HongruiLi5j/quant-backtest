@@ -1,0 +1,56 @@
+{
+ "EOD-收盘分析": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 17,
+  "log": "reports/preflight_2026-10-24/logs/EOD-收盘分析.log"
+ },
+ "数据质量-全市场": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 2,
+  "log": "reports/preflight_2026-10-24/logs/数据质量-全市场.log"
+ },
+ "周报": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 0,
+  "log": "reports/preflight_2026-10-24/logs/周报.log"
+ },
+ "基本面-抓取": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 19,
+  "log": "reports/preflight_2026-10-24/logs/基本面-抓取.log"
+ },
+ "信号回填-90d": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 16,
+  "log": "reports/preflight_2026-10-24/logs/信号回填-90d.log"
+ },
+ "基本面-导出-2026-03-31": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 13,
+  "log": "reports/preflight_2026-10-24/logs/基本面-导出-2026-03-31.log"
+ },
+ "因子检验-验证段": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 121,
+  "log": "reports/preflight_2026-10-24/logs/因子检验-验证段.log"
+ },
+ "基本面-排名-2026-03-31": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 0,
+  "log": "reports/preflight_2026-10-24/logs/基本面-排名-2026-03-31.log"
+ },
+ "回放-正式": {
+  "status": "OK",
+  "rc": 0,
+  "secs": 106,
+  "log": "reports/preflight_2026-10-24/logs/回放-正式.log"
+ }
+}

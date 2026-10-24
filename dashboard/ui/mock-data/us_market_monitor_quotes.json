@@ -1,0 +1,118 @@
+{
+ "ok": true,
+ "status": {
+  "state": "paused",
+  "reason": "rate_limited",
+  "phase": "cooling_down",
+  "requests_used": 58,
+  "request_budget": 600,
+  "interval": 300,
+  "top_n": 0,
+  "watch_count": 3,
+  "missing_count": 0,
+  "missing_codes": [],
+  "max_watch": 30,
+  "batch_mode": false,
+  "truncated": false,
+  "rounds": 9,
+  "timezone": "美东时间（America/New_York，自动夏令时）"
+ },
+ "quotes": [
+  {
+   "code": "AAPL",
+   "name": "Apple Inc.",
+   "price": 231.5,
+   "pct": 0.62,
+   "source_time": "2026-10-23T10:30:02-04:00",
+   "received_at": "2026-10-23T10:30:02-04:00",
+   "quality": "valid",
+   "reasons": [],
+   "sources": [
+    "watchlist"
+   ],
+   "alert": "armed"
+  },
+  {
+   "code": "MSFT",
+   "name": "Microsoft",
+   "price": 418.2,
+   "pct": -0.31,
+   "source_time": "2026-10-23T10:30:03-04:00",
+   "received_at": "2026-10-23T10:30:03-04:00",
+   "quality": "valid",
+   "reasons": [],
+   "sources": [
+    "watchlist"
+   ],
+   "alert": "none"
+  },
+  {
+   "code": "PENY",
+   "name": "Penny Co.",
+   "price": 1.2,
+   "pct": 4.8,
+   "source_time": "2026-10-23T10:30:04-04:00",
+   "received_at": "2026-10-23T10:30:04-04:00",
+   "quality": "after_hours",
+   "reasons": [],
+   "sources": [
+    "watchlist"
+   ],
+   "alert": "none"
+  }
+ ],
+ "intraday": {
+  "events": [
+   {
+    "timestamp": "2026-10-23T10:10:00-04:00",
+    "code": "PENY",
+    "kind": "watch",
+    "severity": "watch",
+    "message": "",
+    "params": {
+     "triggers": [
+      "volume"
+     ]
+    },
+    "reference_only": true,
+    "display_only": true
+   }
+  ],
+  "tracking": {
+   "day": "2026-10-23",
+   "rows": [
+    {
+     "type": "track",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:30:00+08:00",
+     "code": "AAPL",
+     "name": "",
+     "action": "买入",
+     "open": 230.1,
+     "price": 231.5,
+     "change_vs_open_pct": 0.6,
+     "return_since_open": 0.6,
+     "to_day_high_pct": 1.4,
+     "to_day_low_pct": -0.9
+    },
+    {
+     "type": "trigger",
+     "day": "2026-10-23",
+     "ts": "2026-10-23T10:05:00+08:00",
+     "code": "PENY",
+     "kind": "watch",
+     "trigger_price": 10.0,
+     "return_since_trigger": 2.0
+    }
+   ],
+   "summary": {
+    "total": 1,
+    "winners": 1,
+    "losers": 0,
+    "mean_return": 0.6,
+    "median_return": 0.6
+   },
+   "write_error": null
+  }
+ }
+}

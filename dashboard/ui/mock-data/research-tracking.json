@@ -1,0 +1,157 @@
+{
+ "eval": {
+  "empty": true
+ },
+ "replay": {
+  "empty": false,
+  "generated": "2026-10-23 16:10",
+  "total": 420,
+  "since": "2023-10-23",
+  "latest": "2026-10-23",
+  "latest_price_date": "2026-10-23",
+  "timezone_label": "北京时间",
+  "expected_first_5": "2026-10-30",
+  "summary": [
+   {
+    "strategy": "blend2",
+    "action": "买入",
+    "signals": 120,
+    "n5": 60,
+    "avg5": 1.42,
+    "beat5": 50.7,
+    "n20": 40,
+    "avg20": 2.02,
+    "beat20": 37.7
+   },
+   {
+    "strategy": "blend2",
+    "action": "卖出",
+    "signals": 90,
+    "n5": 45,
+    "avg5": 0.44,
+    "beat5": 59.4,
+    "n20": 30,
+    "avg20": -0.61,
+    "beat20": 40.5
+   },
+   {
+    "strategy": "rsi2",
+    "action": "买入",
+    "signals": 60,
+    "n5": 30,
+    "avg5": 2.95,
+    "beat5": 54.8,
+    "n20": 20,
+    "avg20": 2.97,
+    "beat20": 37.3
+   }
+  ],
+  "recent": [
+   {
+    "signal_date": "2026-10-20",
+    "entry_day": "2026-10-21",
+    "code": "600000",
+    "name": "示例银行",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": null,
+    "r20": null,
+    "r60": null,
+    "r_now": 2.53,
+    "x_now": -1.87
+   },
+   {
+    "signal_date": "2026-10-19",
+    "entry_day": "2026-10-20",
+    "code": "000001",
+    "name": "示例平安",
+    "strategy": "blend2",
+    "action": "卖出",
+    "r5": null,
+    "r20": null,
+    "r60": null,
+    "r_now": 4.95,
+    "x_now": 0.68
+   },
+   {
+    "signal_date": "2026-10-18",
+    "entry_day": "2026-10-19",
+    "code": "300750",
+    "name": "示例电池",
+    "strategy": "blend2",
+    "action": "卖出",
+    "r5": null,
+    "r20": null,
+    "r60": null,
+    "r_now": 2.58,
+    "x_now": -0.58
+   },
+   {
+    "signal_date": "2026-10-17",
+    "entry_day": "2026-10-18",
+    "code": "688981",
+    "name": "示例芯片",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": -1.73,
+    "r20": null,
+    "r60": null,
+    "r_now": 2.36,
+    "x_now": 4.86
+   },
+   {
+    "signal_date": "2026-10-16",
+    "entry_day": "2026-10-17",
+    "code": "600519",
+    "name": "示例酒业",
+    "strategy": "blend2",
+    "action": "卖出",
+    "r5": -2.8,
+    "r20": null,
+    "r60": null,
+    "r_now": -4.84,
+    "x_now": -3.56
+   },
+   {
+    "signal_date": "2026-10-15",
+    "entry_day": "2026-10-16",
+    "code": "002594",
+    "name": "示例汽车",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": -1.43,
+    "r20": null,
+    "r60": null,
+    "r_now": 7.15,
+    "x_now": -3.03
+   },
+   {
+    "signal_date": "2026-10-14",
+    "entry_day": "2026-10-15",
+    "code": "601318",
+    "name": "示例保险",
+    "strategy": "blend2",
+    "action": "卖出",
+    "r5": 2.07,
+    "r20": 7.9,
+    "r60": null,
+    "r_now": -4.92,
+    "x_now": 1.46
+   },
+   {
+    "signal_date": "2026-10-13",
+    "entry_day": "2026-10-14",
+    "code": "000858",
+    "name": "示例粮液",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": -1.03,
+    "r20": -1.31,
+    "r60": null,
+    "r_now": -3.56,
+    "x_now": 3.83
+   }
+  ]
+ },
+ "notifications": []
+}

@@ -1,0 +1,39 @@
+/* ==========================================================
+ * 文件: shared/fonts.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 系统字体栈（不下载任何 webfont）。Inter / JetBrains Mono 只在本机已安装时生效。
+ * ========================================================== */
+
+:root {
+  /* UI 字体：苹果系统字体优先，中文落到苹方 / 思源黑体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei",
+    system-ui, sans-serif;
+  /* 数字字体：等宽，配合 tabular-nums 让数字列对齐、滚动时不抖 */
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* 文档风格（notion）可能用到的衬线栈 */
+  --font-serif: "New York", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+
+  /* 字号阶梯（1.25 倍率），各风格可在 tokens.css 覆盖 */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --fs-3xl: 2.25rem;
+  --fs-4xl: clamp(2.5rem, 1.6rem + 3.6vw, 4.5rem);
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-body: 1.6;
+}
+
+/* 所有带 .num 的元素统一等宽数字 */
+.num,
+.mono,
+[data-num] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

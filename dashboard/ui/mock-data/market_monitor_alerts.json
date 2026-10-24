@@ -1,0 +1,21 @@
+{
+ "ok": true,
+ "alerts": [
+  {
+   "triggered_at": "2026-10-23T09:48:10+08:00",
+   "code": "300001",
+   "direction": "down",
+   "threshold": 27.5,
+   "previous_price": 27.8,
+   "price": 27.4
+  },
+  {
+   "triggered_at": "2026-10-23T10:15:40+08:00",
+   "code": "600000",
+   "direction": "up",
+   "threshold": 11.1,
+   "previous_price": 11.05,
+   "price": 11.15
+  }
+ ]
+}

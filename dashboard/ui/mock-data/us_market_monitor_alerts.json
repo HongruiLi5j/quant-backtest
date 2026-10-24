@@ -1,0 +1,13 @@
+{
+ "ok": true,
+ "alerts": [
+  {
+   "triggered_at": "2026-10-23T09:50:10-04:00",
+   "code": "AAPL",
+   "direction": "up",
+   "threshold": 231.0,
+   "previous_price": 230.8,
+   "price": 231.2
+  }
+ ]
+}

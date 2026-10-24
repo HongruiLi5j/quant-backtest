@@ -1,0 +1,70 @@
+{
+ "markets": {
+  "cn": {
+   "name": "A股",
+   "main": "510300",
+   "universe": {
+    "510300": "沪深300ETF",
+    "510500": "中证500ETF"
+   },
+   "stocks": {
+    "600000": "示例银行",
+    "000001": "示例平安"
+   },
+   "timezone": "Asia/Shanghai",
+   "timezone_label": "北京时间",
+   "stock_cost_bp": 8,
+   "cost_bp": 5,
+   "source": "sina"
+  },
+  "us": {
+   "name": "美股",
+   "main": "SPY",
+   "universe": {
+    "SPY": "S&P 500 ETF"
+   },
+   "stocks": {
+    "AAPL": "Apple"
+   },
+   "timezone": "America/New_York",
+   "timezone_label": "美东时间",
+   "stock_cost_bp": 2,
+   "cost_bp": 2,
+   "source": "yahoo"
+  }
+ },
+ "default_market": "cn",
+ "strategies": {
+  "blend2": {
+   "label": "组合：趋势集成 + RSI2 + 海龟",
+   "desc": "示例",
+   "kind": "single",
+   "params": []
+  },
+  "trend_ens": {
+   "label": "趋势集成",
+   "desc": "示例",
+   "kind": "single",
+   "params": []
+  },
+  "rsi2": {
+   "label": "RSI2 短线回归",
+   "desc": "示例",
+   "kind": "single",
+   "params": []
+  },
+  "donchian_s1": {
+   "label": "海龟 20 日突破",
+   "desc": "示例",
+   "kind": "single",
+   "params": []
+  },
+  "buy_hold": {
+   "label": "一直持有",
+   "desc": "示例",
+   "kind": "single",
+   "params": []
+  }
+ },
+ "personal_mode": true
+}

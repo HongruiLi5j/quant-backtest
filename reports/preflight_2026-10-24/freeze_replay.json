@@ -1,0 +1,903 @@
+{
+ "entries": {
+  "ind_01|n=120": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "ind_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "1b17cade6aa560436966fbc89b2a6eab697a9d03",
+    "k_real": 20,
+    "key": "ind_01|n=120",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 120
+    },
+    "reasons": [
+     "规则2:月换手 1.80 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.0297029702970297,
+     "score": -0.0001608760149790793,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.09287560824753731,
+     "monthly_turnover": 1.802941176470589,
+     "net_annual_excess": -0.11184228007794467,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "ind_01|n=120",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000013",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "cb4e8a9d58825d0fe5c62065e2cc2ff995dbe7c2db06a952150cf15f2e5b5377",
+   "inputs_fingerprint": "1b17cade6aa560436966fbc89b2a6eab697a9d03",
+   "strategy_id": "ind_01|n=120",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "ind_01|n=20": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "ind_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "da871af97b39d502b68b81dd896445bded418c23",
+    "k_real": 20,
+    "key": "ind_01|n=20",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 20
+    },
+    "reasons": [
+     "规则2:月换手 3.89 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.04950495049504951,
+     "score": -0.00024919700931732636,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.11183528322528152,
+     "monthly_turnover": 3.8941176470588204,
+     "net_annual_excess": -0.15068979131117632,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "ind_01|n=20",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000011",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "a16282562861f5323ed2d1fc999cb686214d0311b66664ccae5207148f543370",
+   "inputs_fingerprint": "da871af97b39d502b68b81dd896445bded418c23",
+   "strategy_id": "ind_01|n=20",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "ind_01|n=5": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "ind_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "efd14c04072feea662736ab1dfe66f16222d6410",
+    "k_real": 20,
+    "key": "ind_01|n=5",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 5
+    },
+    "reasons": [
+     "规则2:月换手 7.26 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.1188118811881188,
+     "score": -0.00035435494029912245,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.17950834749264533,
+     "monthly_turnover": 7.2558823529411836,
+     "net_annual_excess": -0.25143924494463593,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "ind_01|n=5",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000010",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "1059762005386d6840afb6f9985137e866c16b8fcf7344c6033ea1f321335518",
+   "inputs_fingerprint": "efd14c04072feea662736ab1dfe66f16222d6410",
+   "strategy_id": "ind_01|n=5",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "ind_01|n=60": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "ind_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "7d39f78bf09ad12d8a154872fe4bd3fa82ec5574",
+    "k_real": 20,
+    "key": "ind_01|n=60",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 60
+    },
+    "reasons": [
+     "规则2:月换手 2.40 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.09900990099009901,
+     "score": -0.00032092086912333047,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.13035036266609176,
+     "monthly_turnover": 2.402941176470587,
+     "net_annual_excess": -0.15308566466863818,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "ind_01|n=60",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000012",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "1acac69aa4ddfb2ff22242458dbbd1fa6b83d7ace1f6700c812807b62161a50c",
+   "inputs_fingerprint": "7d39f78bf09ad12d8a154872fe4bd3fa82ec5574",
+   "strategy_id": "ind_01|n=60",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "mom_01|n=10": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "mom_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "123bfad71634c3423f1123b64850a36acfc4b3b3",
+    "k_real": 20,
+    "key": "mom_01|n=10",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 10
+    },
+    "reasons": [
+     "规则2:月换手 4.82 超过 100%",
+     "规则2:成本前年化超额 0.0272 > 0 但成本后 -0.0205 ≤ 0",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.009900990099009901,
+     "score": 0.0005290015916895363,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": true,
+     "gross_annual_excess": 0.027229380912125987,
+     "monthly_turnover": 4.823529411764713,
+     "net_annual_excess": -0.02047523769067707,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "mom_01|n=10",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000002",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "64afe8a28a10fc5678af83039091fabc5a630986ea2d42e908ed477213214ea2",
+   "inputs_fingerprint": "123bfad71634c3423f1123b64850a36acfc4b3b3",
+   "strategy_id": "mom_01|n=10",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "mom_01|n=120": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "mom_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "23c902c97126cd6f99037ac5d8f61560f8d8594e",
+    "k_real": 20,
+    "key": "mom_01|n=120",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 120
+    },
+    "reasons": [
+     "规则2:月换手 1.36 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.0297029702970297,
+     "score": -0.00011620772139666304,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.14469097682010082,
+     "monthly_turnover": 1.361764705882358,
+     "net_annual_excess": -0.15808336686153227,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "mom_01|n=120",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000005",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "34792ec5be49e0c1286f055897eff0f0fa7bb7b6442cad91ef82128e728695e2",
+   "inputs_fingerprint": "23c902c97126cd6f99037ac5d8f61560f8d8594e",
+   "strategy_id": "mom_01|n=120",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "mom_01|n=20": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "mom_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "5d70f9d1a61c3aa1dbfe59246fe046ad23cf169e",
+    "k_real": 20,
+    "key": "mom_01|n=20",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 20
+    },
+    "reasons": [
+     "规则2:月换手 3.47 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.009900990099009901,
+     "score": -9.512068833661339e-06,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.0934567778951168,
+     "monthly_turnover": 3.4735294117647086,
+     "net_annual_excess": -0.12513184359792764,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "mom_01|n=20",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000003",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "692b6900b61aeafb86bb49ba3dfd039cb0dc4e8c68ca0b1d2051ec0ea9f8f134",
+   "inputs_fingerprint": "5d70f9d1a61c3aa1dbfe59246fe046ad23cf169e",
+   "strategy_id": "mom_01|n=20",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "mom_01|n=5": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "mom_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "7dc3ce3feac98c37db98d779f717d21fdfcf4196",
+    "k_real": 20,
+    "key": "mom_01|n=5",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 5
+    },
+    "reasons": [
+     "规则2:月换手 6.97 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.039603960396039604,
+     "score": -0.00018608100105073748,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.09928207521078265,
+     "monthly_turnover": 6.9735294117647,
+     "net_annual_excess": -0.16905440848291503,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "mom_01|n=5",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000001",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "c1db2ca533d217d2b81aeb0bc5dee499b488cbb2ab0624f550496779e153a33c",
+   "inputs_fingerprint": "7dc3ce3feac98c37db98d779f717d21fdfcf4196",
+   "strategy_id": "mom_01|n=5",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "mom_01|n=60": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "mom_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "3383a7a1a932d65ee4fd8f4ec41105de502bd256",
+    "k_real": 20,
+    "key": "mom_01|n=60",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 60
+    },
+    "reasons": [
+     "规则2:月换手 2.18 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.009900990099009901,
+     "score": 8.889347461629366e-05,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.06970077431171876,
+     "monthly_turnover": 2.182352941176474,
+     "net_annual_excess": -0.0903563760531555,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "mom_01|n=60",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000004",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "2b4e06cf5ab26585eeb25b428033f72b72f94dc3a435aef8f611794d76caba72",
+   "inputs_fingerprint": "3383a7a1a932d65ee4fd8f4ec41105de502bd256",
+   "strategy_id": "mom_01|n=60",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "rev_01|n=1": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "rev_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "c8b82025aac43780b61ac760299ab32e9af93c16",
+    "k_real": 20,
+    "key": "rev_01|n=1",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 1
+    },
+    "reasons": [
+     "规则2:月换手 16.12 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.04950495049504951,
+     "score": -0.00023864318101881184,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.02431443066866553,
+     "monthly_turnover": 16.12352941176469,
+     "net_annual_excess": -0.19974135934772003,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "rev_01|n=1",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000006",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "1d669c25a2170b40fa24efc52a79d84795a145b0463121cba06cfb69156b6467",
+   "inputs_fingerprint": "c8b82025aac43780b61ac760299ab32e9af93c16",
+   "strategy_id": "rev_01|n=1",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "rev_01|n=10": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "rev_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "151c328186bbaca0fde72857def9b1bbaf445a58",
+    "k_real": 20,
+    "key": "rev_01|n=10",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 10
+    },
+    "reasons": [
+     "规则2:月换手 5.65 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.09900990099009901,
+     "score": -0.00033537961459189155,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.1243564719155868,
+     "monthly_turnover": 5.6529411764705895,
+     "net_annual_excess": -0.18242766360843957,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "rev_01|n=10",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000009",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "9ced1e4f55bd455cb479e472521a2234d9f7aa14c0a239d62650dcfe3fb72b03",
+   "inputs_fingerprint": "151c328186bbaca0fde72857def9b1bbaf445a58",
+   "strategy_id": "rev_01|n=10",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "rev_01|n=3": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "rev_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "eb33444ff6dcb299cdd53913393ab67e572d6ab8",
+    "k_real": 20,
+    "key": "rev_01|n=3",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 3
+    },
+    "reasons": [
+     "规则2:月换手 10.11 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.019801980198019802,
+     "score": -6.142099357993819e-05,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.03189186371723568,
+     "monthly_turnover": 10.105882352941174,
+     "net_annual_excess": -0.13639061234098954,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "rev_01|n=3",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000007",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "1492911e3fcf0a22b9bf5a5de9c78d78720467d38cdcd22b19df7576732f9377",
+   "inputs_fingerprint": "eb33444ff6dcb299cdd53913393ab67e572d6ab8",
+   "strategy_id": "rev_01|n=3",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  },
+  "rev_01|n=5": {
+   "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+   "decision": {
+    "days": 357,
+    "decision": "eliminated",
+    "frozen": false,
+    "id": "rev_01",
+    "inputs_changed": false,
+    "inputs_fingerprint": "16b13cf7714da7c3498ed89e0a384c0d57844a53",
+    "k_real": 20,
+    "key": "rev_01|n=5",
+    "monotonic_report_fingerprint": "fec7940dc7db650ef3f1cfefd7bbb385946c8e4c",
+    "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+    "null_k": 100,
+    "null_k_real": 100,
+    "ohlc_panel_fingerprint": "5b2664eac88e7a391736fb9d758fbe4ceac86f23",
+    "params": {
+     "n": 5
+    },
+    "reasons": [
+     "规则2:月换手 7.79 超过 100%",
+     "规则4:单因子单调性未通过(或报告里没有该组合,按未通过处理)"
+    ],
+    "rows_fingerprint": "7ed34bccd313d715e6e59b2ef3e143720e67384e",
+    "rule1": {
+     "evaluable": true,
+     "k_max": 20,
+     "k_min": 20,
+     "k_real": 20,
+     "null_dist_fingerprint": "3fb47dbef695a1dfdcbd39039f64f7a65409dc62",
+     "null_k_real": 100,
+     "null_mean": -0.0007170490960073035,
+     "null_p5": -0.001175354989816407,
+     "p_value": 0.009900990099009901,
+     "score": 1.4352328329548536e-05,
+     "status": "ok",
+     "triggered": false,
+     "weeks": 77
+    },
+    "rule2": {
+     "cost_eats_triggered": false,
+     "gross_annual_excess": -0.06188327620565433,
+     "monthly_turnover": 7.785294117647057,
+     "net_annual_excess": -0.14189360133703807,
+     "triggered": true,
+     "turnover_triggered": true
+    },
+    "rule3": {
+     "held_fraction": 1.0,
+     "triggered": false
+    },
+    "rule4": {
+     "applied": true,
+     "passed": false,
+     "triggered": true
+    },
+    "seed": "0",
+    "strategy_id": "rev_01|n=5",
+    "timestamp": "2026-10-24T08:07:48+00:00",
+    "trial_id": "t000008",
+    "verdict": "eliminated",
+    "weeks": 77
+   },
+   "entry_sha256": "de0fc8853499491dbee4310954560c2c3c471bf9d80d574d0765ab3fededefe7",
+   "inputs_fingerprint": "16b13cf7714da7c3498ed89e0a384c0d57844a53",
+   "strategy_id": "rev_01|n=5",
+   "timestamp": "2026-10-24T08:07:48+00:00",
+   "verdict": "eliminated"
+  }
+ },
+ "version": 1
+}

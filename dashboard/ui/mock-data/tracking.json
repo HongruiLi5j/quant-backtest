@@ -1,0 +1,162 @@
+{
+ "eval": {
+  "empty": false,
+  "generated": "2026-10-23 21:00",
+  "generated_at": "2026-10-23T21:00:15+08:00",
+  "timezone_label": "北京时间",
+  "total": 320,
+  "since": "2026-09-24",
+  "latest": "2026-10-23",
+  "latest_price_date": "2026-10-23",
+  "expected_first_5": "2026-10-30",
+  "summary": [
+   {
+    "strategy": "blend2",
+    "action": "买入",
+    "signals": 120,
+    "first": "2026-09-24",
+    "last": "2026-10-23",
+    "n5": 60,
+    "avg5": -1.2,
+    "ex5": 0.4,
+    "win5": 48.0,
+    "beat5": 49.0,
+    "n20": 0,
+    "avg20": null,
+    "ex20": null,
+    "win20": null,
+    "beat20": null,
+    "n60": 0,
+    "avg60": null,
+    "ex60": null,
+    "win60": null,
+    "beat60": null
+   },
+   {
+    "strategy": "blend2",
+    "action": "卖出",
+    "signals": 200,
+    "first": "2026-09-24",
+    "last": "2026-10-23",
+    "n5": 100,
+    "avg5": 0.6,
+    "ex5": 0.4,
+    "win5": 48.0,
+    "beat5": 52.0,
+    "n20": 0,
+    "avg20": null,
+    "ex20": null,
+    "win20": null,
+    "beat20": null,
+    "n60": 0,
+    "avg60": null,
+    "ex60": null,
+    "win60": null,
+    "beat60": null
+   }
+  ],
+  "recent": [
+   {
+    "signal_date": "2026-10-23",
+    "entry_day": null,
+    "code": "600000",
+    "name": "示例股票甲",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": null,
+    "r20": null,
+    "r60": null,
+    "r_now": 1.1,
+    "x_now": 0.4
+   }
+  ]
+ },
+ "replay": {
+  "empty": false,
+  "generated": "2026-10-23 21:00",
+  "generated_at": "2026-10-23T21:00:15+08:00",
+  "timezone_label": "北京时间",
+  "total": 15000,
+  "since": "2026-09-24",
+  "latest": "2026-10-23",
+  "latest_price_date": "2026-10-23",
+  "expected_first_5": "2026-10-30",
+  "summary": [
+   {
+    "strategy": "blend2",
+    "action": "买入",
+    "signals": 120,
+    "first": "2026-09-24",
+    "last": "2026-10-23",
+    "n5": 120,
+    "avg5": -1.2,
+    "ex5": 0.4,
+    "win5": 48.0,
+    "beat5": 49.0,
+    "n20": 40,
+    "avg20": 1.2,
+    "ex20": null,
+    "win20": null,
+    "beat20": 55.0,
+    "n60": 0,
+    "avg60": null,
+    "ex60": null,
+    "win60": null,
+    "beat60": null
+   },
+   {
+    "strategy": "blend2",
+    "action": "卖出",
+    "signals": 200,
+    "first": "2026-09-24",
+    "last": "2026-10-23",
+    "n5": 200,
+    "avg5": 0.6,
+    "ex5": 0.4,
+    "win5": 48.0,
+    "beat5": 52.0,
+    "n20": 66,
+    "avg20": 1.2,
+    "ex20": null,
+    "win20": null,
+    "beat20": 55.0,
+    "n60": 0,
+    "avg60": null,
+    "ex60": null,
+    "win60": null,
+    "beat60": null
+   }
+  ],
+  "recent": [
+   {
+    "signal_date": "2026-10-23",
+    "entry_day": null,
+    "code": "600000",
+    "name": "示例股票甲",
+    "strategy": "blend2",
+    "action": "买入",
+    "r5": null,
+    "r20": null,
+    "r60": null,
+    "r_now": 1.1,
+    "x_now": 0.4
+   }
+  ]
+ },
+ "notifications": [
+  {
+   "time": "2026-10-23 21:00",
+   "timestamp": "2026-10-23T21:00:16+08:00",
+   "timezone_label": "北京时间",
+   "title": "量化日报 · A股 2026-10-23",
+   "body": "自选股和主要 ETF 今天没有新信号。全市场（组合策略）：买入 12 只，卖出 5 只。"
+  },
+  {
+   "time": "2026-10-22 21:00",
+   "timestamp": "2026-10-22T21:00:10+08:00",
+   "timezone_label": "北京时间",
+   "title": "量化日报 · A股 2026-10-22",
+   "body": "示例提醒（假数据）。"
+  }
+ ]
+}

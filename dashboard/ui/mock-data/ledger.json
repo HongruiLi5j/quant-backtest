@@ -1,0 +1,75 @@
+{
+ "today": "2026-10-23",
+ "signal_days": [
+  "2026-10-21",
+  "2026-10-22",
+  "2026-10-23"
+ ],
+ "evaluated_days": [
+  "2026-10-21"
+ ],
+ "main": "blend2",
+ "main_pick": {
+  "main": "blend2",
+  "default": true,
+  "reason": "blend2 继续任主策略（默认策略，未经晋升检验）。",
+  "record": {
+   "strategy": "blend2",
+   "pre": {
+    "n": 290,
+    "days": 1,
+    "hit": 0.46,
+    "score": 0.002
+   },
+   "post": null
+  }
+ },
+ "promotion": {
+  "message": "尚无策略通过晋升检验",
+  "complete_weeks": 1
+ },
+ "precision": {
+  "blend2": [
+   {
+    "action": "买入",
+    "h": 5,
+    "n": 65,
+    "days": 3,
+    "untradable": 1,
+    "hit_raw": 0.47,
+    "hit_excess": 0.46,
+    "hit_excess_lo": 0.4,
+    "hit_excess_hi": 0.52,
+    "mean_ret": 0.004,
+    "mean_excess": 0.002,
+    "median_excess": -0.003,
+    "net_excess": 0.0005,
+    "enough": true,
+    "verdict": "看不出差别"
+   },
+   {
+    "action": "卖出",
+    "h": 5,
+    "n": 20,
+    "days": 3,
+    "untradable": 1,
+    "hit_raw": 0.47,
+    "hit_excess": 0.46,
+    "hit_excess_lo": 0.4,
+    "hit_excess_hi": 0.52,
+    "mean_ret": 0.004,
+    "mean_excess": 0.002,
+    "median_excess": -0.003,
+    "net_excess": 0.0005,
+    "enough": false,
+    "verdict": ""
+   }
+  ]
+ },
+ "notes": [
+  "blend2 买入信号 5 日：65 条、只跨 1 个信号日，样本不足，仅作观察。"
+ ],
+ "caveats": [
+  "结果是统计，不是预测；样本小时波动很大。"
+ ]
+}

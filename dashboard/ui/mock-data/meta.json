@@ -1,0 +1,20 @@
+{
+  "markets": {
+    "cn": {
+      "name": "A股",
+      "main": "510300",
+      "universe": {"510300": "沪深300ETF", "510500": "中证500ETF"},
+      "stocks": {"600000": "示例股票"},
+      "timezone": "Asia/Shanghai",
+      "timezone_label": "北京时间",
+      "stock_cost_bp": 8,
+      "cost_bp": 5,
+      "source": "sina"
+    }
+  },
+  "default_market": "cn",
+  "strategies": {
+    "blend2": {"label": "组合：趋势集成 + RSI2 + 海龟", "desc": "示例说明", "kind": "single", "params": []}
+  },
+  "personal_mode": true
+}

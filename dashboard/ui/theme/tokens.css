@@ -1,0 +1,172 @@
+/* ==========================================================
+ * 文件: quant-ai-dark/tokens.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: quant-ai-dark（SignalX 深紫 AI 风）的全部设计 tokens。
+ *       组件 CSS 只读这里的变量，换风格 = 换这一个文件。
+ * 说明: 在用户给定 tokens 基础上，为满足 WCAG AAA（正文 ≥ 7:1）做了 4 处调整，
+ *       见 DECISIONS.md ADR-005。
+ * ========================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* —— 背景层级 —— */
+  --bg-base: #0a0820;
+  --bg-surface: rgba(20, 15, 45, 0.6);
+  --bg-elevated: rgba(30, 22, 65, 0.8);
+  --bg-sunken: rgba(6, 4, 22, 0.55);
+  --bg-solid: #120e2e;              /* 不支持 backdrop-filter 时的实色兜底 */
+  --surface-hover: rgba(107, 91, 255, 0.08);
+
+  /* —— 边框 —— */
+  --border-subtle: rgba(107, 91, 255, 0.15);
+  --border-strong: rgba(107, 91, 255, 0.3);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+
+  /* —— 强调色 —— */
+  --accent-primary: #6b5bff;        /* 只用于底色/边框/光效，不用于正文文字（对比度 4.3:1） */
+  --accent-glow: #9f7bff;
+  --accent-text: #b3a8ff;           /* 强调色文字，对比度 9.3:1 */
+  --accent-contrast: #ffffff;       /* 强调色底上的文字 */
+  --accent-2: #5b8cff;              /* 渐变终点：紫 → 蓝 */
+
+  /* —— 文字 —— */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.72);  /* 原 0.6 在玻璃卡上 < 7:1，提到 0.72 */
+  --text-dim: rgba(255, 255, 255, 0.4);         /* 只用于禁用态与装饰，不承载信息 */
+
+  /* —— 涨跌与语义色（文字级，均 ≥ 7:1） —— */
+  --red: #ff8a8a;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red-fill: #f87171;
+  --green-fill: #22c55e;
+
+  /* —— 图表 —— */
+  --chart-1: #9f7bff;
+  --chart-2: #5b8cff;
+  --chart-bench: rgba(255, 255, 255, 0.45);
+  --chart-dd: #ff8a8a;
+  --chart-grid: rgba(255, 255, 255, 0.05);
+  --chart-text: rgba(255, 255, 255, 0.6);
+
+  /* —— 阴影与光 —— */
+  --shadow-glow: 0 0 60px rgba(107, 91, 255, 0.4);
+  --shadow-glow-sm: 0 0 24px rgba(107, 91, 255, 0.35);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --text-glow: 0 0 24px rgba(159, 123, 255, 0.55);
+  --focus-ring: #b3a8ff;
+  --selection: rgba(107, 91, 255, 0.45);
+
+  /* —— 形状 —— */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --blur: 20px;
+
+  /* —— 间距（4px 基准） —— */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+
+  /* —— 动效（shared 里的 JS 交互全部读这些值） —— */
+  --motion-fast: 150ms;
+  --motion-base: 280ms;
+  --motion-slow: 640ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: linear(0, 0.2178 2.1%, 1.1144 8.49%, 1.2959 10.7%, 1.3463 11.81%, 1.3705 12.94%,
+    1.3591 14.48%, 1.2588 17.24%, 0.9948 23.84%, 0.9134 26.88%, 0.8932 29.31%, 0.9131 31.63%,
+    1.0187 38.73%, 1.0336 41.68%, 1.0362 44.22%, 1.0018 54.35%, 0.9907 60.44%, 1.0006 80.25%, 1);
+  --stagger: 50ms;
+  --tilt-max: 8;                    /* 3D 倾斜最大角度（度），JS 读取 */
+  --magnet-radius: 50;              /* 磁性按钮吸附半径（px），JS 读取 */
+  --magnet-strength: 0.35;
+  --beam-duration: 6s;
+  --shimmer-duration: 2.8s;
+  --cursor-lerp: 0.18;
+}
+
+/* 浅色模式：薰衣草白底，保留紫色气质，对比度同样按 AAA 调过 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-base: #f5f3ff;
+  --bg-surface: rgba(255, 255, 255, 0.72);
+  --bg-elevated: rgba(255, 255, 255, 0.92);
+  --bg-sunken: rgba(107, 91, 255, 0.05);
+  --bg-solid: #ffffff;
+  --surface-hover: rgba(107, 91, 255, 0.06);
+  --border-subtle: rgba(75, 59, 219, 0.14);
+  --border-strong: rgba(75, 59, 219, 0.3);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --accent-primary: #4b3bdb;
+  --accent-glow: #7c5cff;
+  --accent-text: #3d2fc2;
+  --accent-2: #2f5fe0;
+  --text-primary: #14102e;
+  --text-secondary: #4a4566;
+  --text-dim: rgba(20, 16, 46, 0.45);
+  --red: #a11a12;
+  --green: #0e5c2c;
+  --amber: #8a5300;
+  --red-fill: #dc2626;
+  --green-fill: #16a34a;
+  --chart-1: #6b4bff;
+  --chart-2: #2f6bff;
+  --chart-bench: rgba(20, 16, 46, 0.4);
+  --chart-dd: #c2410c;
+  --chart-grid: rgba(20, 16, 46, 0.06);
+  --chart-text: rgba(20, 16, 46, 0.6);
+  --shadow-glow: 0 0 60px rgba(107, 91, 255, 0.18);
+  --shadow-glow-sm: 0 0 20px rgba(107, 91, 255, 0.15);
+  --shadow-card: 0 8px 32px rgba(40, 30, 120, 0.1);
+  --text-glow: none;
+  --focus-ring: #3d2fc2;
+  --selection: rgba(107, 91, 255, 0.2);
+}
+
+/* 系统是浅色、且用户没手动选过时，跟随系统 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg-base: #f5f3ff;
+    --bg-surface: rgba(255, 255, 255, 0.72);
+    --bg-elevated: rgba(255, 255, 255, 0.92);
+    --bg-sunken: rgba(107, 91, 255, 0.05);
+    --bg-solid: #ffffff;
+    --surface-hover: rgba(107, 91, 255, 0.06);
+    --border-subtle: rgba(75, 59, 219, 0.14);
+    --border-strong: rgba(75, 59, 219, 0.3);
+    --glass-highlight: rgba(255, 255, 255, 0.9);
+    --accent-primary: #4b3bdb;
+    --accent-glow: #7c5cff;
+    --accent-text: #3d2fc2;
+    --accent-2: #2f5fe0;
+    --text-primary: #14102e;
+    --text-secondary: #4a4566;
+    --text-dim: rgba(20, 16, 46, 0.45);
+    --red: #a11a12;
+    --green: #0e5c2c;
+    --amber: #8a5300;
+    --red-fill: #dc2626;
+    --green-fill: #16a34a;
+    --chart-1: #6b4bff;
+    --chart-2: #2f6bff;
+    --chart-bench: rgba(20, 16, 46, 0.4);
+    --chart-dd: #c2410c;
+    --chart-grid: rgba(20, 16, 46, 0.06);
+    --chart-text: rgba(20, 16, 46, 0.6);
+    --shadow-glow: 0 0 60px rgba(107, 91, 255, 0.18);
+    --shadow-glow-sm: 0 0 20px rgba(107, 91, 255, 0.15);
+    --shadow-card: 0 8px 32px rgba(40, 30, 120, 0.1);
+    --text-glow: none;
+    --focus-ring: #3d2fc2;
+    --selection: rgba(107, 91, 255, 0.2);
+  }
+}

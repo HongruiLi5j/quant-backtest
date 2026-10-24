@@ -1,0 +1,44 @@
+/* ==========================================================
+ * 文件: ui/pages/U4.css —— 全市场 / 自选 / 设置 / 研究 四页专用样式
+ * 只用 tokens.css 里的变量，不引外部资源
+ * ========================================================== */
+
+.u4-field { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); }
+.u4-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: 12px var(--ws-card-pad); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-sm); }
+.u4-bar__spacer { flex: 1; }
+.u4-msg { padding: 8px var(--ws-card-pad); font-size: var(--fs-sm); color: var(--text-secondary); }
+.u4-msg a { color: var(--accent-text); text-decoration: underline; }
+.u4-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); padding: 10px var(--ws-card-pad); font-size: var(--fs-sm); color: var(--text-secondary); }
+.u4-pager .u4-pager__count { margin-right: auto; }
+.u4-better { color: var(--accent-text); font-weight: 600; }
+.u4-pin { box-shadow: inset 2px 0 0 var(--accent-primary); }
+.u4-click { cursor: pointer; }
+.u4-code { margin-left: 6px; color: var(--text-secondary); font-size: var(--fs-xs); }
+.u4-tag { margin-left: 6px; }
+.u4-sub { margin-left: 6px; color: var(--text-dim); font-size: var(--fs-xs); }
+.u4-link { color: var(--accent-text); cursor: pointer; background: none; border: 0; padding: 0; font: inherit; }
+.u4-link:hover { text-decoration: underline; }
+.u4-link--gray { color: var(--text-dim); cursor: default; }
+.u4-link--gray:hover { text-decoration: none; }
+.u4-explain { padding: 12px var(--ws-card-pad) 16px; font-size: var(--fs-sm); line-height: 1.7; color: var(--text-secondary); }
+.u4-explain p + p { margin-top: 6px; }
+.u4-explain strong { color: var(--text-primary); }
+.u4-banner { padding: 12px var(--ws-card-pad); margin-bottom: var(--space-4); font-size: var(--fs-sm); line-height: 1.6; border-color: var(--border-strong); }
+.u4-empty-cmd { font-family: var(--font-mono, monospace); background: var(--bg-sunken); padding: 2px 6px; border-radius: 4px; }
+.u4-soon { padding: var(--space-8, 48px) var(--space-4); text-align: center; color: var(--text-secondary); }
+.u4-soon .state__title { margin-bottom: 6px; }
+.u4-tabs { margin-bottom: var(--space-4); max-width: 100%; overflow-x: auto; }
+.u4-set { display: grid; gap: var(--space-4); max-width: 760px; }
+@media (max-width: 720px) {
+  .u4-bar { padding: 10px 16px; }
+  .u4-field { width: 100%; justify-content: space-between; }
+  .u4-field .ws-select, .u4-field .ws-input { flex: 1; min-width: 0; }
+  .ws-set__row { flex-wrap: wrap; }
+}
+
+/* 临时：共用顶栏在手机宽度下右侧按钮把页面撑宽（requests.md 已登记给 U5）；顶栏修好后可删除这一段 */
+@media (max-width: 720px) {
+  .topnav__inner { gap: var(--space-2); padding: 0 var(--space-3); }
+  .topnav__classic, .search-trigger__text, .search-trigger .kbd { display: none; }
+  .ws-head { gap: var(--space-2) var(--space-3); }
+}

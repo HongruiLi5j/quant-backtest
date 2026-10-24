@@ -1,0 +1,170 @@
+/* ==========================================================
+ * 文件: shared/topnav.css
+ * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
+ * 用途: 顶栏组件（shared/topnav.js 渲染），Workspace 与 Public 共用一份样式。
+ *   - 三栏网格：品牌 | 导航 | 工具区；导航栏宽度由网格分配，身份变化时 logo 和工具区不漂
+ *   - 图标按钮统一 36×36、间距 8px、同一 hover 态（分享按钮和搜索同一层级）
+ *   - 只用现有 token，不新增颜色
+ * 0.2.0（2026-10-24，T7）：Workspace 顶栏和 Public 全站顶栏（shared/site-nav.css）统一几何：
+ *   44px 高、品牌左、10 项链接整体居中、工具区右；左右两栏等宽，链接位置只取决于窗口宽度、不随页面变。
+ *   只作用于 [data-mode="workspace"]，Public 模式的旧渲染（组件库演示还在用）不受影响
+ * ========================================================== */
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-base) 82%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+}
+
+.topnav__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  height: 56px;
+  padding: 0 var(--space-5);
+}
+
+.topnav__brand { font-size: var(--fs-sm); white-space: nowrap; }
+
+.topnav__nav {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topnav__nav::-webkit-scrollbar { display: none; }
+
+/* Workspace：一行 10 项，13px，间距 20px */
+.topnav__nav--flat { gap: 20px; }
+
+.topnav__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 56px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--motion-fast);
+}
+
+.topnav__link:hover { color: var(--text-primary); }
+
+.topnav__link[aria-current="page"] { color: var(--text-primary); }
+
+.topnav__link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-primary);
+}
+
+/* 还没做的页：照常显示（导航长度不变），点了提示「下一步做」 */
+.topnav__link.is-soon { color: var(--text-dim); }
+
+/* Public：分组下拉 */
+.topnav__nav--groups { gap: var(--space-5); overflow: visible; }
+
+.topnav__group { position: relative; }
+
+.topnav__group > summary { list-style: none; }
+.topnav__group > summary::-webkit-details-marker { display: none; }
+
+.topnav__group > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.topnav__group[open] > summary { color: var(--text-primary); }
+
+.topnav__menu { left: 0; right: auto; top: calc(100% - 6px); }
+
+/* 工具区：36px 一格，间距 8px */
+.topnav__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topnav__icon {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.topnav__search { height: 36px; min-height: 36px; }
+
+.topnav__mode .segmented__btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.topnav__mode .segmented__btn[aria-current="true"] {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.topnav__signin { height: 36px; min-height: 36px; }
+
+.topnav__me {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.topnav__tier {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .topnav__search .search-trigger__text,
+  .topnav__search .kbd { display: none; }
+  .topnav__search { width: 36px; padding: 0; justify-content: center; }
+}
+
+/* ================= T7：Workspace 与 Public 顶栏统一几何 ================= */
+.topnav[data-mode="workspace"] .topnav__inner {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  height: 44px;
+  padding: 0 clamp(16px, 3vw, 40px);
+}
+
+.topnav[data-mode="workspace"] .topnav__brand { justify-self: start; }
+.topnav[data-mode="workspace"] .topnav__nav { justify-self: center; overflow: visible; }
+.topnav[data-mode="workspace"] .topnav__link { height: 44px; }
+.topnav[data-mode="workspace"] .topnav__tools { justify-self: end; }
+
+/* 搜索收成图标（同 Public 顶栏），工具区才放得下、不挤中间 */
+.topnav[data-mode="workspace"] .topnav__search .search-trigger__text,
+.topnav[data-mode="workspace"] .topnav__search .kbd { display: none; }
+.topnav[data-mode="workspace"] .topnav__search { width: 36px; padding: 0; justify-content: center; }
+
+/* 窗口太窄、10 项放不下居中时：退回「品牌 | 可横向滚动的链接 | 工具」，不重叠 */
+@media (max-width: 1199px) {
+  .topnav[data-mode="workspace"] .topnav__inner { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .topnav[data-mode="workspace"] .topnav__nav { justify-self: stretch; overflow-x: auto; }
+}

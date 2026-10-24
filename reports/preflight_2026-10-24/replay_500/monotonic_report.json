@@ -1,0 +1,358 @@
+{
+ "catalog_hash": "d7c0d3b4992e8b96d055c173d1f82b161a2920cf7e93cd9f30668c8af9d54d48",
+ "horizon": 20,
+ "n_groups": 5,
+ "results": [
+  {
+   "direction": "higher_better",
+   "eliminated": true,
+   "id": "mom_01",
+   "n_params": 5,
+   "n_passed": 0,
+   "params": [
+    {
+     "group_mean": [
+      0.02178981645853361,
+      0.026253818390771465,
+      0.02755301694122288,
+      0.024429775909226487,
+      0.018993353814352104
+     ],
+     "ic_mean": -0.0197697433060092,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 5
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.300 < 0.8",
+      "多空差均值 -0.00280 ≤ 0"
+     ],
+     "rho": -0.3,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.0027964626441815076
+    },
+    {
+     "group_mean": [
+      0.024949206782602998,
+      0.02820296598800805,
+      0.024815530424676335,
+      0.022409208678400676,
+      0.018826947885964843
+     ],
+     "ic_mean": -0.040023840354957464,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 10
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.900 < 0.8",
+      "多空差均值 -0.00612 ≤ 0"
+     ],
+     "rho": -0.8999999999999998,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.006122258896638156
+    },
+    {
+     "group_mean": [
+      0.026487255463395178,
+      0.027443946113357872,
+      0.024654578975970034,
+      0.023270614022441547,
+      0.017078643850482505
+     ],
+     "ic_mean": -0.06312236447019136,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 20
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.900 < 0.8",
+      "多空差均值 -0.00941 ≤ 0"
+     ],
+     "rho": -0.8999999999999998,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.009408611612912678
+    },
+    {
+     "group_mean": [
+      0.027652773278219172,
+      0.021468012261202814,
+      0.018582771356268398,
+      0.021006827125169537,
+      0.030133559284834233
+     ],
+     "ic_mean": -0.04136220399494263,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 60
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=0.100 < 0.8"
+     ],
+     "rho": 0.09999999999999999,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": 0.0024807860066150605
+    },
+    {
+     "group_mean": [
+      0.021762555739366474,
+      0.0304804828151834,
+      0.02523208968823633,
+      0.02631182893042776,
+      0.015188576467968354
+     ],
+     "ic_mean": -0.054670293790702755,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 120
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.300 < 0.8",
+      "多空差均值 -0.00657 ≤ 0"
+     ],
+     "rho": -0.3,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.006573979271398122
+    }
+   ],
+   "status": "checked"
+  },
+  {
+   "direction": "higher_better",
+   "eliminated": true,
+   "id": "rev_01",
+   "n_params": 4,
+   "n_passed": 0,
+   "params": [
+    {
+     "group_mean": [
+      0.021941766889630038,
+      0.02512950680207951,
+      0.028208105461468912,
+      0.02392249292134061,
+      0.019944812624177983
+     ],
+     "ic_mean": 0.0012495463481027361,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 1
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.300 < 0.8",
+      "多空差均值 -0.00200 ≤ 0"
+     ],
+     "rho": -0.3,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.001996954265452058
+    },
+    {
+     "group_mean": [
+      0.019754266685309527,
+      0.025117203608780694,
+      0.025870495486132287,
+      0.026717569098196867,
+      0.021721381300393815
+     ],
+     "ic_mean": 0.012755836054084525,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 3
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=0.400 < 0.8"
+     ],
+     "rho": 0.39999999999999997,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": 0.001967114615084286
+    },
+    {
+     "group_mean": [
+      0.01872541465400802,
+      0.024489498053959505,
+      0.027901268319877322,
+      0.026073612740553778,
+      0.02195890515917173
+     ],
+     "ic_mean": 0.0197697433060092,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 5
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=0.300 < 0.8"
+     ],
+     "rho": 0.3,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": 0.0032334905051637102
+    },
+    {
+     "group_mean": [
+      0.018847388378038996,
+      0.022270118182027076,
+      0.02487750869795295,
+      0.028143025879587974,
+      0.02501083644829947
+     ],
+     "ic_mean": 0.040023840354957464,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 10
+     },
+     "passed": false,
+     "reasons": [
+      "多空差 bootstrap 置信区间下界 -0.01243 ≤ 0(块长 20)"
+     ],
+     "rho": 0.8999999999999998,
+     "spread_ci_lower": -0.01242781822625335,
+     "spread_ci_upper": 0.023797678732897128,
+     "spread_mean": 0.006163448070260477
+    }
+   ],
+   "status": "checked"
+  },
+  {
+   "direction": "higher_better",
+   "eliminated": true,
+   "id": "ind_01",
+   "n_params": 4,
+   "n_passed": 0,
+   "params": [
+    {
+     "group_mean": [
+      0.01854300127866562,
+      0.025928965666539065,
+      0.0279224140279789,
+      0.02483122176036492,
+      0.02174084732971903
+     ],
+     "ic_mean": -0.0111313846206507,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 5
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=0.100 < 0.8"
+     ],
+     "rho": 0.09999999999999999,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": 0.0031978460510534144
+    },
+    {
+     "group_mean": [
+      0.02458989411998542,
+      0.024439416925036647,
+      0.02527984381507803,
+      0.02719774149246949,
+      0.01730435845215655
+     ],
+     "ic_mean": -0.04289808270978435,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 20
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.100 < 0.8",
+      "多空差均值 -0.00729 ≤ 0"
+     ],
+     "rho": -0.09999999999999999,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.0072855356678288696
+    },
+    {
+     "group_mean": [
+      0.024453415354653493,
+      0.0261525127969559,
+      0.016679042471205198,
+      0.023083277135213656,
+      0.028620305606221707
+     ],
+     "ic_mean": -0.028794467282710883,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 60
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=0.200 < 0.8"
+     ],
+     "rho": 0.19999999999999998,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": 0.004166890251568214
+    },
+    {
+     "group_mean": [
+      0.023841335508101576,
+      0.017919173387937203,
+      0.024018644123197902,
+      0.03615706270376096,
+      0.01680726129956803
+     ],
+     "ic_mean": -0.030236692929594914,
+     "n_days": 339,
+     "n_groups": 5,
+     "params": {
+      "n": 120
+     },
+     "passed": false,
+     "reasons": [
+      "不单调:Spearman=-0.100 < 0.8",
+      "多空差均值 -0.00703 ≤ 0"
+     ],
+     "rho": -0.09999999999999999,
+     "spread_ci_lower": null,
+     "spread_ci_upper": null,
+     "spread_mean": -0.007034074208533553
+    }
+   ],
+   "status": "checked"
+  }
+ ],
+ "rule": {
+  "alpha": 0.05,
+  "block": 20,
+  "ci_lower_gt": 0,
+  "n_boot": 200,
+  "rho_min": 0.8,
+  "spread_gt": 0
+ },
+ "seed": 0,
+ "segment": "train",
+ "segment_range": [
+  "2024-01-01",
+  "2025-06-30"
+ ],
+ "total_grid_trials": 490
+}
