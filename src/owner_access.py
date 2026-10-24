@@ -23,16 +23,6 @@ _cache = {"team": None, "keys": {}, "t": 0.0}
 _lock = threading.Lock()
 
 
-# ---- TEMP-DEBUG 开始（临时诊断，查完整段删除）：只记失败步骤和不敏感字段，不记 token
-def _dbg(msg):
-    try:
-        d = Path(__file__).resolve().parent.parent / "logs"
-        with open(d / "owner_debug.log", "a", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
-    except Exception:
-        pass
-# ---- TEMP-DEBUG 结束
-
 
 def load_config(root=None):
     """读 owner_access.json；文件不存在、格式不对、未启用、team_domain/aud 为空都返回 None。"""
@@ -87,64 +77,49 @@ def verify(token, aud, cfg):
     """JWT 有效且邮箱在名单里，返回 claims 字典；否则返回 None。"""
     try:
         if not token or not aud:
-            _dbg(f"verify: 拒绝 有头={bool(token)} aud已配置={bool(aud)}")  # TEMP-DEBUG
             return None
         h64, p64, s64 = token.split(".")
         header = json.loads(_b64d(h64))
         if header.get("alg") != "RS256":
-            _dbg(f"verify: 拒绝 alg={header.get('alg')!r}")  # TEMP-DEBUG
             return None
-        keys = get_keys(cfg["team_domain"])
-        key = keys.get(header.get("kid"))
+        key = get_keys(cfg["team_domain"]).get(header.get("kid"))
         if not key:
-            _dbg(f"verify: 拒绝 kid找到=False 公钥数={len(keys)} kid前8={str(header.get('kid'))[:8]}")  # TEMP-DEBUG
             return None
         n, e = key
         sig = _b64d(s64)
         k = (n.bit_length() + 7) // 8
         if len(sig) != k or int.from_bytes(sig, "big") >= n:
-            _dbg(f"verify: 拒绝 签名长度不对 len={len(sig)} 期望={k}")  # TEMP-DEBUG
             return None
         em = pow(int.from_bytes(sig, "big"), e, n).to_bytes(k, "big")
         digest = hashlib.sha256(f"{h64}.{p64}".encode("ascii")).digest()
         t = SHA256_PREFIX + digest
         expected = b"\x00\x01" + b"\xff" * (k - len(t) - 3) + b"\x00" + t
         if not hmac.compare_digest(em, expected):
-            _dbg("verify: 拒绝 签名校验不通过")  # TEMP-DEBUG
             return None
         claims = json.loads(_b64d(p64))
         auds = claims.get("aud")
         auds = [auds] if isinstance(auds, str) else auds
-        iss, exp, email = claims.get("iss"), claims.get("exp"), claims.get("email")
-        _dbg(f"verify: 签名通过 alg=RS256 kid找到=True aud列表={auds} 期望aud={aud} iss={iss!r} 期望iss={'https://' + cfg['team_domain']!r} "
-             f"exp-现在={(exp - time.time()) if isinstance(exp, (int, float)) else exp!r}秒 email={email!r}")  # TEMP-DEBUG
         if not isinstance(auds, list) or aud not in auds:
-            _dbg("verify: 拒绝 aud不匹配")  # TEMP-DEBUG
             return None
-        if iss != "https://" + cfg["team_domain"]:
-            _dbg("verify: 拒绝 iss不匹配")  # TEMP-DEBUG
+        if claims.get("iss") != "https://" + cfg["team_domain"]:
             return None
+        exp = claims.get("exp")
         if isinstance(exp, bool) or not isinstance(exp, (int, float)) or exp + CLOCK_SKEW <= time.time():
-            _dbg("verify: 拒绝 exp无效或已过期")  # TEMP-DEBUG
             return None
+        email = claims.get("email")
         if not isinstance(email, str) or email.lower() not in {str(x).lower() for x in cfg["emails"]}:
-            _dbg("verify: 拒绝 email不在名单")  # TEMP-DEBUG
             return None
-        _dbg("verify: 通过")  # TEMP-DEBUG
         return claims
-    except Exception as ex:
-        _dbg(f"verify: 异常 {type(ex).__name__}")  # TEMP-DEBUG
+    except Exception:
         return None
 
 
 def is_owner(headers, path, cfg) -> bool:
     try:
         if not cfg or (headers.get("Host") or "").lower() != cfg["host"].lower():
-            _dbg(f"is_owner: Host不符 收到={headers.get('Host')!r} path={path} 有JWT头={bool(headers.get('Cf-Access-Jwt-Assertion'))}")  # TEMP-DEBUG
             return False
         is_admin = any(path == p.rstrip("/") or path.startswith(p) for p in ADMIN_PREFIXES)
         aud = cfg.get("admin_aud") if is_admin else cfg.get("aud")
-        _dbg(f"is_owner: path={path} 后台路径={is_admin} 有JWT头={bool(headers.get('Cf-Access-Jwt-Assertion'))}")  # TEMP-DEBUG
         return verify(headers.get("Cf-Access-Jwt-Assertion"), aud, cfg) is not None
     except Exception:
         return False

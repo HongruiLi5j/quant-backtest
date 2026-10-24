@@ -293,3 +293,61 @@ def test_app_owner_cache_same_request_computed_once(monkeypatch):
     monkeypatch.setattr(app.owner_access, "is_owner", lambda headers, path, cfg: calls.append(1) or True)
     assert h._owner() and h._owner() and h._local_or_owner()
     assert len(calls) == 1
+
+
+# ---------- 个人模式：后台三类路径对本机 / 主人放行，其余隐藏路由不变
+ADMIN_PATHS = ("/admin", "/admin.js", "/api/admin/status", "/api/admin/action")
+
+
+def _blocked(monkeypatch, host, path, owner, command="GET"):
+    """在个人模式开启的情况下，返回 (_personal_blocked() 的结果, 回复的状态码或 None)。"""
+    app, h = _handler({"Host": host})
+    h.path, h.command = path, command
+    sent = []
+    h._send = lambda code, *a, **k: sent.append(code)
+    monkeypatch.setattr(app.personal_mode, "is_enabled", lambda: True)
+    monkeypatch.setattr(app.owner_access, "load_config", lambda root=None: {"host": HOST})
+    monkeypatch.setattr(app.owner_access, "is_owner", lambda headers, p, cfg: owner and headers.get("Host") == HOST)
+    return h._personal_blocked(), (sent[0] if sent else None), h
+
+
+def test_personal_mode_owner_passes_admin_paths(monkeypatch):
+    for path in ADMIN_PATHS:
+        assert _blocked(monkeypatch, HOST, path, True)[:2] == (False, None), path
+
+
+def test_personal_mode_local_passes_admin_paths_but_still_needs_token(monkeypatch):
+    for path in ADMIN_PATHS:
+        blocked, code, h = _blocked(monkeypatch, "127.0.0.1:8765", path, False)
+        assert (blocked, code) == (False, None), path
+    # 放行只是不再被隐藏；后台自己的登录检查不变：本机没有管理令牌 cookie 就是未登录
+    assert h._admin_authed() is False
+
+
+def test_personal_mode_share_link_and_non_owner_still_404(monkeypatch):
+    for path in ADMIN_PATHS:
+        assert _blocked(monkeypatch, "x.trycloudflare.com", path, False)[:2] == (True, 404), path
+        assert _blocked(monkeypatch, "x.trycloudflare.com", path, True)[:2] == (True, 404), path   # 分享链接域名不可能是主人
+        assert _blocked(monkeypatch, HOST, path, False)[:2] == (True, 404), path                  # 主人域名但凭证没通过
+    # 带代理 / 隧道头的“本机”请求也不算本机
+    app, h = _handler({"Host": "127.0.0.1:8765", "cf-ray": "abc-LAX"})
+    h.path, h.command = "/admin", "GET"
+    sent = []
+    h._send = lambda code, *a, **k: sent.append(code)
+    monkeypatch.setattr(app.personal_mode, "is_enabled", lambda: True)
+    monkeypatch.setattr(app.owner_access, "load_config", lambda root=None: None)
+    assert h._personal_blocked() is True and sent == [404]
+
+
+def test_personal_mode_other_hidden_routes_unchanged_even_for_owner(monkeypatch):
+    for path in ("/api/sim", "/api/share", "/member", "/api/member/", "/api/code/x", "/api/ai/status",
+                 "/api/offline", "/engines.js", "/admin/", "/api/eng/scan"):
+        assert _blocked(monkeypatch, HOST, path, True)[:2] == (True, 404), path
+        assert _blocked(monkeypatch, "127.0.0.1:8765", path, False)[:2] == (True, 404), path
+
+
+def test_personal_mode_off_does_not_block(monkeypatch):
+    app, h = _handler({"Host": "x.trycloudflare.com"})
+    h.path, h.command = "/admin", "GET"
+    monkeypatch.setattr(app.personal_mode, "is_enabled", lambda: False)
+    assert h._personal_blocked() is False

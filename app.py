@@ -841,6 +841,10 @@ class Handler(BaseHTTPRequestHandler):
         readonly_member = (self.command == "GET" and
                            path in ("/api/member/me", "/api/member/portfolio") and
                            not self._external())
+        # 后台三类路径：本机请求或主人通道通过时不拦（后台自己的登录检查照旧：本机要管理令牌，远程靠主人通道）
+        admin_path = path in ("/admin", "/admin.js") or path.startswith("/api/admin/")
+        if admin_path and self._local_or_owner():
+            return False
         if not readonly_member and any(
                 path == route or (route.endswith("/") and path.startswith(route))
                 for route in personal_mode.hidden_routes()):

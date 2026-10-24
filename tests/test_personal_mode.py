@@ -48,6 +48,8 @@ HIDDEN = (
     "/api/ai/status", "/api/ai/translate", "/api/offline", "/share_gate.js",
     "/share_gate.html", "/engines.js", "/ai_translator.js",
 )
+# 后台三类路径：本机请求 / 主人通道通过时不被个人模式隐藏（后台自己的登录检查照旧）
+ADMIN_FAMILY = ("/admin", "/admin.js", "/api/admin/action")
 
 
 class PersonalModeTests(unittest.TestCase):
@@ -80,6 +82,7 @@ class PersonalModeTests(unittest.TestCase):
         h._guard = Mock(return_value=guard)
         h._authed = Mock(return_value=authenticated)
         h._external = Mock(return_value=external)
+        h._local_or_owner = Mock(return_value=not external)     # 本机请求（或主人通道）才为真
         h._remote = Mock(return_value=False)
         h._share_gate = Mock(return_value=False)
         h._backtest = Mock(return_value={"backtest": True})
@@ -111,6 +114,13 @@ class PersonalModeTests(unittest.TestCase):
                     for external in (False, True):
                         with self.subTest(method=method, path=path, auth=auth, external=external):
                             h = self.handler(method, path + "?ignored=1", auth, external)
+                            if path in ADMIN_FAMILY and not external:
+                                # 本机：个人模式不再隐藏。后面的分派可能因别的原因回复（例如 POST 没有这个路由），
+                                # 所以直接再问一次 _personal_blocked：必须放行且不发任何回复。
+                                h._send.reset_mock()
+                                self.assertFalse(h._personal_blocked())
+                                h._send.assert_not_called()
+                                continue
                             h._send.assert_called_once_with(404, b"not found", "text/plain")
                             for name in ("_authed", "_share_gate", "_admin_get", "_admin_post", "_ai",
                                          "_share_login", "_member_get", "_member_post", "_post_engine"):
@@ -144,7 +154,8 @@ class PersonalModeTests(unittest.TestCase):
                                      ("/api/admin/action", "_admin_" + method.lower()),
                                      ("/api/member/order", "_member_" + method.lower())):
                     with self.subTest(raw=raw, method=method, path=path):
-                        h = self.handler(method, path)
+                        # 后台路径对本机放行，这里按外部请求测“开关打开时隐藏、关闭时恢复”
+                        h = self.handler(method, path, external=path.startswith("/api/admin/"))
                         self.assertIs(h._personal_mode, mode)
                         if mode:
                             h._send.assert_called_once_with(404, b"not found", "text/plain")
