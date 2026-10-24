@@ -1880,6 +1880,9 @@ def _http_fixture(method="POST", path="/api/ai/translate", *, headers=None, auth
 
     tree = ast.parse((REPO / "app.py").read_text(encoding="utf-8"))
     node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_ai")
+    # app.py 新增的主人通道方法也要摘进来；测试环境里 owner_access=None，_owner() 恒为 False
+    owner_nodes = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+                   and n.name in ("_owner_cfg", "_owner", "_local_or_owner", "_origin_ok")]
     events = []
     def record(name, result):
         def call(*args):
@@ -1892,8 +1895,8 @@ def _http_fixture(method="POST", path="/api/ai/translate", *, headers=None, auth
     namespace = {"admin": SimpleNamespace(is_local_request=admin.is_local_request,
                                          audit_blocked=audit, origin_ok=origin),
                  "ALLOWED_HOSTS": {"127.0.0.1:8765", "localhost:8765"},
-                 "members": SimpleNamespace(hit=hit)}
-    exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py:_ai", "exec"), namespace)
+                 "members": SimpleNamespace(hit=hit), "owner_access": None, "ROOT": None, "urlparse": urlparse}
+    exec(compile(ast.Module(body=[node] + owner_nodes, type_ignores=[]), "app.py:_ai", "exec"), namespace)
     message = Message()
     for key, value in (headers if headers is not None else {
             "Host": "127.0.0.1:8765", "X-Requested-With": "dashboard",
@@ -1903,6 +1906,9 @@ def _http_fixture(method="POST", path="/api/ai/translate", *, headers=None, auth
                               _authed=mock.Mock(side_effect=record("auth", authenticated)),
                               _send=lambda code, obj, mime: (code, obj, mime),
                               _json=lambda obj, code=200: (code, obj, "application/json"))
+    for n in owner_nodes:
+        setattr(handler, n.name, __import__("types").MethodType(namespace[n.name], handler))
+
     def run():
         return namespace["_ai"](handler, method, urlparse(path))
     return SimpleNamespace(run=run, handler=handler, audit=audit, origin=origin, hit=hit, events=events)

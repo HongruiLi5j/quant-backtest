@@ -432,6 +432,15 @@ function setupPersonalNavigation() {
       return link;
     }));
     $("shareBar").hidden = true;
+    // 「后台」入口放在导航外、顶部右侧（语言按钮前），不属于 PERSONAL_NAV，也不带 personal-nav 类
+    const lang = $("languageToggle");
+    if (lang?.parentElement && !$("ownerAdminLink")) {
+      const admin = document.createElement("a");
+      admin.id = "ownerAdminLink"; admin.href = "/admin"; admin.className = "btn plain";
+      admin.style.cssText = "padding:6px 11px;font-size:12px;white-space:nowrap;text-decoration:none";
+      admin.textContent = "后台";
+      lang.parentElement.insertBefore(admin, lang);
+    }
   }
   setupPersonalPages();
   // 未开启时保留原 DOM、更多菜单和所有标签；等待 meta 后才显示导航。

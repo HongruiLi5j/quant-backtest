@@ -38,6 +38,10 @@ from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
 from src import admin, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
 from src import personal_mode
+try:
+    from src import owner_access      # 主人通道；导入失败就当通道关闭，网站照常启动
+except Exception:
+    owner_access = None
 import tunnel
 
 ROOT = Path(__file__).resolve().parent
@@ -471,7 +475,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-        if self._remote():     # 只有经 Cloudflare 隧道（HTTPS）来的请求才发 HSTS；本机是 http，不能发
+        if self._https():     # 只有经 Cloudflare 隧道（HTTPS）来的请求才发 HSTS；本机是 http，不能发
             self.send_header("Strict-Transport-Security", "max-age=31536000")
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -513,6 +517,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj, ensure_ascii=False, default=float).encode(), "application/json; charset=utf-8")
 
     def _authed(self) -> bool:
+        if self._owner():      # 主人通道（Host + Cloudflare Access 凭证 + 邮箱）通过就算已登录；手机上没有网站令牌
+            return True
         c = SimpleCookie(self.headers.get("Cookie", ""))
         v = c.get(COOKIE)
         authenticated = bool(v) and hmac.compare_digest(v.value, TOKEN)
@@ -523,6 +529,44 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 分享链接的访问记录（只记录 HTTP 请求本来就带的信息：时间、网络地址、国家、浏览器和系统）
     def _remote(self) -> bool:
         return self.headers.get("Host", "").endswith(".trycloudflare.com")
+
+    # ---------- 主人通道：Host + Cloudflare Access 的 JWT + 邮箱三者都对才算（判断逻辑在 src/owner_access.py）
+    def _owner_cfg(self):
+        if owner_access is None:
+            return None
+        try:
+            return owner_access.load_config(ROOT)
+        except Exception:
+            return None
+
+    def _owner(self) -> bool:
+        """同一请求内只算一次；任何异常都当作不是主人。
+        缓存绑定本次请求的 headers 对象和路径：keep-alive 连接复用同一个 Handler 时，
+        每个新请求都会解析出新的 headers，旧结果自动作废，不会沿用上一个请求的判断。"""
+        c = getattr(self, "_owner_cache", None)
+        if isinstance(c, tuple) and c[0] is self.headers and c[1] == getattr(self, "path", None):
+            return c[2]
+        ok = False
+        cfg = self._owner_cfg()
+        if cfg:
+            try:
+                ok = bool(owner_access.is_owner(self.headers, urlparse(self.path).path, cfg))
+            except Exception:
+                ok = False
+        self._owner_cache = (self.headers, getattr(self, "path", None), ok)
+        return ok
+
+    def _local_or_owner(self) -> bool:
+        return admin.is_local_request(self.headers, ALLOWED_HOSTS) or self._owner()
+
+    def _origin_ok(self) -> bool:
+        if admin.origin_ok(self.headers, ALLOWED_HOSTS):
+            return True
+        cfg = self._owner_cfg()
+        return bool(cfg and self._owner() and self.headers.get("Origin") == "https://" + str(cfg.get("host", "")))
+
+    def _https(self) -> bool:
+        return self._remote() or self._owner()
 
     def _log_visit(self, path: str):
         ua = self.headers.get("User-Agent", "")
@@ -538,7 +582,9 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "")
         # 临时分享用的 Cloudflare Tunnel 网址（*.trycloudflare.com）也放行：
         # 令牌校验（_authed）没跳过，光知道这个随机网址进不来
-        if host not in ALLOWED_HOSTS and not host.endswith(".trycloudflare.com"):
+        cfg = self._owner_cfg()
+        if (host not in ALLOWED_HOSTS and not host.endswith(".trycloudflare.com")
+                and not (cfg and host == cfg.get("host"))):
             self._send(403, b"forbidden host", "text/plain")
             return False
         return True
@@ -547,10 +593,15 @@ class Handler(BaseHTTPRequestHandler):
     def _admin_authed(self) -> bool:
         c = SimpleCookie(self.headers.get("Cookie", ""))
         v = c.get(ADMIN_COOKIE)
+        if self._owner():      # 已用 admin_aud 校验过 Cloudflare 登录
+            if getattr(self, "_owner_audited", None) is not self.headers:      # 每个请求只记一条（按 headers 对象区分请求）
+                self._owner_audited = self.headers
+                admin.audit("owner_remote", {"path": urlparse(self.path).path})
+            return True
         return bool(v) and admin.check_session(v.value, ADMIN_TOKEN)
 
     def _admin_get(self, u, q):
-        if not admin.is_local_request(self.headers, ALLOWED_HOSTS):     # 分享链接 / 隧道来的请求：装作没有这个页面
+        if not self._local_or_owner():     # 分享链接 / 隧道来的请求：装作没有这个页面
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
         if u.path == "/admin" and "t" in q:                              # 用管理令牌登录
@@ -611,11 +662,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def _admin_post(self, u):
-        if not admin.is_local_request(self.headers, ALLOWED_HOSTS):
+        if not self._local_or_owner():
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
         if (not self._admin_authed() or self.headers.get("X-Requested-With") != "dashboard"
-                or not admin.origin_ok(self.headers, ALLOWED_HOSTS)):
+                or not self._origin_ok()):
             return self._send(401, b"unauthorized", "text/plain")
         if u.path != "/api/admin/action":
             return self._send(404, b"not found", "text/plain")
@@ -629,14 +680,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def _ai(self, method, u):
-        if not admin.is_local_request(self.headers, ALLOWED_HOSTS):
+        if not self._local_or_owner():
             admin.audit_blocked(u.path)
             return self._send(404, b"not found", "text/plain")
         from src.ai_translator import api, httpgate
 
         authenticated = self._authed()
         requested_with = authenticated and (method != "POST" or self.headers.get("X-Requested-With") == "dashboard")
-        origin_ok = requested_with and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS))
+        origin_ok = requested_with and (method != "POST" or self._origin_ok())
         rate_limited = origin_ok and members.hit("ai_translate", "local", 10, 60)
         rejected = httpgate.check_access(method, is_local=True, authenticated=authenticated,
                                          requested_with=requested_with, origin_ok=origin_ok, rate_limited=rate_limited)
@@ -674,10 +725,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             from src.holdings import api as hapi
             from src import simtrade
-            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            local = self._local_or_owner() and not self._remote()
             header = self.headers.get("X-Requested-With") == "dashboard"
             ctx = hapi.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
-                           origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)),
+                           origin_ok=header and (method != "POST" or self._origin_ok()),
                            last_price_fn=self._holdings_price,
                            name_fn=lambda c: datasource.stock_name(c),
                            fee_fn=lambda c, side, amount: simtrade.fees(c, side, amount)["total"])
@@ -719,10 +770,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         try:
             from src.market_monitor import wiring
-            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            local = self._local_or_owner() and not self._remote()
             header = self.headers.get("X-Requested-With") == "dashboard"
             ctx = wiring.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
-                             origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)))
+                             origin_ok=header and (method != "POST" or self._origin_ok()))
             handler = getattr(wiring, name)
             passed = wiring._gate(ctx, method == "POST") is None
             if passed and members.hit("market_monitor", "local", 120, 60):
@@ -757,10 +808,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         try:
             from src.us_market_monitor import wiring
-            local = admin.is_local_request(self.headers, ALLOWED_HOSTS) and not self._remote()
+            local = self._local_or_owner() and not self._remote()
             header = self.headers.get("X-Requested-With") == "dashboard"
             ctx = wiring.Ctx(trusted_local=local, authed=local and self._authed(), dashboard_header=header,
-                             origin_ok=header and (method != "POST" or admin.origin_ok(self.headers, ALLOWED_HOSTS)))
+                             origin_ok=header and (method != "POST" or self._origin_ok()))
             handler = getattr(wiring, name)
             passed = wiring._gate(ctx, method == "POST") is None
             if passed and members.hit("us_market_monitor", "local", 120, 60):
@@ -832,7 +883,7 @@ class Handler(BaseHTTPRequestHandler):
             if hmac.compare_digest(q["t"], TOKEN):
                 self._send(303, b"", "text/plain", {
                     "Location": "/",
-                    "Set-Cookie": f"{COOKIE}={TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000"})
+                    "Set-Cookie": f"{COOKIE}={TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000" + ("; Secure" if self._https() else "")})
             else:
                 _bad_login.append(time.time())
                 self._send(401, "令牌不对".encode(), "text/plain; charset=utf-8")
@@ -897,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
                             "replay": tracking.load_eval(m, replay=True) or {"empty": True},
                             "notifications": notify.recent(20)})
             elif u.path == "/api/trade_list_mine":
-                if self._remote() or not admin.is_local_request(self.headers, ALLOWED_HOSTS):
+                if self._remote() or not self._local_or_owner():
                     return self._json({"error": "我的相关仅限本机访问"}, 403)
                 try:
                     self._json(trade_private.mine(q.get("strategy", "blend2"), q.get("date") or None, self._member_user()))
@@ -1048,7 +1099,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 分享链接密码：只拦通过外网分享链接来的访客（本机不受影响）
     def _external(self) -> bool:
         """不是从本机直接访问的（分享链接域名，或者带代理/隧道头）。"""
-        return self._remote() or not admin.is_local_request(self.headers, ALLOWED_HOSTS)
+        return self._remote() or not self._local_or_owner()
 
     def _share_gate(self, u) -> bool:
         """返回 True 表示已经拦住并回复了（没通过密码）。"""
@@ -1098,7 +1149,7 @@ class Handler(BaseHTTPRequestHandler):
         v = SimpleCookie(self.headers.get("Cookie", "")).get(MEMBER_COOKIE)
         user = members.user_for(v.value if v else None)
         # 只在内存记下已由本机请求验证的会话哈希；不保存 Cookie 或会员持仓。
-        if v and not self._remote() and admin.is_local_request(self.headers, ALLOWED_HOSTS):
+        if v and not self._remote() and self._local_or_owner():
             digest = hashlib.sha256(v.value.encode()).hexdigest()
             with _trade_session_lock:
                 if user:
@@ -1145,7 +1196,7 @@ class Handler(BaseHTTPRequestHandler):
         if origin and urlparse(origin).netloc != self.headers.get("Host", ""):
             return self._json({"error": "来源不对"}, 403)
         ip = self._client_ip()
-        secure = "; Secure" if self._remote() else ""
+        secure = "; Secure" if self._https() else ""
         try:
             b = self._body()
             if u.path == "/api/member/register":

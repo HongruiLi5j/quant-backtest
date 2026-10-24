@@ -37,10 +37,11 @@ def build_class():
     cls = ast.ClassDef(name="Handler", bases=[], keywords=[], decorator_list=[],
                        body=ASSIGNS + [METHODS[n] for n in
                                        ("do_GET", "do_POST", "_personal_blocked", "_holdings",
-                                        "_holdings_price", "_authed", "_remote", "_external")])
+                                        "_holdings_price", "_authed", "_remote", "_external",
+                                        "_owner_cfg", "_owner", "_local_or_owner", "_origin_ok", "_https")])
     ns = dict(personal_mode=personal_mode, urlparse=urlparse, parse_qs=parse_qs, json=json, re=re,
               hashlib=hashlib, SimpleCookie=SimpleCookie, admin=admin, members=members,
-              ALLOWED_HOSTS=ALLOWED, COOKIE="qb", MEMBER_COOKIE="qm", TOKEN=TOKEN, hmac=__import__("hmac"),
+              ALLOWED_HOSTS=ALLOWED, owner_access=None, ROOT=None, COOKIE="qb", MEMBER_COOKIE="qm", TOKEN=TOKEN, hmac=__import__("hmac"),
               MARKETS={"cn": {"tz": "Asia/Shanghai", "close_ready": "15:30"}},
               datasource=SimpleNamespace(stock_name=lambda c: "合成", load_cached=lambda m, c: None,
                                          drop_incomplete_bar=lambda df, tz, cr: df),

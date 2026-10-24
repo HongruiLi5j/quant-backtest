@@ -24,10 +24,15 @@ HANDLER = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name ==
 METHODS = {n.name: n for n in HANDLER.body if isinstance(n, ast.FunctionDef)}
 
 
+OWNER_METHODS = ("_owner_cfg", "_owner", "_local_or_owner", "_origin_ok", "_https")
+
+
 def extracted(names, **env):
     namespace = dict(personal_mode=personal_mode, urlparse=urlparse, parse_qs=parse_qs,
-                     json=json, re=re, hashlib=hashlib, SimpleCookie=SimpleCookie)
+                     json=json, re=re, hashlib=hashlib, SimpleCookie=SimpleCookie,
+                     owner_access=None, ROOT=None)      # 测试环境里主人通道保持关闭（_owner 恒为 False）
     namespace.update(env)
+    names = list(names) + [n for n in OWNER_METHODS if n not in names]      # 新增的主人通道方法也要摘进来
     cls = ast.ClassDef(name="Handler", bases=[], keywords=[],
                        body=[METHODS[n] for n in names], decorator_list=[])
     exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])),

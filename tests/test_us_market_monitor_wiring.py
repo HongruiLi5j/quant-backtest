@@ -173,11 +173,12 @@ ROUTES = (('GET', '/api/us_market_monitor/status'), ('GET', '/api/us_market_moni
 
 
 def build_class(us_scheduler, a_scheduler):
-    names = ('do_GET', 'do_POST', '_personal_blocked', '_market_monitor', '_us_market_monitor', '_authed', '_remote', '_external')
+    names = ('do_GET', 'do_POST', '_personal_blocked', '_market_monitor', '_us_market_monitor', '_authed', '_remote', '_external',
+             '_owner_cfg', '_owner', '_local_or_owner', '_origin_ok', '_https')
     cls = ast.ClassDef(name='Handler', bases=[], keywords=[], decorator_list=[],
                        body=ASSIGNS + [METHODS[n] for n in names])
     ns = dict(personal_mode=personal_mode, urlparse=urlparse, parse_qs=parse_qs, json=json, admin=admin,
-              members=members, ALLOWED_HOSTS={HOST, 'localhost:8765'}, COOKIE='qb', MEMBER_COOKIE='qm',
+              members=members, ALLOWED_HOSTS={HOST, 'localhost:8765'}, owner_access=None, ROOT=None, COOKIE='qb', MEMBER_COOKIE='qm',
               TOKEN=TOKEN, hmac=__import__('hmac'), SimpleCookie=__import__('http.cookies', fromlist=['x']).SimpleCookie,
               market_monitor_scheduler=lambda: a_scheduler, us_market_monitor_scheduler=lambda: us_scheduler,
               meta=lambda: {}, _alive={}, _bad_login=[], time=SimpleNamespace(time=lambda: 0))

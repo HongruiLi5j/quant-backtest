@@ -261,6 +261,7 @@
     ]
 };
   const dictionary = {
+    "后台": "Admin",
     "关闭": "Off",
     "技术指标": "Indicators",
     "全部（布林带 + MACD + RSI + KDJ）": "All (Bollinger + MACD + RSI + KDJ)",
