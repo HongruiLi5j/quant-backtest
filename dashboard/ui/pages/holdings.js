@@ -15,6 +15,12 @@ import { buildForm, historyCard } from './holdings-form.js';
 const st = { snap: null, includeVoided: false, capitalEdit: false, root: null, msg: null, form: null };
 
 /** 价格日期距 as_of 超过 5 个自然日（约 3 个交易日加周末）算偏旧；只是提示 */
+/** 最新价的位数：A 股个股价格是两位小数(10.10)，ETF 是三位(1.234)；不是整分的才补到三位 */
+function priceDigits(v) {
+  const x = Number(v) * 100;
+  return Math.abs(x - Math.round(x)) < 1e-6 ? 2 : 3;
+}
+
 function stale(priceDate, asOf) {
   if (!priceDate || !asOf) return false;
   const gap = (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${priceDate}T00:00:00Z`)) / 86400000;
@@ -80,7 +86,7 @@ function summaryCard(snap) {
 function positionRow(p, snap) {
   const over = isNum(p.weight) && Number(p.weight) > 0.1;
   const price = isNum(p.price)
-    ? el('span', {}, `${num(p.price, 3)} · ${p.price_date || '—'}`, stale(p.price_date, snap.as_of) ? el('small', { class: 'u3-warn u3-block' }, t('hold.pos.stale')) : null)
+    ? el('span', {}, `${num(p.price, priceDigits(p.price))} · ${p.price_date || '—'}`, stale(p.price_date, snap.as_of) ? el('small', { class: 'u3-warn u3-block' }, t('hold.pos.stale')) : null)
     : span(t('hold.pos.noprice'), 'muted');
   const pnl = isNum(p.floating_pnl)
     ? span(`${num(p.floating_pnl)} (${ratio(p.floating_pct, 2, true)})`, tone(p.floating_pnl))

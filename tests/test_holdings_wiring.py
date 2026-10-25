@@ -43,6 +43,7 @@ def build_class():
               hashlib=hashlib, SimpleCookie=SimpleCookie, admin=admin, members=members,
               ALLOWED_HOSTS=ALLOWED, owner_access=None, ROOT=None, COOKIE="qb", MEMBER_COOKIE="qm", TOKEN=TOKEN, hmac=__import__("hmac"),
               MARKETS={"cn": {"tz": "Asia/Shanghai", "close_ready": "15:30"}},
+              display_price=SimpleNamespace(cached_scale=lambda m, c, df: (1.0, "无缓存")),      # 只读缓存、不联网的替身
               datasource=SimpleNamespace(stock_name=lambda c: "合成", load_cached=lambda m, c: None,
                                          drop_incomplete_bar=lambda df, tz, cr: df),
               meta=lambda: {}, _alive={}, _bad_login=[], time=SimpleNamespace(time=lambda: 0))

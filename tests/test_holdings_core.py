@@ -127,6 +127,41 @@ class TestCalcExample(Base):
         t = self.add("2026-10-03", "600000", "buy", 100, "10", "0")
         self.assertFalse(t["fee_estimated"])
 
+    def test_blank_fee_means_estimate(self):
+        """T021:页面提示"留空将按费率估算"，所以空串/纯空格要和不传一样走估算，而不是报"费用无效"。"""
+        for i, blank in enumerate(("", " ", "   ", "\t", "　")):
+            t = self.add(f"2026-10-{i + 1:02d}", "600000", "buy", 100, "10", blank, fee_fn=lambda c, s, a: D("1.23"))
+            self.assertEqual((t["fee"], t["fee_estimated"]), (D("1.23"), True), repr(blank))
+
+    def test_blank_fee_estimate_uses_sell_stamp_tax(self):
+        self.add("2026-10-01", "600000", "buy", 1000, "10", "0")
+        buy = self.add("2026-10-02", "600000", "buy", 1000, "10", "")
+        sell = self.add("2026-10-03", "600000", "sell", 1000, "10", "  ")
+        self.assertTrue(buy["fee_estimated"] and sell["fee_estimated"])
+        self.assertGreater(sell["fee"], buy["fee"])      # 卖出多一笔印花税，买入没有
+
+    def test_bad_fee_still_rejected_after_blank_fix(self):
+        for bad in ("abc", "-1", "1e3", "5,0", "0.001"):
+            self.assertEqual(self.code_of(lambda b=bad: self.add("2026-10-01", "600000", "buy", 100, "10", b)),
+                             "HOLDINGS_BAD_FEE", bad)
+
+    def test_blank_fee_bonus_is_zero(self):
+        self.add("2026-10-01", "600000", "buy", 100, "10", "0")
+        t = self.s.add_trade(trade_date="2026-10-02", code="600000", side="bonus", qty=10, price=None, fee="",
+                             today=TODAY)["trade"]
+        self.assertEqual(t["fee"], D("0"))
+
+    def test_600531_pnl_uses_real_price_not_hfq(self):
+        """T021 回归：600531 买入 1200 股、成本 15.465，现价必须是真实收盘价 10.1，而不是后复权的 75.694。"""
+        self.add("2026-10-20", "600531", "buy", 1200, "15.465", "0")
+        real = self.pos(price="10.1")["positions"][0]
+        self.assertEqual(real["price"], D("10.100"))
+        self.assertEqual(real["floating_pnl"], D("1200") * (D("10.1") - D("15.465")))
+        self.assertLess(real["floating_pnl"], 0)
+        hfq = self.pos(price="75.694")["positions"][0]             # 用后复权价算出来的是虚假的 +389%
+        self.assertGreater(hfq["floating_pct"], D("3.8"))
+        self.assertLess(real["floating_pct"], 0)
+
 
 class TestRounds(Base):
     def test_sell_all_moves_to_closed_and_rebuy_resets_first_buy(self):

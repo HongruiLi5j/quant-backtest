@@ -1097,7 +1097,8 @@ function holdingsRenderPositions(snap) {
     const price = document.createElement("span");
     if (p.price === null || p.price === undefined) price.append(hNode("span", "hold.pos.noprice"));
     else {
-      price.append(hText2(`${hNum(p.price, 3)} · ${p.price_date || "—"}`));
+      const cents = Number(p.price) * 100;      // 个股最新价是两位小数(10.10)，ETF 是三位(1.234)；不是整分的才补到三位
+      price.append(hText2(`${hNum(p.price, Math.abs(cents - Math.round(cents)) < 1e-6 ? 2 : 3)} · ${p.price_date || "—"}`));
       if (hStale(p.price_date, snap.as_of)) { const st = hNode("small", "hold.pos.stale"); st.classList.add("hold-warn"); price.append(document.createElement("br"), st); }
     }
     const pnl = document.createElement("span"); pnl.classList.add(hSign(p.floating_pnl) || "flat");

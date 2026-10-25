@@ -344,6 +344,8 @@ class HoldingsStore:
         qty = _check_qty(qty, side, code)
         price_d = _check_price(price, side)
         amount = qty * price_d
+        if isinstance(fee, str) and not fee.strip():       # 留空或只有空格 = 没填：页面提示"留空将按费率估算"，就按估算走
+            fee = None
         explicit_fee = fee is not None
         if side == "bonus":
             if explicit_fee and _decimal(fee, "HOLDINGS_BAD_FEE", "fee", 2) != 0:

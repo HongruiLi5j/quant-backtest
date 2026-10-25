@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 
 from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
-from src import admin, admin_settings, allmarket, members, sharepass, daily_report, datasource, detail, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
+from src import admin, admin_settings, allmarket, members, sharepass, daily_report, datasource, detail, display_price, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
 from src import personal_mode
 try:
@@ -823,13 +823,25 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- 持仓台账(T013):仅个人模式、仅可信本机;鉴权与校验都在 src/holdings/api.py,这里只接线
     def _holdings_price(self, code):
-        """只读本地日线缓存的最近收盘价(去掉盘中半根 K 线);取不到返回 None,不联网。"""
+        """只读本地缓存的最近收盘价(去掉盘中半根 K 线),并还原成不复权的真实价;取不到返回 None,不联网。
+
+        磁盘上的 A 股日线是后复权：分红送转越多，后复权价比真实价高得越多。成交成本是真实成交价，
+        拿它和后复权现价比，盈亏会被严重夸大(600531 曾显示 75.694、浮盈 +389%，真实价约 10.1)。
+        所以这里用 display_price 的系数把最后一根 K 线还原成真实收盘价(最后一天的前复权价 = 真实价)。
+        系数只读 engine_price_scale.json 缓存，不联网(持仓页的隐私边界)；缓存里没有这一天的真实价就返回 None，
+        页面显示"无现价"，宁可缺失也不显示后复权价。"""
         try:
             cfg = MARKETS["cn"]
             df = datasource.drop_incomplete_bar(datasource.load_cached("cn", code), cfg["tz"], cfg["close_ready"])
             if df.empty:
                 return None
-            return float(df["Close"].iloc[-1]), df.index[-1].strftime("%Y-%m-%d")
+            k, note = display_price.cached_scale("cn", code, df)
+            if note != "前复权":
+                return None
+            px = round(float(df["Close"].iloc[-1]) * k, 4)
+            if not (px == px and 0 < px < float("inf")):    # 最终价格必须是有限正数，否则当作没有现价(不靠下游再拦)
+                return None
+            return px, df.index[-1].strftime("%Y-%m-%d")
         except Exception:   # 缓存损坏/缺列都当作取不到现价,不让整个持仓页失败
             return None
 
