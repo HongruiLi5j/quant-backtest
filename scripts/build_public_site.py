@@ -58,8 +58,9 @@ COMPLIANCE_WORDS = ("低风险", "高收益", "稳赚", "保证收益", "必涨"
 # 口径待改（所有者 2026-10-24 确定"现在全是合成演示数据"）：出现就是"发布阻断项"
 COPY_BLOCK = ("Data sources: SINA", "derived results exported overnight", "夜间导出的衍生结果")
 CONTACT_PLACEHOLDER = re.compile(r"example\.(invalid|com|org)|\.invalid\b|placeholder|待填|TODO", re.I)
-# 公开数据/字典里出现内部接口路径：只告警（线上现状就是这样），让它在每次构建里保持可见
-INTERNAL_API = re.compile(r"/api/[A-Za-z_/]+")
+# 公开数据/字典里不许出现 "/api/" 形式的路径（不区分大小写，含 /api/123、/api?x、结尾的 /api，也含键名和第三方文档里的 /api/ 链接——最保守地一律拒绝）。
+# 在【解析后的 JSON 字符串】上检查，所以 \/api\/ 和 \u002fapi\u002f 这类转义写法也绕不过。构建时会先删掉 mock 的 _meta.schema、覆盖三条词条，之后仍出现就是错误
+INTERNAL_API = re.compile(r"/api(?:/|$|[?#])", re.I)
 # SVG 里不允许的主动内容
 SVG_ACTIVE = re.compile(r"<\s*script|<\s*foreignObject|\bon\w+\s*=|javascript:|(?:xlink:)?href\s*=\s*[\"']\s*(?:https?:)?//", re.I)
 
@@ -77,6 +78,10 @@ ZH = {
     "auth.demo": "演示：目前暂未开放注册和登录，表单不会发送。",
     "t7.auth.lead": "目前暂未开放注册，这一页只是演示。将来只需要用户名和密码，不收邮箱、不接第三方登录。",
     "plan.lead": "目前暂未开放注册，下面是将来的三档权益预览。Pro 测试期免费，由所有者手动开通。",
+    # 以下三条原文写着具体的内部接口路径（/api/...），公开站不需要，改成泛称
+    "cmp.topnav.p.identity": "后端返回的身份信息；决定哪些项渲染",
+    "market.wl.added_toast": "演示：{c} 没有真的加入；真实版本由后端判断配额。",
+    "translator.unknown": "演示版只认识示例里的几种写法；真实版本会调用翻译服务。",
 }
 EN = {
     "story.hero.badge": "Live demo · Sample data · No broker connected",
@@ -90,6 +95,9 @@ EN = {
     "auth.demo": "Demo: sign-up and sign-in are closed for now; nothing is sent.",
     "t7.auth.lead": "Registration is closed for now; this page is a demo. Later it will only need a username and password — no email, no third-party login.",
     "plan.lead": "Registration is closed for now. Below is a preview of the three planned tiers. Pro will be free during beta and turned on by the owner.",
+    "cmp.topnav.p.identity": "The identity returned by the backend; decides which items render",
+    "market.wl.added_toast": "Demo: {c} was not really added. In the real version the server enforces the quota.",
+    "translator.unknown": "The demo understands only the example phrasings; the real version calls the translation service.",
 }
 
 
@@ -439,6 +447,20 @@ def copy_allowed(src: Path, template: Path, al: dict, site: Path) -> None:
         shutil.copy2(pr, out)
 
 
+def strip_mock_schema(site: Path) -> int:
+    """公开的 mock JSON 不需要"接口说明"：删除 _meta.schema（里面写着内部接口路径、源码文件名、文档名）。
+    页面代码不读 _meta（已在源码里确认）；只重写含 schema 的文件，其它文件保持字节不变。返回处理的文件数。"""
+    d = site / "mock-data"
+    n = 0
+    for p in sorted(d.glob("*.json")) if d.is_dir() else []:
+        j = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(j, dict) and isinstance(j.get("_meta"), dict) and "schema" in j["_meta"]:
+            del j["_meta"]["schema"]
+            p.write_text(json.dumps(j, ensure_ascii=False, indent=1), encoding="utf-8")
+            n += 1
+    return n
+
+
 def apply_transforms(site: Path, al: dict) -> list[str]:
     """把旧脚本里的改写搬过来（品牌名、注册文案、导航裁剪、字典覆盖），并剔除字典里的内部键。
     返回告警列表（某个改写一次都没命中 = 源文件变了，需要人看一下）。"""
@@ -496,6 +518,7 @@ def apply_transforms(site: Path, al: dict) -> list[str]:
             if k in j or k == "t7.auth.lead":
                 j[k] = v
         p.write_text(json.dumps(j, ensure_ascii=False, indent=1), encoding="utf-8")
+    strip_mock_schema(site)
     return warns
 
 
@@ -515,6 +538,19 @@ def external_hosts(site: Path) -> dict[str, int]:
                 if h not in _OWN_OR_NS:
                     seen.setdefault(h, set()).add(str(p.relative_to(site)))
     return {h: len(v) for h, v in sorted(seen.items())}
+
+
+def _json_strings(o):
+    """JSON 里所有字符串：键名和值（含嵌套）。"""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield str(k)
+            yield from _json_strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _json_strings(v)
+    elif isinstance(o, str):
+        yield o
 
 
 def pin_report(site: Path) -> dict[str, str]:
@@ -576,9 +612,15 @@ def check_site(site: Path, al: dict) -> dict:
             if suf == ".svg" and SVG_ACTIVE.search(text):
                 errors.append(f"SVG 含脚本/事件处理器/外部链接：{rel}")
             if suf == ".json" and needs_pin(rel):
-                n_api = len(INTERNAL_API.findall(text))
-                if n_api:
-                    warnings.append(f"公开数据/字典里出现内部接口路径 /api/…（{n_api} 处，多为 _meta.schema 说明）：{rel}")
+                try:
+                    obj = json.loads(text)
+                except ValueError:
+                    obj = None
+                    errors.append(f"公开 JSON 不是合法 JSON：{rel}")
+                if obj is not None:
+                    n_api = sum(1 for sv in _json_strings(obj) if INTERNAL_API.search(sv))
+                    if n_api:
+                        errors.append(f"公开数据/字典里出现内部接口路径 /api/…（{n_api} 处，已按解析后的字符串检查）：{rel}")
             for w in COPY_BLOCK:
                 if w in text:
                     blockers.append(f"数据口径与『现在全是合成演示数据』不符：「{w}」出现在 {rel}")
@@ -593,6 +635,8 @@ def check_site(site: Path, al: dict) -> dict:
                     errors.append(f"mock 数据没有『合成数据』来源标记（_meta.note）：{rel}")
         else:
             errors.append(f"未知后缀，拒绝：{rel}")
+        if rel.startswith("mock-data/") and rel.count("/") > 1:
+            errors.append(f"mock-data 只支持直接子文件（_meta.schema 的清理不递归），嵌套路径需要先扩展清理并重新审阅：{rel}")
         if needs_pin(rel):
             want = content.get(rel)
             if not want:

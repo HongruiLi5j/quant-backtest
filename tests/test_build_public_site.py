@@ -100,6 +100,7 @@ class Env:
         return B.build(self.src, self.tpl, self.alp, self.out, self.trash, keep)
 
     def edit(self, rel, text):
+        (self.src / rel).parent.mkdir(parents=True, exist_ok=True)
         (self.src / rel).write_text(text, encoding="utf-8")
 
 
@@ -641,12 +642,114 @@ class ContentBoundaryTests(Base):
                 self.assertFalse(rep["ok"])
                 self.assertIn("SVG 含脚本", self.errors(rep))
 
-    def test_internal_api_paths_in_public_data_are_warnings_not_errors(self):
-        self.env.edit("mock-data/demo.json", json.dumps({"_meta": {"note": "合成数据", "schema": "GET /api/member/me 的返回"}}, ensure_ascii=False))
+    def test_mock_meta_schema_is_stripped_in_output_but_other_fields_are_kept(self):
+        self.env.edit("mock-data/demo.json", json.dumps({"_meta": {"note": "合成数据", "schema": "GET /api/member/me 的返回（见 BACKEND_SPEC.md）", "version": "1",
+                                                                    "updated": "2026-10-23", "author": "某人", "file": "mock-data/demo.json"}, "rows": [1, 2]}, ensure_ascii=False))
         self.env.pin()
         rep = self.env.build()
-        self.assertTrue(rep["ok"])
-        self.assertIn("内部接口路径", "\n".join(rep["warnings"]))
+        self.assertTrue(rep["ok"], rep["errors"])
+        out = json.loads((self.site(rep) / "mock-data" / "demo.json").read_text(encoding="utf-8"))
+        self.assertNotIn("schema", out["_meta"])
+        self.assertEqual((out["_meta"]["note"], out["_meta"]["version"], out["rows"]), ("合成数据", "1", [1, 2]))
+        self.assertEqual({k: out["_meta"][k] for k in ("updated", "author", "file")},
+                         {"updated": "2026-10-23", "author": "某人", "file": "mock-data/demo.json"})        # 只删 schema，别的字段按解析后内容保留
+        self.assertNotIn("/api/", (self.site(rep) / "mock-data" / "demo.json").read_text(encoding="utf-8"))
+
+    def test_mock_without_schema_is_left_byte_identical(self):
+        rep = self.env.build()
+        self.assertEqual((self.site(rep) / "mock-data" / "demo.json").read_bytes(), (self.env.src / "mock-data" / "demo.json").read_bytes())
+
+    def build_with_mock(self, raw_json_text):
+        """把原始 JSON 文本直接写进 mock（可以包含 \\/ 或 \\u002f 转义），钉死后构建。"""
+        env = self.new_env()
+        env.edit("mock-data/demo.json", raw_json_text)
+        env.pin()
+        return env.build()
+
+    def test_internal_api_path_variants_are_all_errors(self):
+        variants = {
+            "小写": '{"_meta":{"note":"合成数据"},"tip":"真实版本 POST /api/watchlist"}',
+            "大写": '{"_meta":{"note":"合成数据"},"tip":"GET /API/member/me"}',
+            "混合大小写": '{"_meta":{"note":"合成数据"},"tip":"/Api/x"}',
+            "纯数字开头": '{"_meta":{"note":"合成数据"},"tip":"/api/123"}',
+            "完整 URL": '{"_meta":{"note":"合成数据"},"tip":"https://example.test/api/member/me"}',
+            "第三方文档链接(最保守地一律拒绝)": '{"_meta":{"note":"合成数据"},"tip":"见 https://docs.example.test/api/help"}',
+            "结尾 /api": '{"_meta":{"note":"合成数据"},"tip":"base /api"}',
+            "带查询串": '{"_meta":{"note":"合成数据"},"tip":"/api?x=1"}',
+            "JSON 转义斜线(文件无 schema，字节原样保留)": '{"_meta":{"note":"合成数据"},"tip":"\\/api\\/watchlist"}',
+            "Unicode 转义斜线": '{"_meta":{"note":"合成数据"},"tip":"\\u002fapi\\u002fwatchlist"}',
+            "键名里": '{"_meta":{"note":"合成数据"},"/api/key":1}',
+            "嵌套对象": '{"_meta":{"note":"合成数据"},"a":{"b":{"c":"/api/deep"}}}',
+            "数组里": '{"_meta":{"note":"合成数据"},"rows":["ok",["/api/in-list"]]}',
+            "note 字段里": '{"_meta":{"note":"合成数据 /api/x"}}',
+        }
+        for name, raw in variants.items():
+            with self.subTest(case=name):
+                rep = self.build_with_mock(raw)
+                self.assertFalse(rep["ok"], name)
+                self.assertIn("内部接口路径", self.errors(rep), name)
+
+    def test_nested_mock_data_path_is_refused_because_cleanup_is_not_recursive(self):
+        env = self.new_env()
+        env.edit("mock-data/sub/extra.json", json.dumps({"_meta": {"note": "合成数据", "schema": "GET /api/x"}}))
+        env.al["src_files"].append("mock-data/sub/extra.json")
+        env.write_al()
+        env.pin()
+        rep = env.build()
+        self.assertFalse(rep["ok"])
+        self.assertIn("嵌套路径", self.errors(rep))
+
+    def test_lookalike_text_is_not_flagged(self):
+        for name, tip in {"apiary": "/apiary/x", "api123 无斜线": "/api123", "rapid/apis": "rapid/apis", "therapi": "therapi", "/capi/x": "/capi/x"}.items():
+            with self.subTest(case=name):
+                rep = self.build_with_mock(json.dumps({"_meta": {"note": "合成数据"}, "tip": tip}, ensure_ascii=False))
+                self.assertTrue(rep["ok"], (name, rep["errors"]))
+
+    def test_internal_api_path_in_escaped_form_is_caught_by_verify_on_an_existing_snapshot_too(self):
+        rep = self.env.build()
+        site = self.site(rep)
+        (site / "mock-data" / "demo.json").write_text('{"_meta":{"note":"合成数据"},"tip":"\\/api\\/x"}', encoding="utf-8")
+        errs = "\n".join(B.check_site(site, B.load_allowlist(self.env.alp))["errors"])
+        self.assertIn("内部接口路径", errs)
+
+    def test_invalid_public_json_fails_the_build_with_evidence(self):
+        env = self.new_env()
+        env.edit("mock-data/demo.json", '{"_meta": {"note": "合成数据"}, "broken": ')          # 不钉哈希：直接让构建去处理非法 JSON
+        rep = env.build()
+        self.assertFalse(rep["ok"])
+        self.assertTrue(rep["dir"].endswith(".FAILED") and (Path(rep["dir"]) / "report.json").is_file())
+
+    def test_known_dictionary_entries_with_routes_are_rewritten_to_generic_wording(self):
+        zh = dict(DICT_ZH, **{"translator.unknown": "真实版本调用 POST /api/ai/translate。",
+                              "market.wl.added_toast": "演示：{c}；真实版本 POST /api/watchlist",
+                              "cmp.topnav.p.identity": "/api/member/me 的返回"})
+        en = {**{k: k for k in DICT_ZH}, "contact.email": "owner@accessible-demo.test",
+              "translator.unknown": "the real version calls POST /api/ai/translate."}
+        self.env.edit("shared/i18n-zh.json", json.dumps(zh, ensure_ascii=False))
+        self.env.edit("shared/i18n-en.json", json.dumps(en))
+        self.env.pin()
+        rep = self.env.build()
+        self.assertTrue(rep["ok"], rep["errors"])
+        for lang in ("zh", "en"):
+            d = json.loads((self.site(rep) / "shared" / f"i18n-{lang}.json").read_text(encoding="utf-8"))
+            self.assertNotIn("/api/", json.dumps(d, ensure_ascii=False))
+        d = json.loads((self.site(rep) / "shared" / "i18n-zh.json").read_text(encoding="utf-8"))
+        self.assertEqual(d["market.wl.added_toast"], B.ZH["market.wl.added_toast"])
+
+    def test_overrides_only_apply_when_the_key_already_exists(self):
+        rep = self.env.build()                                                  # 默认字典里没有这六个键
+        for lang in ("zh", "en"):
+            d = json.loads((self.site(rep) / "shared" / f"i18n-{lang}.json").read_text(encoding="utf-8"))
+            for k in ("cmp.topnav.p.identity", "market.wl.added_toast", "translator.unknown"):
+                self.assertNotIn(k, d, (lang, k))                                # 不会凭空新增键
+
+    def test_a_new_dictionary_entry_with_a_route_is_an_error_not_silently_published(self):
+        d = dict(DICT_ZH, **{"brand.new.key": "真实版本调用 POST /api/secret/thing"})
+        self.env.edit("shared/i18n-zh.json", json.dumps(d, ensure_ascii=False))
+        self.env.pin()
+        rep = self.env.build()
+        self.assertFalse(rep["ok"])
+        self.assertIn("内部接口路径", self.errors(rep))
 
 
 # ================================================================ 发布门槛（草稿 vs 可发布）
@@ -1074,6 +1177,30 @@ class RealRepoTests(unittest.TestCase):
             self.assertNotIn("page-ws-", rel)
             self.assertNotIn("/w/", "/" + rel)
             self.assertFalse(any(x in rel for x in ("admin", "holdings", "monitor", "workspace")) and "mock-data" not in rel and "i18n" not in rel, rel)
+
+    def test_no_public_script_mentions_mock_meta_literally(self):
+        """辅助检查：只能抓住字面的 `_meta` 引用（data._meta、data["_meta"]、解构）。抓不住间接访问
+        （如 data['_'+'meta']、转义标识符、Object.keys(data).map(...)），也可能被注释误触发；
+        所以它不是"删 schema 一定不会弄坏页面"的证明，间接访问需要人工审阅或渲染验收。"""
+        import re
+        al = B.load_allowlist(B.ALLOWLIST_DEFAULT)
+        reads = []
+        for rel in al["src_files"]:
+            if rel.endswith((".js", ".html")):
+                text = (B.SRC_DEFAULT / rel).read_text(encoding="utf-8")
+                if re.search(r"(?<![\w])_meta\b", text):
+                    reads.append(rel)
+        self.assertEqual(reads, [], "公开页面的代码读取了 _meta：构建时删除 _meta.schema 可能弄坏它，先确认再改")
+
+    def test_real_build_output_has_no_internal_api_paths_or_mock_schema(self):
+        with tempfile.TemporaryDirectory() as t:
+            rep = B.build(B.SRC_DEFAULT, B.TEMPLATE_DEFAULT, B.ALLOWLIST_DEFAULT, Path(t) / "b", Path(t) / "trash", 5)
+            self.assertTrue(rep["ok"], rep["errors"])
+            site = Path(rep["dir"]) / "site"
+            for p in (site / "mock-data").glob("*.json"):
+                self.assertNotIn("schema", json.loads(p.read_text(encoding="utf-8")).get("_meta", {}), p.name)
+            for p in list((site / "mock-data").glob("*.json")) + list((site / "shared").glob("i18n-*.json")):
+                self.assertNotIn("/api/", p.read_text(encoding="utf-8"), p.name)
 
     def test_real_allowlist_pins_every_dictionary_mock_and_svg(self):
         al = B.load_allowlist(B.ALLOWLIST_DEFAULT)
