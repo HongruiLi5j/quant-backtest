@@ -97,6 +97,52 @@ class T(unittest.TestCase):
         self.run_day("2026-10-20", [])                                    # 撮合日已过：放弃
         self.assertEqual(self.q("SELECT status FROM orders WHERE acct='ai_1m'")[0]["status"], "rejected")
 
+    def test_late_settle_is_cancelled_not_filled(self):
+        # 日任务漏跑：成交日(10-19)有行情，但到 10-20 才来撮合 → 作废，不用事后价格补成交（T026）
+        self.bars[("600001", "2026-10-16")] = bar(10, 10, 10)
+        self.run_day("2026-10-16", [row("600001", "买入", 0.5)])
+        self.bars[("600001", "2026-10-19")] = bar(10.2, 10.5, 10.0)
+        r = self.run_day("2026-10-20", [])
+        o = self.q("SELECT * FROM orders WHERE acct='ai_1m'")[0]
+        self.assertEqual(o["status"], "cancelled")
+        self.assertIn("过期", o["reason"])
+        self.assertEqual(self.q("SELECT COUNT(*) n FROM trades")[0]["n"], 0)
+        self.assertEqual(self.q("SELECT cash FROM accounts WHERE id='ai_1m'")[0]["cash"], 1_000_000.0)
+
+    def test_on_time_settle_still_fills(self):
+        self.bars[("600001", "2026-10-16")] = bar(10, 10, 10)
+        self.run_day("2026-10-16", [row("600001", "买入", 0.5)])
+        self.bars[("600001", "2026-10-19")] = bar(10.2, 10.5, 10.0)
+        self.run_day("2026-10-19", [])
+        self.assertEqual(self.q("SELECT status FROM orders WHERE acct='ai_1m'")[0]["status"], "filled")
+
+    def test_stale_list_refused(self):
+        # 旧清单(10-20)在最近已收盘日是 10-23 时运行：拒绝，不撮合、不挂单（T026 r3）
+        self.bars[("600001", "2026-10-16")] = bar(10, 10, 10)
+        self.run_day("2026-10-16", [row("600001", "买入", 0.5)])
+        self.bars[("600001", "2026-10-19")] = bar(5, 5.2, 4.9)
+        with self.assertRaises(s.StaleListError):
+            s.run_day(payload("2026-10-19", []), bars_fn=self.fn, db=self.db, expect_day="2026-10-23")
+        self.assertEqual(self.q("SELECT status FROM orders WHERE acct='ai_1m'")[0]["status"], "pending")
+        self.assertEqual(self.q("SELECT COUNT(*) n FROM trades")[0]["n"], 0)
+
+    def test_expected_day_matches_runs(self):
+        self.bars[("600001", "2026-10-16")] = bar(10, 10, 10)
+        r = s.run_day(payload("2026-10-16", [row("600001", "买入", 0.5)]), bars_fn=self.fn, db=self.db, expect_day="2026-10-16")
+        self.assertEqual(r["ai_1m"]["new_orders"], 1)
+
+    def test_expected_day_calendar_coverage(self):
+        import datetime as d
+        cal = [d.date(2026, 10, 19), d.date(2026, 10, 20), d.date(2026, 10, 21), d.date(2026, 10, 22), d.date(2026, 10, 23), d.date(2026, 10, 26)]
+        bj = lambda *a: d.datetime(*a)
+        self.assertEqual(s.expected_day(cal, bj(2026, 10, 23, 16, 0)), "2026-10-23")      # 收盘后
+        self.assertEqual(s.expected_day(cal, bj(2026, 10, 23, 15, 0)), "2026-10-22")      # 15:30 前算上一日
+        self.assertEqual(s.expected_day(cal, bj(2026, 10, 25, 12, 0)), "2026-10-23")      # 周日
+        with self.assertRaises(s.StaleListError):                                           # 日历只到 10-20，却是 10-23 收盘后
+            s.expected_day(cal[:2], bj(2026, 10, 23, 16, 0))
+        with self.assertRaises(s.StaleListError):
+            s.expected_day([], bj(2026, 10, 23, 16, 0))
+
     def test_small_account_skips_and_explains(self):
         s.ACCOUNTS["ai_10k"] = {"label": "测试小账户", "initial": 10_000.0, "max_weight": 0.20, "max_positions": 5, "min_trade": 500.0}
         self.addCleanup(s.ACCOUNTS.pop, "ai_10k", None)

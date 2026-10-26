@@ -132,6 +132,14 @@ def settle(c, acct: str, day: str, bars_fn) -> list[dict]:
             if o["fill_day"] < day:      # 撮合日已过去但没有行情：放弃；当天行情还没出来则保持挂单
                 _reject(c, o, res, out, "停牌或没有当天行情，未成交")
             continue
+        if o["fill_day"] < day:      # 有行情但成交日已过：不补成交
+            # 成交日已经过去才来撮合（日任务漏跑）：行情价按"最新一天为基准的前复权"换算，成交日之后若发生除权，历史价会变，
+            # 事后补成交会用到成交日以后的信息，所以一律作废，不补撮合
+            reason = f"过期：成交日 {o['fill_day']} 当天没有撮合，不用事后价格补成交"
+            c.execute("UPDATE orders SET status='cancelled', reason=? WHERE id=?", (reason, o["id"]))
+            res.update(status="cancelled", reason=reason)
+            out.append(res)
+            continue
         price = float(bar["open"])
         up, down = limit_prices(o["code"], o["name"], float(bar["prev_close"]))
         if o["side"] == "buy" and price >= up - 0.005:
@@ -340,9 +348,24 @@ def weekly_report(c, acct: str, day: str) -> dict:
 
 
 # ------------------------------------------------------------ 每日入口
-def run_day(payload: dict, *, bars_fn, calendar=None, db=None, rows_key="blend2") -> dict:
-    """payload = trade_list_cn.json 内容。顺序：撮合以前的挂单 → 收盘估值 → 归因 → 按新清单挂新单。可重复运行。"""
+class StaleListError(Exception):
+    """清单日期不是最近已收盘交易日：旧清单不能触发撮合（价格按最新一天换算，用旧日期撮合会用到之后的信息）。"""
+
+
+def expected_day(cal, now_bj):
+    """最近已收盘交易日（北京时间 15:30 后算当天）。日历必须覆盖到截止日，否则无法确定，拒绝（不退回旧日期）。"""
+    cutoff = now_bj.date() if now_bj.hour * 60 + now_bj.minute >= 15 * 60 + 30 else now_bj.date() - timedelta(days=1)
+    if not cal or max(cal) < cutoff:
+        raise StaleListError(f"交易日历只到 {max(cal) if cal else '无'}，不足以确定最近已收盘交易日（截止 {cutoff}），今天不撮合、不挂单")
+    return max(d for d in cal if d <= cutoff).isoformat()
+
+
+def run_day(payload: dict, *, bars_fn, calendar=None, db=None, rows_key="blend2", expect_day=None) -> dict:
+    """payload = trade_list_cn.json 内容。顺序：撮合以前的挂单 → 收盘估值 → 归因 → 按新清单挂新单。可重复运行。
+    expect_day：调用方给出的最近已收盘交易日；清单日期与它不一致就拒绝运行（None 不检查，仅供测试）。"""
     day = payload["data_date"]
+    if expect_day is not None and day != expect_day:
+        raise StaleListError(f"清单日期 {day} 不是最近已收盘交易日 {expect_day}，今天不撮合、不挂单")
     rows = payload["strategies"][rows_key]["rows"]
     with _lock:
         c = connect(db)
@@ -418,7 +441,15 @@ def default_bars_fn():
 def main():
     payload = json.loads((ROOT / "data" / "daily" / "trade_list_cn.json").read_text(encoding="utf-8"))
     from . import turnover
-    rep = run_day(payload, bars_fn=default_bars_fn(), calendar=turnover.cached_calendar())
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from . import allmarket
+    try:
+        today_exp = expected_day(allmarket.trade_calendar(), datetime.now(ZoneInfo("Asia/Shanghai")))
+        rep = run_day(payload, bars_fn=default_bars_fn(), calendar=turnover.cached_calendar(), expect_day=today_exp)
+    except StaleListError as e:
+        print(f"模拟盘跳过：{e}")
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     target = OUT / f"{payload['data_date']}.json"
     if target.exists() and not any(v["settled"] or v["new_orders"] or v["skipped"] for v in rep.values()):

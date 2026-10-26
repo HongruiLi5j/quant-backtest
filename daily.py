@@ -89,6 +89,7 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
         trade_list.try_generate(market, pending, automatic=auto)
         _step(2, 2, "信号核对账本")
         _ledger(market)
+        _simtrade(market)
         return existing
     logging.info("开始更新 %s 市场数据", cfg["name"])
     total = 6 if (market == "cn" and cfg.get("all_market")) else 2
@@ -144,6 +145,7 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
                 trade_list.try_generate(market, m["data_date"], automatic=auto)
                 _step(5, total, "信号核对账本（核对旧信号、记录新信号）")
                 _ledger(market)
+                _simtrade(market)
         except Exception as e:
             logging.exception("全市场部分失败：%s", e)
     _step(total, total, "汇总、记录信号、发提醒")
