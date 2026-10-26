@@ -296,14 +296,21 @@ def check_same_history(sel, full, end):
     a, b = sel.close, full.close.loc[:end]
     if not a.index.equals(b.index) or not list(a.columns) == list(b.columns):
         raise ValueError("完整面板与选择面板的日期或股票列不一致")
-    for f in ("open", "close", "volume"):
+    for f in ("open", "high", "low", "close", "volume"):          # high/low 也参与因子计算，必须一并核对
         x, y = getattr(sel, f), getattr(full, f).loc[:end]
         if not x.equals(y):
             raise ValueError(f"完整面板与选择面板的 {f} 历史数据不一致")
+    for f in ("names", "industry"):
+        x, y = getattr(sel, f), getattr(full, f)
+        if (x is None) != (y is None) or (x is not None and not x.equals(y)):
+            raise ValueError(f"完整面板与选择面板的 {f} 不一致")
+    x, y = sel.market_ret, full.market_ret
+    if (x is None) != (y is None) or (x is not None and not x.equals(y.loc[:end])):
+        raise ValueError("完整面板与选择面板的 market_ret 不一致")
 
 
 def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, full_panel_fn=None):
-    """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先拿全局锁，再调用 full_panel_fn() 取完整面板，
+    """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先用 full_panel_fn(验证段末尾) 预检历史一致(失败不消耗锁)，再拿全局锁，再调用 full_panel_fn(None) 取完整面板，
     只跑这几个候选，且股票池限定为选择面板的股票。full_panel_fn 缺省时用 panel 自己(仅测试)。
     lock_path 为 None 且有候选需要看最终段时直接报错(不允许没有锁地看最终段)。"""
     sel = truncate_panel(panel, VALID[1])
@@ -323,11 +330,14 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, 
     def final_provider(ids):
         if lock_path is None:
             raise RuntimeError("需要看最终段但没有提供全局锁路径")
+        if full_panel_fn:                                               # 锁前预检：只载入到验证段末尾，校验失败不消耗全局锁
+            pre = restrict_columns(full_panel_fn(VALID[1]), list(sel.close.columns))
+            check_same_history(sel, pre, VALID[1])
         try:
             acquire_final_lock(lock_path, ids)
         except FileExistsError:
             return None
-        full = restrict_columns(full_panel_fn() if full_panel_fn else panel, list(sel.close.columns))
+        full = restrict_columns(full_panel_fn(None) if full_panel_fn else panel, list(sel.close.columns))
         check_same_history(sel, full, VALID[1])
         fok, fO, fC, fV, fCff, fdates = _prep(full, fx)
         res = {}
@@ -421,7 +431,7 @@ def main(argv=None):
     log(f"面板 {panel.close.shape}，开始候选搜索")
     lock = out / "FINAL_LOCK_SMOKE.json" if a.smoke else ROOT / "handoff" / "data" / "dev" / "FINAL_LOOKED.json"     # 正式锁在固定全局路径，换输出目录也绕不过
     rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock,
-                    full_panel_fn=lambda: build_arrays(codes, fx, allmarket))
+                    full_panel_fn=lambda end=None: build_arrays(codes, fx, allmarket, end=end))
     (out / "dev_results.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     (out / "report.md").write_text(render(rep, len(codes), cost_bp, a.smoke), encoding="utf-8")
     log("完成")

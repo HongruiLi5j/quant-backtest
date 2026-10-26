@@ -403,7 +403,7 @@ class FinalUniverseTests(unittest.TestCase):
         sd.run_portfolio, sd.select_and_test = spy, force
         try:
             with tempfile.TemporaryDirectory() as d:
-                sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=Path(d) / "L.json", full_panel_fn=lambda: big)
+                sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=Path(d) / "L.json", full_panel_fn=lambda end=None: big)
         finally:
             sd.run_portfolio, sd.select_and_test = real, real_sel
         self.assertIn(N, shapes)
@@ -412,11 +412,16 @@ class FinalUniverseTests(unittest.TestCase):
         # 完整面板的历史与选择面板不一致：run_all 在最终段路径上必须拒绝
         bad = fx.Panel(*(getattr(panel, f).copy() for f in ("open", "high", "low", "close", "volume")), panel.names, panel.industry)
         bad.close.iloc[100, 3] *= 1.5
+        bad_hl = fx.Panel(*(getattr(panel, f).copy() for f in ("open", "high", "low", "close", "volume")), panel.names, panel.industry)
+        bad_hl.high.iloc[100, 3] *= 1.5                                           # 只改 high：也必须被发现
         sd.select_and_test = force
         try:
-            with tempfile.TemporaryDirectory() as d:
-                with self.assertRaises(ValueError):
-                    sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=Path(d) / "L2.json", full_panel_fn=lambda: bad)
+            for badp, nm in ((bad, "L2"), (bad_hl, "L3")):
+                with tempfile.TemporaryDirectory() as d:
+                    lock = Path(d) / f"{nm}.json"
+                    with self.assertRaises(ValueError):
+                        sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=lock, full_panel_fn=lambda end=None, b=badp: b)
+                    self.assertFalse(lock.exists())                                # 预检失败：全局锁没有被消耗
         finally:
             sd.select_and_test = real_sel
 
@@ -496,9 +501,9 @@ class IntegrationTests(unittest.TestCase):
             lock = Path(d) / "L.json"
             seen = []
             rep, cands = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock,
-                                    full_panel_fn=lambda: seen.append(lock.exists()) or panel)
+                                    full_panel_fn=lambda end=None: seen.append((end is None, lock.exists())) or panel)
             kept = [r for r in rep["top"] if r["kept"]]
-            self.assertEqual(seen, [True] if kept else [])                         # 完整面板只在拿到锁之后、且确有候选留下时才构造
+            self.assertEqual(seen, [(False, False), (True, True)] if kept else [])      # 先锁前预检(只到验证段末尾、无锁)，再锁后取完整面板
             if kept:
                 self.assertTrue(lock.exists())
                 rep2, _ = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock)
