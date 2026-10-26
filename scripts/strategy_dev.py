@@ -5,7 +5,8 @@ Harvey-Liu-Zhu 多重检验下新因子 t 值要远高于 2，这里最终段用
   1. 候选 = 因子库里的 score 因子 × 调仓间隔 {5, 20 个交易日} × 持有只数 K {30, 60}；n_drop = K 的 10%。
   2. 每个候选用同一个引擎跑完 2016 年到最新数据，逐期记录扣成本后相对基准的超额。
   3. 选择：只看训练段（信号日与持有期都在 2016-01~2021-12）的月度超额夏普，取前 5 个；
-     验证段（2022~2023）超额均值>0 且 Newey-West t>2.0 才留下；留下的才允许看最终段（2024-01 起），且只看一次。
+     验证段（2022~2023）超额均值>0 且 Newey-West t>2.0 才留下；留下的才允许看最终段（2024-01 起），且只看一次：
+     选择阶段的面板截到 2023-12-31，看最终段前要先在固定路径 handoff/data/dev/FINAL_LOOKED.json 排他创建全局锁。
   4. 最终段「存活」= 超额均值>0 且 NW t>2.0 且成本加倍后均值>0；t>3.0 另外标出（Harvey-Liu-Zhu 参照线）。
   5. 同时报告：全部候选的数量（多重检验次数）、训练+验证段的 CSCV 回测过拟合概率 PBO、最佳训练候选的 Deflated Sharpe、
      最佳训练候选对随机打分组合的分位。
@@ -18,6 +19,7 @@ Harvey-Liu-Zhu 多重检验下新因子 t 值要远高于 2，这里最终段用
 最终段只有约 2.8 年；通过也只说明「未被推翻」。未经 Codex 审时一律标探索性。
 """
 import argparse
+import dataclasses
 import itertools
 import json
 import math
@@ -67,6 +69,7 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
     rows, w_pre = [], np.zeros(N)
     for a, b in zip(pos[:-1], pos[1:]):
         o1, v1, pc = O[a + 1], V[a + 1], C[a]
+        # 次日开盘能否成交：有开盘价且当天不是停牌日(停牌是开盘前就已知的状态，成交量为 0 即停牌)；涨跌停按开盘价相对前收判断
         tradable = np.isfinite(o1) & (v1 > 0) & np.isfinite(pc)
         with np.errstate(divide="ignore", invalid="ignore"):
             gap = o1 / pc - 1.0
@@ -85,17 +88,21 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
         if need > 0:
             pool = np.where(valid & can_buy & ~keep)[0]
             keep[pool[np.argsort(-sc[pool], kind="stable")[:need]]] = True
-        if not keep.any():
-            continue
-        fixed = keep & held & ~valid                                  # 失去资格又卖不出的旧仓：权重不动
+        if not keep.any() and not held.any():
+            continue                                                  # 既没有持仓也选不出股票：这一期不存在
+        # 卖不出的旧仓(停牌/开盘跌停)无论有没有资格，实际持股固定不动；只在可成交的名字之间分配剩下的资金
+        fixed = keep & held & ~can_sell
         free = keep & ~fixed
         w_tgt = np.zeros(N)
         w_tgt[fixed] = w_pre[fixed]
         if free.any():
             w_tgt[free] = max(0.0, 1.0 - w_tgt.sum()) / free.sum()
-        entry = np.where(tradable, o1, Cff[a + 1])
+            cap = free & ~can_buy & (w_tgt > w_pre)                   # 买不进的(开盘涨停)不能加仓，多出的部分留作现金
+            w_tgt[cap] = w_pre[cap]
+        # 入场价：当天能成交用开盘价，否则沿用决策日以前的最后一个收盘价；退出价同理(不用 t+1 当天收盘价)
+        entry = np.where(tradable, o1, Cff[a])
         o2 = O[b + 1]
-        exit_px = np.where(np.isfinite(o2) & (V[b + 1] > 0), o2, Cff[b + 1])
+        exit_px = np.where(np.isfinite(o2) & (V[b + 1] > 0), o2, Cff[b])
         with np.errstate(divide="ignore", invalid="ignore"):
             r = exit_px / entry - 1.0
         r_f = np.where(np.isfinite(r), r, 0.0)
@@ -106,6 +113,7 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
         bench = float(r[elig].mean()) if elig.any() else float("nan")
         rows.append({"sig_date": dates[a], "exit_date": dates[b + 1], "gross": gross, "cost": cost, "net": gross - cost, "bench": bench,
                      "excess": gross - cost - bench, "turnover": float((buys + sells) / 2), "n_hold": int(keep.sum())})
+        # 权重都是占「当期净值」的比例：费用按比例从各持仓和现金里扣，所以不改变持仓之间的相对权重，只体现在 net 里
         v = w_tgt * (1.0 + r_f)
         total = v.sum() + (1.0 - w_tgt.sum())
         w_pre = v / total
@@ -160,7 +168,8 @@ def cscv_pbo(M, S=CSCV_S):
                 return np.where(sd > 0, x.mean(axis=0) / sd, -np.inf)
         best = int(np.argmax(sh(tr)))
         s_te = sh(te)
-        rank = (s_te <= s_te[best]).sum() / n            # 最优候选在测试集的相对排名（0~1）
+        less, eq = int((s_te < s_te[best]).sum()), int((s_te == s_te[best]).sum())
+        rank = (less + (eq + 1) / 2) / (n + 1)         # 并列取中间名次；全部并列时 rank=0.5，计为「不高于中位数」（区分不了就不能说没过拟合）
         below += rank <= 0.5
         total += 1
     return float(below / total), total
@@ -187,23 +196,50 @@ def seg_stats(df):
             "turnover": float(df["turnover"].mean()) if len(df) else float("nan")}
 
 
-def select_and_test(cands):
-    """事先登记的选择协议。cands: {id: {"train": df, "valid": df, "final": df}}。返回报告字典。
-    train 夏普排前 TOP_N → valid 均值>0 且 t>T_MIN 才留下 → 只有留下的才看 final。"""
+def select_and_test(cands, final_provider=None):
+    """事先登记的选择协议。cands: {id: {"train": df, "valid": df, ...}}。返回报告字典。
+    train 夏普排前 TOP_N → valid 均值>0 且 t>T_MIN 才留下 → 只有留下的才看 final。
+    final_provider(留下的 id 列表) 返回 {id: 最终段 df}，或返回 None 表示最终段已被看过、拒绝再看；缺省取 cands[k]['final']（仅测试用）。"""
+    if final_provider is None:
+        final_provider = lambda ids: {k: cands[k]["final"] for k in ids}
     train_sh = {k: ann_sharpe_m(monthly(v["train"])) for k, v in cands.items()}
     ranked = sorted((k for k in cands if math.isfinite(train_sh[k])), key=lambda k: -train_sh[k])[:TOP_N]
-    out = {"top": [], "n_candidates": len(cands)}
+    out = {"top": [], "n_candidates": len(cands), "final_blocked": False}
+    rows = []
     for k in ranked:
         vs = seg_stats(cands[k]["valid"])
         keep = bool(vs["n"] > 0 and vs["mean"] > 0 and vs["nw_t"] > T_MIN)
-        row = {"id": k, "train_sharpe_m": train_sh[k], "train": seg_stats(cands[k]["train"]), "valid": vs, "kept": keep, "final": None}
-        if keep:
-            fs = seg_stats(cands[k]["final"])
+        rows.append({"id": k, "train_sharpe_m": train_sh[k], "train": seg_stats(cands[k]["train"]), "valid": vs, "kept": keep, "final": None})
+    kept_ids = [r["id"] for r in rows if r["kept"]]
+    finals = final_provider(kept_ids) if kept_ids else {}
+    if finals is None:
+        out["final_blocked"] = True                                   # 最终段只能看一次：锁已存在，拒绝
+        finals = {}
+    for r in rows:
+        if r["kept"] and r["id"] in finals:
+            fs = seg_stats(finals[r["id"]])
             fs["survive"] = bool(fs["n"] > 0 and fs["mean"] > 0 and fs["nw_t"] > T_MIN and fs["mean_cost_x2"] > 0)
             fs["above_hlz"] = bool(fs["nw_t"] > T_HLZ)
-            row["final"] = fs
-        out["top"].append(row)
+            fs["survive_hlz"] = bool(fs["survive"] and fs["above_hlz"])
+            r["final"] = fs
+    out["top"] = rows
     return out
+
+
+def acquire_final_lock(path, ids):
+    """最终段「只看一次」的全局锁：固定路径、排他创建；已存在就抛 FileExistsError。换输出目录也绕不过去。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "x", encoding="utf-8") as f:
+        f.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M"), "ids": list(ids)}, ensure_ascii=False, indent=1))
+
+
+def truncate_panel(panel, end):
+    """只保留 end（含）以前的数据：选择阶段拿到的面板里根本没有最终段。"""
+    kw = {f: getattr(panel, f).loc[:end] for f in ("open", "high", "low", "close", "volume")}
+    if panel.market_ret is not None:
+        kw["market_ret"] = panel.market_ret.loc[:end]
+    return dataclasses.replace(panel, **kw)
 
 
 # ---------------------------------------------------------------- 数据与候选
@@ -236,15 +272,20 @@ def candidate_grid(fx, smoke=False):
     return [(f, s, k) for f in score_ids for s in steps for k in ks]
 
 
-def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM):
-    ok = eligibility(panel, fx).values
-    O, C, V = panel.open.values, panel.close.values, panel.volume.values
-    Cff = panel.close.ffill().values
-    dates = panel.close.index
+def _prep(panel, fx):
+    return (eligibility(panel, fx).values, panel.open.values, panel.close.values, panel.volume.values,
+            panel.close.ffill().values, panel.close.index)
+
+
+def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None):
+    """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先拿全局锁，再用完整面板只跑这几个候选。
+    lock_path 为 None 且有候选需要看最终段时直接报错(不允许没有锁地看最终段)。"""
+    sel = truncate_panel(panel, VALID[1])
+    ok, O, C, V, Cff, dates = _prep(sel, fx)
     cands, series, scores = {}, {}, {}
     grid = candidate_grid(fx, smoke)
     for fid in sorted({g[0] for g in grid}):
-        scores[fid] = (fx.compute_factor(fid, panel) * fx.FACTORS[fid].direction).values
+        scores[fid] = (fx.compute_factor(fid, sel) * fx.FACTORS[fid].direction).values
     for i, (fid, step, K) in enumerate(grid):
         df = run_portfolio(scores[fid], ok, O, C, V, Cff, dates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
         cid = f"{fid}|{step}d|K{K}"
@@ -252,7 +293,24 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM):
         series[cid] = df
         if (i + 1) % 10 == 0:
             log(f"候选 {i + 1}/{len(grid)}")
-    rep = select_and_test(cands)
+
+    def final_provider(ids):
+        if lock_path is None:
+            raise RuntimeError("需要看最终段但没有提供全局锁路径")
+        try:
+            acquire_final_lock(lock_path, ids)
+        except FileExistsError:
+            return None
+        fok, fO, fC, fV, fCff, fdates = _prep(panel, fx)
+        res = {}
+        for cid in ids:
+            fid, step, K = cid.split("|")[0], int(cid.split("|")[1][:-1]), int(cid.split("|")[2][1:])
+            sc = (fx.compute_factor(fid, panel) * fx.FACTORS[fid].direction).values
+            d = run_portfolio(sc, fok, fO, fC, fV, fCff, fdates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
+            res[cid] = split_segments(d)["final"] if len(d) else d
+        return res
+
+    rep = select_and_test(cands, final_provider)
     # PBO 与 DSR 只用训练+验证段（最终段保持干净）
     M = pd.concat({k: monthly(pd.concat([v["train"], v["valid"]])) for k, v in cands.items()}, axis=1).dropna(how="any")
     rep["pbo"], rep["pbo_splits"] = cscv_pbo(M.values) if len(M) else (float("nan"), 0)
@@ -268,10 +326,11 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM):
         fid, step, K = best.split("|")[0], int(best.split("|")[1][:-1]), int(best.split("|")[2][1:])
         rng = np.random.default_rng(SEED)
         real = seg_stats(pd.concat([cands[best]["train"], cands[best]["valid"]]))["mean"]
+        ok_r = ok & np.isfinite(scores[fid])                              # 随机对照沿用真实候选的有效股票池，只随机打分，不改池子
         means = []
         for _ in range(n_random):
             rs = rng.standard_normal(scores[fid].shape)
-            d = run_portfolio(rs, ok, O, C, V, Cff, dates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
+            d = run_portfolio(rs, ok_r, O, C, V, Cff, dates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
             if len(d):
                 s = split_segments(d)
                 means.append(seg_stats(pd.concat([s["train"], s["valid"]]))["mean"])
@@ -305,7 +364,9 @@ def render(rep, n_codes, cost_bp, smoke):
                  + (f"{f['mean']:+.4f} | {f['nw_t']:+.2f} | {f['mean_cost_x2']:+.4f} | {f['turnover']:.2f} | {'**存活**' if f['survive'] else '未存活'} | {'是' if f['above_hlz'] else '否'} |" if f
                     else "- | - | - | - | 未进入最终段 | - |"))
     kept = [r for r in rep["top"] if r["kept"]]
-    L += ["", f"**结论**：训练段前 {len(rep['top'])} 名里，验证段留下 {len(kept)} 个；最终段存活 {sum(1 for r in kept if r['final'] and r['final']['survive'])} 个。",
+    blocked = "（最终段已被看过，全局锁存在，本次拒绝再看）" if rep.get("final_blocked") else ""
+    L += ["", f"**结论**：训练段前 {len(rep['top'])} 名里，验证段留下 {len(kept)} 个；最终段存活 {sum(1 for r in kept if r['final'] and r['final']['survive'])} 个，"
+          f"其中 t>3.0 的 {sum(1 for r in kept if r['final'] and r['final'].get('survive_hlz'))} 个{blocked}。「存活」用的是 t>2.0，只有 t>3.0 才接近多重检验下的门槛。",
           "", "## 局限", "", "- 名单与历史在之前的检验里全部被看过，这不是真正的样本外，只是新增一批检验；候选数量已计入 PBO/DSR。",
           "- 当前在市名单（幸存者偏差）、ST 用当前名称、后复权价；基准不扣成本只是比较口径；最终段约 2.8 年，样本有限；涨停阈值统一 9.5%。",
           "- 即使「存活」，也只说明未被推翻，不是样本外证明，更不构成投资建议；通过的候选只能进入前向纸面记录继续观察。"]
@@ -330,7 +391,8 @@ def main(argv=None):
     log(f"构造面板：{len(codes)} 只")
     panel = build_arrays(codes, fx, allmarket)
     log(f"面板 {panel.close.shape}，开始候选搜索")
-    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM)
+    lock = out / "FINAL_LOCK_SMOKE.json" if a.smoke else ROOT / "handoff" / "data" / "dev" / "FINAL_LOOKED.json"     # 正式锁在固定全局路径，换输出目录也绕不过
+    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock)
     (out / "dev_results.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     (out / "report.md").write_text(render(rep, len(codes), cost_bp, a.smoke), encoding="utf-8")
     log("完成")

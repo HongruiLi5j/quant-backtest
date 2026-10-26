@@ -168,6 +168,66 @@ class EngineTests(unittest.TestCase):
         self.assertAlmostEqual(r2["gross"].iloc[0], 0.2, places=6)               # 买的是 1 号，不是被排除的 0 号
 
 
+class EngineFixTests(unittest.TestCase):
+    """Codex T028 审核指出的问题的回归测试。"""
+    def setUp(self):
+        self.dates, self.O, self.C, self.V = arrays()
+        T, N = self.O.shape
+        self.ok = np.ones((T, N), dtype=bool)
+        self.score = np.tile(np.arange(N, 0, -1, dtype=float), (T, 1))
+
+    def test_unsellable_but_eligible_held_keeps_weight(self):
+        # 0 号仍有资格，但第 2 期 t+1 开盘跌停(前收 12 → 开盘 10.8)卖不出：权重固定在漂移后的 w0，不能被重新等权
+        self.C[:6, 0] = 12.0
+        self.O[6:11, 0] = 10.8
+        self.C[6:11, 0] = 10.8
+        self.O[11:, 0] = 20.0                                                      # 第 2 期退出日 0 号大涨
+        self.C[11:, 0] = 20.0
+        r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        w0 = 1.08 / 2.08                                                           # 第 1 期末 0 号的漂移权重（10 → 10.8）
+        self.assertAlmostEqual(r["gross"].iloc[1], w0 * (20.0 / 10.8 - 1.0), places=6)
+        self.assertGreater(abs(w0 - 0.5), 0.01)
+
+    def test_suspended_held_not_rebalanced(self):
+        self.O[6, 0] = np.nan
+        self.V[6, 0] = 0.0
+        self.C[6:, 0] = np.nan
+        r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        self.assertEqual(r["cost"].iloc[1], 0.0)                                   # 停牌的旧仓不动，另一只也没有因此被动调整
+
+    def test_suspended_valuation_uses_last_known_close(self):
+        # 0 号在第 1 期退出日(t=6)停牌，且停牌日出现离谱收盘价 99：入场/退出估值只能用决策日以前的最后收盘价 12
+        self.C[:6, 0] = 12.0
+        self.O[6, 0] = np.nan
+        self.V[6, 0] = 0.0
+        self.C[6, 0] = 99.0
+        self.O[7:, 0] = 12.0
+        self.C[7:, 0] = 12.0
+        r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=1, ndrop=0)
+        self.assertAlmostEqual(r["gross"].iloc[0], 0.2, places=6)                  # 退出估值 12，不是 99
+        self.assertAlmostEqual(r["gross"].iloc[1], 0.0, places=6)                  # 第 2 期入场估值 12，不是 99
+
+    def test_liquidation_period_not_skipped(self):
+        # 第 2 期起没有任何股票有资格：必须清仓并付成本，且后面不再带着旧仓位
+        ok = self.ok.copy()
+        ok[5:, :] = False
+        r = run(self.score, ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        self.assertGreater(r["cost"].iloc[1], 0)                                   # 清仓的卖出成本
+        self.assertEqual(r["n_hold"].iloc[1], 0)
+        self.assertEqual(r["gross"].iloc[1], 0.0)
+
+    def test_next_day_close_not_used_for_entry_fallback(self):
+        # 0 号 t+1 停牌(无成交量)：入场估值用决策日收盘，不用 t+1 当天的收盘价；停牌股本来就买不进，改看已持有的
+        r0 = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        O2, C2, V2 = self.O.copy(), self.C.copy(), self.V.copy()
+        V2[6, 0] = 0.0
+        O2[6, 0] = np.nan
+        C2[6, 0] = 99.0                                                            # 停牌日出现一个离谱收盘价，不应被使用
+        r1 = run(self.score, self.ok, O2, C2, V2, self.dates, K=2, ndrop=0)
+        self.assertTrue(np.isfinite(r1["gross"]).all())
+        self.assertLess(abs(r1["gross"].iloc[1]), 0.5)
+
+
 class SegmentTests(unittest.TestCase):
     def test_boundaries(self):
         T = pd.Timestamp
@@ -197,6 +257,12 @@ class PboDsrTests(unittest.TestCase):
         M[:, 0] += 1.0
         p, _ = sd.cscv_pbo(M)
         self.assertLess(p, 0.1)
+
+    def test_identical_candidates_not_zero_pbo(self):
+        col = np.random.default_rng(3).standard_normal((96, 1))
+        M = np.tile(col, (1, 6))                                                   # 6 个完全相同的候选：区分不了
+        p, _ = sd.cscv_pbo(M)
+        self.assertEqual(p, 1.0)
 
     def test_too_small_nan(self):
         self.assertTrue(math.isnan(sd.cscv_pbo(np.zeros((5, 1)))[0]))
@@ -267,6 +333,37 @@ class PreregTests(unittest.TestCase):
                 sd.write_prereg(out, 10, 8, 100, True)
 
 
+class FinalLockTests(unittest.TestCase):
+    def test_lock_is_exclusive(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "sub" / "LOCK.json"
+            sd.acquire_final_lock(p, ["a"])
+            with self.assertRaises(FileExistsError):
+                sd.acquire_final_lock(p, ["b"])
+
+    def test_blocked_when_lock_exists(self):
+        good = {"train": seg_df(0.01, seed=1), "valid": seg_df(0.01, start="2022-01-01", seed=2), "final": seg_df(0.01, start="2024-01-01", seed=3)}
+        rep = sd.select_and_test({"g": good}, lambda ids: None)
+        self.assertTrue(rep["final_blocked"])
+        self.assertIsNone(rep["top"][0]["final"])
+        self.assertIn("拒绝再看", sd.render({**rep, "pbo": 0, "dsr_best": 0, "n_candidates": 1}, 1, 8, True))
+
+    def test_provider_not_called_when_nothing_kept(self):
+        bad = {"train": seg_df(0.012, seed=4), "valid": seg_df(-0.01, start="2022-01-01", seed=5), "final": seg_df(0.5, start="2024-01-01", seed=6)}
+        calls = []
+        sd.select_and_test({"b": bad}, lambda ids: calls.append(ids) or {})
+        self.assertEqual(calls, [])                                                # 没有候选留下：最终段根本不取
+
+    def test_truncate_panel_drops_future(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2022-06-01", "2024-06-30")
+        df = pd.DataFrame(10.0, index=dates, columns=["600000", "600001"])
+        panel = fx.Panel(df, df, df, df, df, pd.Series(["a", "b"], index=df.columns), pd.Series("x", index=df.columns))
+        t = sd.truncate_panel(panel, sd.VALID[1])
+        self.assertLessEqual(t.close.index.max(), pd.Timestamp("2023-12-31"))
+        self.assertLessEqual(t.volume.index.max(), pd.Timestamp("2023-12-31"))
+
+
 class IntegrationTests(unittest.TestCase):
     def test_run_all_on_synthetic_panel(self):
         from src.market_monitor import factors as fx
@@ -279,14 +376,62 @@ class IntegrationTests(unittest.TestCase):
         vol = pd.DataFrame(rng.uniform(5e6, 2e7, close.shape), index=dates, columns=cols)
         names = pd.Series([f"股票{i}" for i in range(N)], index=cols)
         panel = fx.Panel(open_, close * 1.01, close * 0.99, close, vol, names, pd.Series("x", index=cols))
-        rep, cands = sd.run_all(panel, fx, 8, smoke=True, n_random=3)
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / "L.json"
+            rep, cands = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock)
+            kept = [r for r in rep["top"] if r["kept"]]
+            if kept:
+                self.assertTrue(lock.exists())
+                rep2, _ = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock)
+                self.assertTrue(rep2["final_blocked"])                             # 换同一个锁路径再跑：最终段被拒
+                self.assertTrue(all(r["final"] is None for r in rep2["top"]))
+            else:
+                self.assertFalse(lock.exists())                                    # 没有候选留下：锁不被消耗
         self.assertEqual(rep["n_candidates"], 6)
         self.assertEqual(len(cands), 6)
+        for v in cands.values():
+            self.assertEqual(len(v["final"]), 0)                                   # 选择阶段的面板里没有最终段数据
         for k in ("pbo", "dsr_best", "random_percentile_best", "top"):
             self.assertIn(k, rep)
         txt = sd.render(rep, N, 8, True)
         self.assertIn("探索性", txt)
         self.assertIn("smoke", txt)
+
+
+class RandomControlPoolTests(unittest.TestCase):
+    def test_random_runs_use_candidate_valid_pool(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2014-06-02", "2025-06-30")
+        rng = np.random.default_rng(5)
+        N = 45
+        cols = [f"{600000 + i}" for i in range(N)]
+        close = pd.DataFrame(10 * np.exp(np.cumsum(rng.normal(0.0002, 0.015, (len(dates), N)), axis=0)), index=dates, columns=cols)
+        vol = pd.DataFrame(rng.uniform(5e6, 2e7, close.shape), index=dates, columns=cols)
+        panel = fx.Panel(close.shift(1).fillna(close.iloc[0]), close * 1.01, close * 0.99, close, vol,
+                         pd.Series([f"股票{i}" for i in range(N)], index=cols), pd.Series("x", index=cols))
+        seen, real, real_cf = [], sd.run_portfolio, fx.compute_factor
+
+        def holey(fid, pnl):                                                       # 0 号股票在 2020 年后因子缺失，但仍有资格：有效池 = 资格 & 因子有限
+            out = real_cf(fid, pnl).copy()
+            out.iloc[1500:, 0] = np.nan
+            return out
+
+        def spy(score, ok, *a, **k):
+            seen.append((ok.copy(), score.copy()))
+            return real(score, ok, *a, **k)
+        sd.run_portfolio, fx.compute_factor = spy, holey
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=Path(d) / "L.json")
+        finally:
+            sd.run_portfolio, fx.compute_factor = real, real_cf
+        random_calls = [(ok, sc) for ok, sc in seen if np.isfinite(sc).all()]      # 随机打分的分数处处有限
+        real_calls = [(ok, sc) for ok, sc in seen if not np.isfinite(sc).all()]
+        self.assertGreaterEqual(len(random_calls), 3)
+        want = [ok & np.isfinite(sc) for ok, sc in real_calls]
+        for ok_r, _ in random_calls[:3]:
+            self.assertTrue(any(np.array_equal(ok_r, w) for w in want))             # 随机对照用的就是某个真实候选的有效池
+            self.assertTrue(not ok_r[1500:, 0].any())                                # 因子缺失的 0 号股票没有被随机对照放进池子
 
 
 class ImportTests(unittest.TestCase):

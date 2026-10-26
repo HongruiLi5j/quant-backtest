@@ -140,6 +140,8 @@ def main(argv=None):
     ap.add_argument("--out")
     ap.add_argument("--wait-minutes", type=float, default=0)
     a = ap.parse_args(argv)
+    if a.out and (ROOT / "data") in (Path(a.out).resolve(), *Path(a.out).resolve().parents):
+        ap.error("--out 不能写进 data/ 目录（本脚本承诺只读）")
     day = a.expect_day or expected_day()
     deadline = time.time() + a.wait_minutes * 60
     waited = False
