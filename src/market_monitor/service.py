@@ -30,7 +30,7 @@ class Config:
 
     def __post_init__(self):
         if (not positive(self.poll_seconds) or self.poll_seconds < 60
-                or type(self.request_budget) is not int or not 1 <= self.request_budget <= 600
+                or type(self.request_budget) is not int or not 1 <= self.request_budget <= 1200
                 or type(self.multi_code_verified) is not bool
                 or not positive(self.timeout_seconds) or self.timeout_seconds > 10):
             raise ValueError('invalid_config')

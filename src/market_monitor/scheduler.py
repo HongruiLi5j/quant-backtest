@@ -29,7 +29,7 @@ LOG = logging.getLogger('market_monitor')
 
 MIN_INTERVAL, DEFAULT_INTERVAL, MAX_INTERVAL = 30, 60, 3600
 SYMBOL_GAP, REQUEST_GAP = 60, 10     # 每股最小间隔 / 相邻请求最小间隔（秒）
-MAX_BUDGET = 600                     # 与 S2 Config 上限一致
+MAX_BUDGET = 1200                    # 每日请求预算上限（T024：原 600，监控全部信号股约需 480 次）
 BATCH_MIN_INTERVAL = BATCH_GAP       # batch_mode=True 时的最小轮询间隔（秒），与 providers_easy.REQUEST_GAP 一致
 MAX_MISSING_SHOWN = 200              # status 里最多列出的缺失代码数（完整数量见 missing_count）
 MAX_BATCH = 5                     # 单请求最多股数

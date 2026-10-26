@@ -305,7 +305,7 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual((s.status()['interval'], s.status()['top_n']), (30, 0))
         s.set_config(30, 500)
         self.assertEqual(s.status()['top_n'], 500)
-        for kwargs in ({'request_budget': 601}, {'request_budget': 0}, {'multi_code': 1}, {'interval': 10, 'batch_mode': False},
+        for kwargs in ({'request_budget': 1201}, {'request_budget': 0}, {'multi_code': 1}, {'interval': 10, 'batch_mode': False},
                        {'interval': 4}):
             with self.assertRaises(ValueError, msg=kwargs):
                 MonitorScheduler(**kwargs)

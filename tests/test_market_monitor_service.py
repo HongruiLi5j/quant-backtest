@@ -128,7 +128,7 @@ class ServiceTests(unittest.TestCase):
         status = self.run_session(service)
         self.assertEqual((status['requests_used'], status['reason']), (7, 'budget_exhausted'))
         self.assertTrue(all(b[0]-a[0] >= 65 for a,b in zip(self.calls, self.calls[1:])))
-        for kw in ({'request_budget':601}, {'request_budget':True}, {'request_budget':0},
+        for kw in ({'request_budget':1201}, {'request_budget':True}, {'request_budget':0},
                    {'poll_seconds':59}, {'poll_seconds':float('nan')}, {'timeout_seconds':11},
                    {'multi_code_verified':1}):
             with self.assertRaises(ValueError):
