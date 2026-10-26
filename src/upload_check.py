@@ -77,6 +77,33 @@ def _sharpe_ann(rets):
     return mu / math.sqrt(var) * math.sqrt(hc.TD)
 
 
+def _fix_oos_text(out, split_used, split_note, is_s, oos_s):
+    """health_check 的样本外说明固定写「前 70% / 后 30%」；上传时按实际切分日改写，避免与用户指定的切分日矛盾。"""
+    for c in out["checks"]:
+        if c["id"] == "oos" and c["status"] != "na":
+            keep = int(hc.THRESHOLDS["oos_keep_ratio"] * 100)
+            c["zh"] = (f"以 {split_used} 为界（{split_note}）：样本内夏普 {hc._fmt(is_s)} → 样本外夏普 {hc._fmt(oos_s)}。样本外要为正，且至少保留样本内的 {keep}%。"
+                       "注意：这个切分是事后选的，策略和参数本身可能已经看过全部数据，所以不是干净的样本外。")
+            c["en"] = (f"Split at {split_used} ({'post-hoc 70/30 split' if 'user' not in split_note and '用户' not in split_note else 'owner-chosen split date'}): "
+                       f"in-sample Sharpe {hc._fmt(is_s)} -> out-of-sample Sharpe {hc._fmt(oos_s)}. Out-of-sample must be positive and keep at least {keep}% of in-sample. "
+                       "Note: the split is chosen after the fact and the strategy or its parameters may already have seen all the data, so this is not a clean out-of-sample test.")
+    for c in out["caveats"]:
+        if "70/30" in c["zh"]:
+            c["zh"] = "样本内/外是事后切的（缺省 70/30，或你指定的切分日），不是封存的干净样本外。"
+            c["en"] = "The in/out-of-sample split is chosen after the fact (default 70/30, or your date), not a sealed clean out-of-sample test."
+
+
+def _fix_cost_ruin(out, ruined):
+    """成本压力下出现单日亏光（净值归零）：这是失败，不是缺数据；health_check 会把 None 当成没数据，所以在这里改判。"""
+    for c in out["checks"]:
+        if c["id"] == "cost":
+            c["status"] = "fail" if ("1x" in ruined or "2x" in ruined) else "warn"
+            c["value"]["ruined"] = list(ruined)
+            c["zh"] += f" 注意：在成本 {'/'.join(ruined)} 的压力场景下出现单日亏光（≤ -100%），这按失败处理，不是缺数据。"
+            c["en"] += f" Note: under the {'/'.join(ruined)} cost stress a single day loses everything (<= -100%); this counts as a failure, not missing data."
+    out["verdict"] = hc._verdict(out["checks"])
+
+
 def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, split_date=None,
                  turnover=None, cost_bp=None, cost_included=None) -> dict:
     if isinstance(n_trials, bool) or not isinstance(n_trials, int) or not 1 <= n_trials <= MAX_TRIALS:
@@ -139,12 +166,13 @@ def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, spl
     is_s, oos_s = _sharpe_ann(r[:cut]), _sharpe_ann(r[cut:])
     split = {"date": split_used, "is": {"sharpe": is_s}, "oos": {"sharpe": oos_s}}
 
-    cost_sens = None
+    cost_sens, ruined = None, []
     if t is not None:
-        cost_sens = []                                                        # 此时 r 已是净收益（含 1 倍成本）
+        cost_sens, ruined = [], []                                            # 此时 r 已是净收益（含 1 倍成本）
         for label, k in (("1x", 0), ("2x", 1), ("4x", 3)):                     # 在净收益上再多扣 k 倍成本
             rk = [x - k * ti * unit for x, ti in zip(r, t)]
             if any(x <= -1.0 for x in rk):
+                ruined.append(label)                                          # 单日亏光：不是「缺数据」，下面单独判失败
                 cost_sens.append({"label": label, "sharpe": None})
             else:
                 cost_sens.append({"label": label, "sharpe": _sharpe_ann(rk)})
@@ -154,6 +182,9 @@ def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, spl
            "start": ds[0].isoformat(), "end": ds[-1].isoformat()}
     out = hc.health_check(res, n_trials)
 
+    _fix_oos_text(out, split_used, split_note, is_s, oos_s)
+    if ruined:
+        _fix_cost_ruin(out, ruined)
     missing = []
     if b is None:
         missing.append("benchmark")

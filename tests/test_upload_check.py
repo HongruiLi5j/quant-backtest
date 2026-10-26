@@ -90,6 +90,44 @@ class CostTests(unittest.TestCase):
             uc.upload_check(d, r, 1, turnover=t[:300])                              # 只给换手不给费率
 
 
+class FixTests(unittest.TestCase):
+    def test_cost_ruin_is_failure_not_missing(self):
+        d, r, b, _ = make(n=600)
+        r[100] = -0.85
+        t = [0.0] * 600
+        t[100] = 20.0                                                              # 2x 压力：-0.85 - 20×1% = -1.05，单日亏光
+        out = uc.upload_check(d, r, 1, benchmark=b, n_trades=60, turnover=t, cost_bp=100, cost_included=True)
+        c = next(c for c in out["checks"] if c["id"] == "cost")
+        self.assertEqual(c["status"], "fail")
+        self.assertIn("2x", c["value"]["ruined"])
+        self.assertIn("亏光", c["zh"])
+        self.assertIn("cost", out["verdict"]["fails"])
+
+    def test_oos_text_follows_actual_split(self):
+        d, r, b, t = make(n=600)
+        out = uc.upload_check(d, r, 1, benchmark=b, n_trades=60, split_date=d[300])
+        c = next(c for c in out["checks"] if c["id"] == "oos")
+        self.assertIn(d[300], c["zh"])
+        self.assertNotIn("前 70%", c["zh"])
+        self.assertTrue(any("你指定的切分日" in x["zh"] for x in out["caveats"]))
+
+    def test_cost_ruin_only_at_4x_is_warn(self):
+        d, r, b, _ = make(n=600)
+        r[100] = -0.5
+        t = [0.0] * 600
+        t[100] = 20.0                                                              # 2x: -0.7 仍活着；4x: -1.1 亏光
+        out = uc.upload_check(d, r, 1, benchmark=b, n_trades=60, turnover=t, cost_bp=100, cost_included=True)
+        c = next(c for c in out["checks"] if c["id"] == "cost")
+        self.assertEqual(c["value"]["ruined"], ["4x"])
+        self.assertNotEqual(c["status"], "pass")
+
+    def test_default_split_text_mentions_posthoc(self):
+        d, r, b, t = make(n=600)
+        c = next(c for c in uc.upload_check(d, r, 1, benchmark=b, n_trades=60)["checks"] if c["id"] == "oos")
+        self.assertIn("事后", c["zh"])
+        self.assertIn("不是干净的样本外", c["zh"])
+
+
 class ValidationTests(unittest.TestCase):
     def setUp(self):
         self.d, self.r, self.b, self.t = make(n=300)
