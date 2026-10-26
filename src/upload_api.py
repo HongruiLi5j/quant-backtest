@@ -9,9 +9,12 @@
 from __future__ import annotations
 
 import json
+import threading
 
 from . import upload_check as uc
 
+API_MAX_ROWS = 10000                      # 接口层行数上限（约 40 年日线）：2 万行一次要算约 8 秒，先砍一半
+_BUSY = threading.BoundedSemaphore(1)     # 同一时刻只允许一个体检在算；忙时返回 429（接线时还应由调用方加请求频率限制）
 MAX_BODY_BYTES = 2 * 1024 * 1024          # 2MB：约 2 万行日期+收益+基准+换手绰绰有余
 ALLOWED_KEYS = {"dates", "returns", "n_trials", "benchmark", "n_trades", "split_date", "turnover", "cost_bp", "cost_included"}
 REQUIRED_KEYS = ("dates", "returns", "n_trials")
@@ -30,9 +33,9 @@ def handle(body: bytes, *, enabled: bool = False):
     if len(body) > MAX_BODY_BYTES:
         return _err(413, f"请求体超过 {MAX_BODY_BYTES // 1024 // 1024}MB 上限")
     try:
-        data = json.loads(bytes(body).decode("utf-8"), parse_constant=_reject_constant)
+        data = json.loads(bytes(body).decode("utf-8"), parse_constant=_reject_constant, object_pairs_hook=_no_dup_keys)
     except (UnicodeDecodeError, ValueError, RecursionError):
-        return _err(400, "请求体不是合法的 JSON（NaN/Infinity 也不允许）")
+        return _err(400, "请求体不是合法的 JSON（NaN/Infinity、重复字段也不允许）")
     if not isinstance(data, dict):
         return _err(400, "请求体必须是 JSON 对象")
     unknown = sorted(set(data) - ALLOWED_KEYS)
@@ -41,17 +44,35 @@ def handle(body: bytes, *, enabled: bool = False):
     missing = [k for k in REQUIRED_KEYS if k not in data]
     if missing:
         return _err(400, "缺少必填字段：" + "、".join(missing))
+    if isinstance(data["returns"], list) and len(data["returns"]) > API_MAX_ROWS:
+        return _err(413, f"行数超过 {API_MAX_ROWS} 的上限")
+    if not _BUSY.acquire(blocking=False):
+        return _err(429, "体检正在进行，请稍后再试")
     try:
         out = uc.upload_check(
             data["dates"], data["returns"], data["n_trials"], benchmark=data.get("benchmark"), n_trades=data.get("n_trades"),
             split_date=data.get("split_date"), turnover=data.get("turnover"), cost_bp=data.get("cost_bp"),
             cost_included=data.get("cost_included"))
+    except uc.UploadInputError as e:
+        return _err(400, str(e)[:200])                                # 只有明确的输入校验错误才把消息返回给调用方
+    except Exception:
+        return _err(500, "体检计算失败")                                # 其他异常(含内部 ValueError)：固定文案，不泄漏路径/堆栈
+    finally:
+        _BUSY.release()
+    try:
         json.dumps(out, ensure_ascii=False, allow_nan=False)
-    except ValueError as e:
-        return _err(400, str(e)[:200])
     except Exception:
         return _err(500, "体检计算失败")
     return 200, out
+
+
+def _no_dup_keys(pairs):
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError("duplicate key")
+        d[k] = v
+    return d
 
 
 def _reject_constant(name):

@@ -68,6 +68,63 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(out["upload"]["missing_inputs"], [])
 
+    def test_range_error_does_not_echo_number(self):
+        o = json.loads(body())
+        o["returns"][3] = 123456.789
+        code, out = api.handle(json.dumps(o).encode(), enabled=True)
+        self.assertEqual(code, 400)
+        self.assertNotIn("123456", out["error"])
+
+    def test_huge_ints_are_400_not_500(self):
+        for field, val in (("returns", None), ("cost_bp", 10 ** 400), ("n_trades", 10 ** 400), ("n_trials", 10 ** 400)):
+            o = json.loads(body(400, turnover=[0.1] * 400, cost_bp=8, cost_included=True))
+            if field == "returns":
+                o["returns"][5] = 10 ** 400
+            else:
+                o[field] = val
+            code, out = api.handle(json.dumps(o).encode(), enabled=True)
+            self.assertEqual(code, 400, field)
+
+    def test_internal_errors_are_fixed_500(self):
+        real = api.uc.upload_check
+        api.uc.upload_check = lambda *a, **k: (_ for _ in ()).throw(ValueError("/Users/secret/path boom"))
+        try:
+            code, out = api.handle(body(), enabled=True)
+        finally:
+            api.uc.upload_check = real
+        self.assertEqual(code, 500)
+        self.assertNotIn("secret", out["error"])
+        api.uc.upload_check = lambda *a, **k: {"x": float("nan")}                    # 序列化失败
+        try:
+            code, out = api.handle(body(), enabled=True)
+        finally:
+            api.uc.upload_check = real
+        self.assertEqual(code, 500)
+        self.assertNotIn("nan", out["error"].lower())
+
+    def test_duplicate_keys_rejected(self):
+        ok = body()                                                                   # 本身是合法请求
+        self.assertEqual(api.handle(ok, enabled=True)[0], 200)
+        dup = ok[:-1] + b', "n_trials": 100}'                                         # 末尾追加一个重复的 n_trials
+        self.assertEqual(api.handle(dup, enabled=True)[0], 400)
+
+    def test_row_cap_and_busy(self):
+        n = api.API_MAX_ROWS + 1
+        raw = json.dumps({"dates": ["2019-01-01"] * n, "returns": [0.0] * n, "n_trials": 1}).encode()
+        self.assertEqual(api.handle(raw, enabled=True)[0], 413)
+        self.assertTrue(api._BUSY.acquire(blocking=False))
+        try:
+            self.assertEqual(api.handle(body(), enabled=True)[0], 429)
+        finally:
+            api._BUSY.release()
+        self.assertEqual(api.handle(body(), enabled=True)[0], 200)                    # 释放后恢复
+
+    def test_semaphore_released_after_error(self):
+        o = json.loads(body())
+        o["n_trials"] = 0
+        api.handle(json.dumps(o).encode(), enabled=True)
+        self.assertEqual(api.handle(body(), enabled=True)[0], 200)
+
     def test_no_app_import(self):
         self.assertNotIn("app", sys.modules)
 

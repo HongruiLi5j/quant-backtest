@@ -21,10 +21,15 @@ import math
 
 from . import health_check as hc
 
+class UploadInputError(ValueError):
+    """输入校验错误：消息是固定文案，不含用户原文，接口层可以安全地返回给调用方。"""
+
+
 MAX_ROWS = 20000          # 单次上传的最大行数（约 80 年日线）
 MIN_ROWS = 3
 MIN_SEGMENT = 30          # 用户指定切分日时，样本内和样本外各至少这么多天
 MAX_TRIALS = 10 ** 9
+MAX_TRADES = 10 ** 7
 MAX_ABS_COST_BP = 1000.0
 
 
@@ -38,21 +43,24 @@ def _date(x, what="日期") -> _dt.date:
             return _dt.date.fromisoformat(x.strip())
         except ValueError:
             pass
-    raise ValueError(f"{what}必须是 YYYY-MM-DD 格式的日期")                 # 不回显用户内容原文
+    raise UploadInputError(f"{what}必须是 YYYY-MM-DD 格式的日期")                 # 不回显用户内容原文
 
 
 def _floats(xs, what, low=None, high=None, low_inclusive=True):
     out = []
     for i, v in enumerate(xs):
         if isinstance(v, bool) or not isinstance(v, (int, float)):
-            raise ValueError(f"{what}第 {i + 1} 个值不是数字")
-        f = float(v)
+            raise UploadInputError(f"{what}第 {i + 1} 个值不是数字")
+        try:
+            f = float(v)
+        except OverflowError:
+            raise UploadInputError(f"{what}第 {i + 1} 个值太大")
         if not math.isfinite(f):
-            raise ValueError(f"{what}第 {i + 1} 个值不是有限数")
+            raise UploadInputError(f"{what}第 {i + 1} 个值不是有限数")
         if low is not None and (f < low if low_inclusive else f <= low):
-            raise ValueError(f"{what}第 {i + 1} 个值 {f} 超出允许范围")
+            raise UploadInputError(f"{what}第 {i + 1} 个值超出允许范围")
         if high is not None and f > high:
-            raise ValueError(f"{what}第 {i + 1} 个值 {f} 超出允许范围")
+            raise UploadInputError(f"{what}第 {i + 1} 个值超出允许范围")
         out.append(f)
     return out
 
@@ -62,7 +70,7 @@ def _equity(rets):
     for r in rets:
         e.append(e[-1] * (1.0 + r))
     if any(not math.isfinite(v) or v <= 0 for v in e):
-        raise ValueError("收益累乘后净值不是正的有限数")
+        raise UploadInputError("收益累乘后净值不是正的有限数")
     return e
 
 
@@ -116,48 +124,54 @@ def _fix_cost_ruin(out, ruined, cost_sens):
 def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, split_date=None,
                  turnover=None, cost_bp=None, cost_included=None) -> dict:
     if isinstance(n_trials, bool) or not isinstance(n_trials, int) or not 1 <= n_trials <= MAX_TRIALS:
-        raise ValueError("n_trials 必须是 ≥ 1 的整数（你一共试过多少个策略/参数版本）")
+        raise UploadInputError("n_trials 必须是 ≥ 1 的整数（你一共试过多少个策略/参数版本）")
     if not isinstance(dates, (list, tuple)) or not isinstance(returns, (list, tuple)):
-        raise ValueError("dates 和 returns 必须是列表")
+        raise UploadInputError("dates 和 returns 必须是列表")
     n = len(returns)
     if n != len(dates):
-        raise ValueError("日期和收益的行数不一致")
+        raise UploadInputError("日期和收益的行数不一致")
     if not MIN_ROWS <= n <= MAX_ROWS:
-        raise ValueError(f"行数必须在 {MIN_ROWS} 到 {MAX_ROWS} 之间")
+        raise UploadInputError(f"行数必须在 {MIN_ROWS} 到 {MAX_ROWS} 之间")
     ds = [_date(d) for d in dates]
     if any(b <= a for a, b in zip(ds, ds[1:])):
-        raise ValueError("日期必须严格递增（不能有重复或倒序）")
+        raise UploadInputError("日期必须严格递增（不能有重复或倒序）")
     r = _floats(returns, "收益", low=-1.0, high=10.0, low_inclusive=False)       # 日收益 > -100%，且不超过 +1000%（防数量级错误）
 
     b = None
     if benchmark is not None:
         if not isinstance(benchmark, (list, tuple)) or len(benchmark) != n:
-            raise ValueError("基准收益必须是与收益等长的列表")
+            raise UploadInputError("基准收益必须是与收益等长的列表")
         b = _floats(benchmark, "基准收益", low=-1.0, high=10.0, low_inclusive=False)
 
-    if n_trades is not None and (isinstance(n_trades, bool) or not isinstance(n_trades, int) or n_trades < 0):
-        raise ValueError("n_trades 必须是 ≥ 0 的整数或不填")
+    if n_trades is not None and (isinstance(n_trades, bool) or not isinstance(n_trades, int) or not 0 <= n_trades <= MAX_TRADES):
+        raise UploadInputError(f"n_trades 必须是 0 到 {MAX_TRADES} 的整数或不填")
 
     has_cost = turnover is not None or cost_bp is not None
     if has_cost and (turnover is None or cost_bp is None):
-        raise ValueError("成本敏感性需要同时提供 turnover 和 cost_bp")
+        raise UploadInputError("成本敏感性需要同时提供 turnover 和 cost_bp")
     if cost_included is not None and not isinstance(cost_included, bool):
-        raise ValueError("cost_included 必须是 true/false 或不填")
+        raise UploadInputError("cost_included 必须是 true/false 或不填")
     warnings = []
     t = None
     if has_cost:
         if cost_included is None:
-            raise ValueError("提供了换手和费率，必须说明收益是否已经扣过成本（cost_included）")
+            raise UploadInputError("提供了换手和费率，必须说明收益是否已经扣过成本（cost_included）")
         if not isinstance(turnover, (list, tuple)) or len(turnover) != n:
-            raise ValueError("turnover 必须是与收益等长的列表")
+            raise UploadInputError("turnover 必须是与收益等长的列表")
         t = _floats(turnover, "换手", low=0.0, high=20.0)
-        if isinstance(cost_bp, bool) or not isinstance(cost_bp, (int, float)) or not 0 <= float(cost_bp) <= MAX_ABS_COST_BP:
-            raise ValueError("cost_bp 必须是 0 到 1000 之间的数字（单边，bp）")
-        unit = float(cost_bp) / 1e4
+        if isinstance(cost_bp, bool) or not isinstance(cost_bp, (int, float)):
+            raise UploadInputError("cost_bp 必须是 0 到 1000 之间的数字（单边，bp）")
+        try:
+            cost_bp = float(cost_bp)
+        except OverflowError:
+            raise UploadInputError("cost_bp 必须是 0 到 1000 之间的数字（单边，bp）")
+        if not 0 <= cost_bp <= MAX_ABS_COST_BP:
+            raise UploadInputError("cost_bp 必须是 0 到 1000 之间的数字（单边，bp）")
+        unit = cost_bp / 1e4
         if cost_included is False:
             r = [x - ti * unit for x, ti in zip(r, t)]                       # 用户给的是毛收益：先扣 1 倍成本，再在净收益上做体检
             if any(x <= -1.0 for x in r):
-                raise ValueError("扣成本后出现 ≤ -100% 的日收益")
+                raise UploadInputError("扣成本后出现 ≤ -100% 的日收益")
     elif cost_included is False:
         warnings.append("收益未扣成本且没有提供换手数据：结论会偏乐观。")
     elif cost_included is None:
@@ -170,7 +184,7 @@ def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, spl
         sd = _date(split_date, "切分日")
         cut = next((i for i, d in enumerate(ds) if d >= sd), n)
         if cut < MIN_SEGMENT or n - cut < MIN_SEGMENT:
-            raise ValueError(f"切分日需让样本内和样本外各至少 {MIN_SEGMENT} 个交易日")
+            raise UploadInputError(f"切分日需让样本内和样本外各至少 {MIN_SEGMENT} 个交易日")
         split_used, split_note = ds[cut].isoformat(), "用户指定的切分日（仍是事后选择，不是封存的样本外）"
     is_s, oos_s = _sharpe_ann(r[:cut]), _sharpe_ann(r[cut:])
     split = {"date": split_used, "is": {"sharpe": is_s}, "oos": {"sharpe": oos_s}}
