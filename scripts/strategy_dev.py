@@ -61,8 +61,8 @@ def log(msg):
 def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
     """逐期 TopkDropout 回测（numpy）。全部输入是 (T, N) 数组，dates 是长度 T 的 DatetimeIndex。
     信号用 t 日及以前；t+1 开盘成交；持有到下一个调仓日的 t'+1 开盘。成本按实际买入+卖出金额（占净值比例）× 单边 bp。
-    买不进（无开盘价/无成交量/开盘涨幅≥9.5%）的候选顺延到下一名；卖不出（无成交/开盘跌幅≥9.5%）的旧仓继续持有；
-    停牌期间退出价用最后一个收盘价。基准 = t 日可交易、t+1 能买进、有退出价的股票等权，不扣成本。
+    买不进（无开盘价/开盘涨幅≥9.5%）的候选顺延到下一名；卖不出（无开盘价/开盘跌幅≥9.5%）的旧仓继续持有；
+    停牌期间退出价用决策日以前的最后一个收盘价；能否成交只看次日是否有开盘价(本地数据停牌日没有行)，不用次日成交量。基准 = t 日可交易、t+1 能买进、有退出价的股票等权，不扣成本。
     返回 DataFrame：sig_date、exit_date、gross、cost、net、bench、excess、turnover、n_hold。"""
     T, N = O.shape
     pos = rebalance_positions(T, step)
@@ -278,13 +278,28 @@ def _prep(panel, fx):
 
 
 def restrict_columns(panel, cols):
-    """只保留指定股票列：最终段用的股票池在拿锁之前就由选择面板定死，最终段的数据长度不能改变池子。"""
-    kw = {f: getattr(panel, f)[cols] for f in ("open", "high", "low", "close", "volume")}
+    """只保留指定股票列，并去掉这些股票全都没有行情的日期：最终段用的股票池和交易日历在拿锁之前就由选择面板定死，
+    被排除股票的日期不能改变调仓日(调仓按行号每隔固定步长)。"""
+    idx = panel.close[cols].dropna(how="all").index
+    kw = {f: getattr(panel, f).loc[idx, cols] for f in ("open", "high", "low", "close", "volume")}
     for f in ("names", "industry"):
         v = getattr(panel, f)
         if v is not None:
             kw[f] = v.reindex(cols)
+    if panel.market_ret is not None:
+        kw["market_ret"] = panel.market_ret.reindex(idx)
     return dataclasses.replace(panel, **kw)
+
+
+def check_same_history(sel, full, end):
+    """完整面板截到 end 的日期与行情必须和选择面板完全一致，否则拒绝(防止选择阶段与最终段用了不同的交易日历或数据)。"""
+    a, b = sel.close, full.close.loc[:end]
+    if not a.index.equals(b.index) or not list(a.columns) == list(b.columns):
+        raise ValueError("完整面板与选择面板的日期或股票列不一致")
+    for f in ("open", "close", "volume"):
+        x, y = getattr(sel, f), getattr(full, f).loc[:end]
+        if not x.equals(y):
+            raise ValueError(f"完整面板与选择面板的 {f} 历史数据不一致")
 
 
 def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, full_panel_fn=None):
@@ -313,6 +328,7 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, 
         except FileExistsError:
             return None
         full = restrict_columns(full_panel_fn() if full_panel_fn else panel, list(sel.close.columns))
+        check_same_history(sel, full, VALID[1])
         fok, fO, fC, fV, fCff, fdates = _prep(full, fx)
         res = {}
         for cid in ids:

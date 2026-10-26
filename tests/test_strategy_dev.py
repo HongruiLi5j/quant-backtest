@@ -409,6 +409,45 @@ class FinalUniverseTests(unittest.TestCase):
         self.assertIn(N, shapes)
         self.assertNotIn(N + 1, shapes)                                            # 最终段没有把选择面板之外的新股票带进池子
 
+        # 完整面板的历史与选择面板不一致：run_all 在最终段路径上必须拒绝
+        bad = fx.Panel(*(getattr(panel, f).copy() for f in ("open", "high", "low", "close", "volume")), panel.names, panel.industry)
+        bad.close.iloc[100, 3] *= 1.5
+        sd.select_and_test = force
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(ValueError):
+                    sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=Path(d) / "L2.json", full_panel_fn=lambda: bad)
+        finally:
+            sd.select_and_test = real_sel
+
+
+class FinalCalendarTests(unittest.TestCase):
+    def test_excluded_stock_dates_do_not_shift_calendar(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2022-01-03", "2024-06-28")
+        a = pd.DataFrame({"A": np.linspace(10, 12, len(dates))}, index=dates).iloc[1:]       # A 从第 2 个日期开始有行情
+        b = pd.DataFrame({"B": np.linspace(10, 12, len(dates))}, index=dates)                # B 多出第 1 个日期
+        wide = pd.concat([a, b], axis=1)
+        names = pd.Series(["a", "b"], index=["A", "B"])
+        full = fx.Panel(wide, wide, wide, wide, wide, names, pd.Series("x", index=["A", "B"]))
+        r = sd.restrict_columns(full, ["A"])
+        self.assertEqual(list(r.close.columns), ["A"])
+        self.assertEqual(r.close.index[0], a.index[0])                              # B 独有的日期被去掉，调仓日历不变
+
+    def test_check_same_history(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2022-01-03", "2024-06-28")
+        df = pd.DataFrame({"A": np.linspace(10, 12, len(dates))}, index=dates)
+        mk = lambda d: fx.Panel(d, d, d, d, d, pd.Series(["a"], index=["A"]), pd.Series("x", index=["A"]))
+        sel = sd.truncate_panel(mk(df), sd.VALID[1])
+        sd.check_same_history(sel, mk(df), sd.VALID[1])                              # 一致：不报错
+        bad = df.copy()
+        bad.iloc[10, 0] = 99.0
+        with self.assertRaises(ValueError):
+            sd.check_same_history(sel, mk(bad), sd.VALID[1])                         # 历史数据被改动：拒绝
+        with self.assertRaises(ValueError):
+            sd.check_same_history(sel, mk(df.iloc[1:]), sd.VALID[1])                 # 日期不一致：拒绝
+
 
 class FinalLockTests(unittest.TestCase):
     def test_lock_is_exclusive(self):
