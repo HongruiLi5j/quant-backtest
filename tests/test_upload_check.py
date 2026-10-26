@@ -112,7 +112,7 @@ class FixTests(unittest.TestCase):
         self.assertTrue(any("你指定的切分日" in x["zh"] for x in out["caveats"]))
 
     def test_cost_ruin_only_at_4x_is_warn(self):
-        d, r, b, _ = make(n=600)
+        d, r, b, _ = make(n=600, mu=0.004, sd=0.005)             # 漂移很强，2x 夏普仍为正
         r[100] = -0.5
         t = [0.0] * 600
         t[100] = 20.0                                                              # 2x: -0.7 仍活着；4x: -1.1 亏光
@@ -120,6 +120,22 @@ class FixTests(unittest.TestCase):
         c = next(c for c in out["checks"] if c["id"] == "cost")
         self.assertEqual(c["value"]["ruined"], ["4x"])
         self.assertNotEqual(c["status"], "pass")
+        self.assertIn("亏光", c["zh"])
+        self.assertNotIn("没有成本敏感性数据", c["zh"])
+        self.assertIn("按警告处理", c["zh"])
+
+    def test_existing_fail_not_downgraded_by_4x_ruin(self):
+        # 2x 夏普本来就 ≤ 0(原判 fail)，同时 4x 亏光：必须保持 fail，不能降成 warn
+        d, r, b, _ = make(n=600, mu=0.0002)
+        r[100] = -0.5
+        t = [0.2] * 600
+        t[100] = 20.0
+        out = uc.upload_check(d, r, 1, benchmark=b, n_trades=60, turnover=t, cost_bp=100, cost_included=True)
+        c = next(c for c in out["checks"] if c["id"] == "cost")
+        self.assertIn("4x", c["value"]["ruined"])
+        self.assertEqual(c["status"], "fail")
+        self.assertIn("cost", out["verdict"]["fails"])
+        json.dumps(out, ensure_ascii=False, allow_nan=False)
 
     def test_default_split_text_mentions_posthoc(self):
         d, r, b, t = make(n=600)

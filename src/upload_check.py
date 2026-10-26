@@ -93,14 +93,23 @@ def _fix_oos_text(out, split_used, split_note, is_s, oos_s):
             c["en"] = "The in/out-of-sample split is chosen after the fact (default 70/30, or your date), not a sealed clean out-of-sample test."
 
 
-def _fix_cost_ruin(out, ruined):
-    """成本压力下出现单日亏光（净值归零）：这是失败，不是缺数据；health_check 会把 None 当成没数据，所以在这里改判。"""
+def _fix_cost_ruin(out, ruined, cost_sens):
+    """成本压力下出现单日亏光（净值归零）：这是失败，不是缺数据；health_check 会把 None 当成没数据，所以在这里改判并重写文字。
+    只升级不降级：原来已经是 fail（例如 2x 夏普 ≤ 0）就保持 fail。"""
+    sh = {x["label"]: x["sharpe"] for x in cost_sens}
+    show = lambda k: "亏光" if k in ruined else hc._fmt(sh.get(k))
+    show_en = lambda k: "wiped out" if k in ruined else hc._fmt(sh.get(k))
+    s2_bad = "2x" in ruined or (sh.get("2x") is not None and sh["2x"] <= 0)
     for c in out["checks"]:
         if c["id"] == "cost":
-            c["status"] = "fail" if ("1x" in ruined or "2x" in ruined) else "warn"
+            new = "fail" if (c["status"] == "fail" or "1x" in ruined or "2x" in ruined or s2_bad) else "warn"
+            c["status"] = new
             c["value"]["ruined"] = list(ruined)
-            c["zh"] += f" 注意：在成本 {'/'.join(ruined)} 的压力场景下出现单日亏光（≤ -100%），这按失败处理，不是缺数据。"
-            c["en"] += f" Note: under the {'/'.join(ruined)} cost stress a single day loses everything (<= -100%); this counts as a failure, not missing data."
+            word_zh, word_en = ("按失败处理" if new == "fail" else "按警告处理"), ("counts as a failure" if new == "fail" else "counts as a warning")
+            c["zh"] = (f"成本 1 倍 / 2 倍 / 4 倍时夏普：{show('1x')} / {show('2x')} / {show('4x')}。成本翻倍后夏普要仍为正。"
+                       f"在成本 {'/'.join(ruined)} 的压力场景下出现单日亏光（≤ -100%），{word_zh}，不是缺数据。费率是估算值，真实成本和滑点可能更高。")
+            c["en"] = (f"Sharpe at 1x / 2x / 4x costs: {show_en('1x')} / {show_en('2x')} / {show_en('4x')}. Sharpe must stay positive at 2x costs. "
+                       f"Under the {'/'.join(ruined)} cost stress a single day loses everything (<= -100%); this {word_en}, not missing data. Fees are estimates; real costs and slippage may be higher.")
     out["verdict"] = hc._verdict(out["checks"])
 
 
@@ -184,7 +193,7 @@ def upload_check(dates, returns, n_trials, *, benchmark=None, n_trades=None, spl
 
     _fix_oos_text(out, split_used, split_note, is_s, oos_s)
     if ruined:
-        _fix_cost_ruin(out, ruined)
+        _fix_cost_ruin(out, ruined, cost_sens)
     missing = []
     if b is None:
         missing.append("benchmark")
