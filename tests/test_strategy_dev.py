@@ -60,8 +60,9 @@ class EngineTests(unittest.TestCase):
         self.assertAlmostEqual(r2["gross"].iloc[0], 0.5 * 0.2, places=6)
 
     def test_zero_volume_not_buyable(self):
-        self.V[1, 0] = 0.0
-        self.V[1, 1] = 0.0
+        for j in (0, 1):                                                          # 停牌日在本地数据里没有行：开盘价缺失
+            self.V[1, j] = 0.0
+            self.O[1, j] = np.nan
         r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2)
         self.assertEqual(r["n_hold"].iloc[0], 2)                                  # 顺延到 2、3 号
 
@@ -188,6 +189,18 @@ class EngineFixTests(unittest.TestCase):
         self.assertAlmostEqual(r["gross"].iloc[1], w0 * (20.0 / 10.8 - 1.0), places=6)
         self.assertGreater(abs(w0 - 0.5), 0.01)
 
+    def test_unbuyable_kept_name_is_not_topped_up(self):
+        # 0 号第 1 期跌到 8.8 后，第 2 期 t+1 开盘涨停(前收 8 → 8.8)：买不进，不能加仓到 0.5，多出的部分留作现金
+        self.O[1:6, 0] = 10.0
+        self.C[5, 0] = 8.0                                                         # 第 2 期决策日收盘 8
+        self.O[6:11, 0] = 8.8
+        self.C[6:11, 0] = 8.8
+        self.O[11:, 0] = 17.6
+        self.C[11:, 0] = 17.6
+        r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        w0 = 0.44 / 0.94                                                           # 第 1 期 0 号 10 → 8.8，权重漂移到 w0
+        self.assertAlmostEqual(r["gross"].iloc[1], w0 * (17.6 / 8.8 - 1.0), places=6)
+
     def test_suspended_held_not_rebalanced(self):
         self.O[6, 0] = np.nan
         self.V[6, 0] = 0.0
@@ -206,6 +219,25 @@ class EngineFixTests(unittest.TestCase):
         r = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=1, ndrop=0)
         self.assertAlmostEqual(r["gross"].iloc[0], 0.2, places=6)                  # 退出估值 12，不是 99
         self.assertAlmostEqual(r["gross"].iloc[1], 0.0, places=6)                  # 第 2 期入场估值 12，不是 99
+
+    def test_next_day_volume_not_used(self):
+        # 次日成交量不能影响能否成交：把 t+1 的成交量改成 0 但开盘价正常，结果不变
+        self.O[6:, 0] = 12.0                                                       # 0 号第 1 期涨 20%，成交量被改后若误判不可买，结果会不同
+        self.C[6:, 0] = 12.0
+        base = run(self.score, self.ok, self.O, self.C, self.V, self.dates, K=2)
+        V2 = self.V.copy()
+        V2[1, 0] = 0.0
+        V2[6, 1] = 0.0
+        alt = run(self.score, self.ok, self.O, self.C, V2, self.dates, K=2)
+        self.assertEqual(list(base["gross"]), list(alt["gross"]))
+
+    def test_liquidation_cost_enters_excess(self):
+        # 清仓期没有任何可买股票：基准按空仓 0 计，清仓成本必须出现在超额统计里(不是 NaN)
+        ok = self.ok.copy()
+        ok[5:, :] = False
+        r = run(self.score, ok, self.O, self.C, self.V, self.dates, K=2, ndrop=0)
+        self.assertTrue(np.isfinite(r["excess"].iloc[1]))
+        self.assertAlmostEqual(r["excess"].iloc[1], -r["cost"].iloc[1])
 
     def test_liquidation_period_not_skipped(self):
         # 第 2 期起没有任何股票有资格：必须清仓并付成本，且后面不再带着旧仓位
@@ -333,6 +365,51 @@ class PreregTests(unittest.TestCase):
                 sd.write_prereg(out, 10, 8, 100, True)
 
 
+class FullPanelTests(unittest.TestCase):
+    def test_restrict_columns_and_lazy_full_panel(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2022-06-01", "2024-06-30")
+        df = pd.DataFrame(10.0, index=dates, columns=["600000", "600001", "600002"])
+        names = pd.Series(["a", "b", "c"], index=df.columns)
+        panel = fx.Panel(df, df, df, df, df, names, pd.Series("x", index=df.columns))
+        r = sd.restrict_columns(panel, ["600000", "600002"])
+        self.assertEqual(list(r.close.columns), ["600000", "600002"])
+        self.assertEqual(list(r.names.index), ["600000", "600002"])
+
+
+class FinalUniverseTests(unittest.TestCase):
+    def test_final_run_restricted_to_selection_universe(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2014-06-02", "2025-06-30")
+        rng = np.random.default_rng(0)
+        N = 45
+        cols = [f"{600000 + i}" for i in range(N)]
+        close = pd.DataFrame(10 * np.exp(np.cumsum(rng.normal(0.0002, 0.015, (len(dates), N)), axis=0)), index=dates, columns=cols)
+        vol = pd.DataFrame(rng.uniform(5e6, 2e7, close.shape), index=dates, columns=cols)
+        panel = fx.Panel(close.shift(1).fillna(close.iloc[0]), close * 1.01, close * 0.99, close, vol,
+                         pd.Series([f"股票{i}" for i in range(N)], index=cols), pd.Series("x", index=cols))
+        extra = panel.close["600000"].rename("688999")
+        big = fx.Panel(*(pd.concat([getattr(panel, f), extra], axis=1) for f in ("open", "high", "low", "close", "volume")),
+                       pd.concat([panel.names, pd.Series(["新股"], index=["688999"])]), pd.concat([panel.industry, pd.Series(["x"], index=["688999"])]))
+        shapes, real, real_sel = [], sd.run_portfolio, sd.select_and_test
+
+        def spy(score, ok, O, *a, **k):
+            shapes.append(O.shape[1])
+            return real(score, ok, O, *a, **k)
+
+        def force(cands, provider=None):                                           # 强制走最终段路径
+            provider([next(iter(cands))])
+            return real_sel(cands, lambda ids: {})
+        sd.run_portfolio, sd.select_and_test = spy, force
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=Path(d) / "L.json", full_panel_fn=lambda: big)
+        finally:
+            sd.run_portfolio, sd.select_and_test = real, real_sel
+        self.assertIn(N, shapes)
+        self.assertNotIn(N + 1, shapes)                                            # 最终段没有把选择面板之外的新股票带进池子
+
+
 class FinalLockTests(unittest.TestCase):
     def test_lock_is_exclusive(self):
         with tempfile.TemporaryDirectory() as d:
@@ -378,8 +455,11 @@ class IntegrationTests(unittest.TestCase):
         panel = fx.Panel(open_, close * 1.01, close * 0.99, close, vol, names, pd.Series("x", index=cols))
         with tempfile.TemporaryDirectory() as d:
             lock = Path(d) / "L.json"
-            rep, cands = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock)
+            seen = []
+            rep, cands = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock,
+                                    full_panel_fn=lambda: seen.append(lock.exists()) or panel)
             kept = [r for r in rep["top"] if r["kept"]]
+            self.assertEqual(seen, [True] if kept else [])                         # 完整面板只在拿到锁之后、且确有候选留下时才构造
             if kept:
                 self.assertTrue(lock.exists())
                 rep2, _ = sd.run_all(panel, fx, 8, smoke=True, n_random=3, lock_path=lock)

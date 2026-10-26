@@ -68,9 +68,9 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
     pos = rebalance_positions(T, step)
     rows, w_pre = [], np.zeros(N)
     for a, b in zip(pos[:-1], pos[1:]):
-        o1, v1, pc = O[a + 1], V[a + 1], C[a]
-        # 次日开盘能否成交：有开盘价且当天不是停牌日(停牌是开盘前就已知的状态，成交量为 0 即停牌)；涨跌停按开盘价相对前收判断
-        tradable = np.isfinite(o1) & (v1 > 0) & np.isfinite(pc)
+        o1, pc = O[a + 1], C[a]
+        # 次日开盘能否成交：只看次日是否有开盘价(本地数据里停牌日没有行，已核对 40 万行样本无零成交行)，不用次日成交量；涨跌停按开盘价相对前收判断
+        tradable = np.isfinite(o1) & (o1 > 0) & np.isfinite(pc)
         with np.errstate(divide="ignore", invalid="ignore"):
             gap = o1 / pc - 1.0
         can_buy = tradable & (gap < LIMIT_UP)
@@ -102,7 +102,7 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
         # 入场价：当天能成交用开盘价，否则沿用决策日以前的最后一个收盘价；退出价同理(不用 t+1 当天收盘价)
         entry = np.where(tradable, o1, Cff[a])
         o2 = O[b + 1]
-        exit_px = np.where(np.isfinite(o2) & (V[b + 1] > 0), o2, Cff[b])
+        exit_px = np.where(np.isfinite(o2) & (o2 > 0), o2, Cff[b])
         with np.errstate(divide="ignore", invalid="ignore"):
             r = exit_px / entry - 1.0
         r_f = np.where(np.isfinite(r), r, 0.0)
@@ -110,7 +110,7 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
         buys, sells = np.maximum(w_tgt - w_pre, 0).sum(), np.maximum(w_pre - w_tgt, 0).sum()
         cost = float((buys + sells) * cost_bp / 1e4)
         elig = valid & can_buy & np.isfinite(r)
-        bench = float(r[elig].mean()) if elig.any() else float("nan")
+        bench = float(r[elig].mean()) if elig.any() else 0.0           # 没有可买股票(如清仓期)：基准按空仓 0 计，保证清仓成本进入超额统计
         rows.append({"sig_date": dates[a], "exit_date": dates[b + 1], "gross": gross, "cost": cost, "net": gross - cost, "bench": bench,
                      "excess": gross - cost - bench, "turnover": float((buys + sells) / 2), "n_hold": int(keep.sum())})
         # 权重都是占「当期净值」的比例：费用按比例从各持仓和现金里扣，所以不改变持仓之间的相对权重，只体现在 net 里
@@ -277,8 +277,19 @@ def _prep(panel, fx):
             panel.close.ffill().values, panel.close.index)
 
 
-def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None):
-    """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先拿全局锁，再用完整面板只跑这几个候选。
+def restrict_columns(panel, cols):
+    """只保留指定股票列：最终段用的股票池在拿锁之前就由选择面板定死，最终段的数据长度不能改变池子。"""
+    kw = {f: getattr(panel, f)[cols] for f in ("open", "high", "low", "close", "volume")}
+    for f in ("names", "industry"):
+        v = getattr(panel, f)
+        if v is not None:
+            kw[f] = v.reindex(cols)
+    return dataclasses.replace(panel, **kw)
+
+
+def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, full_panel_fn=None):
+    """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先拿全局锁，再调用 full_panel_fn() 取完整面板，
+    只跑这几个候选，且股票池限定为选择面板的股票。full_panel_fn 缺省时用 panel 自己(仅测试)。
     lock_path 为 None 且有候选需要看最终段时直接报错(不允许没有锁地看最终段)。"""
     sel = truncate_panel(panel, VALID[1])
     ok, O, C, V, Cff, dates = _prep(sel, fx)
@@ -301,11 +312,12 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None):
             acquire_final_lock(lock_path, ids)
         except FileExistsError:
             return None
-        fok, fO, fC, fV, fCff, fdates = _prep(panel, fx)
+        full = restrict_columns(full_panel_fn() if full_panel_fn else panel, list(sel.close.columns))
+        fok, fO, fC, fV, fCff, fdates = _prep(full, fx)
         res = {}
         for cid in ids:
             fid, step, K = cid.split("|")[0], int(cid.split("|")[1][:-1]), int(cid.split("|")[2][1:])
-            sc = (fx.compute_factor(fid, panel) * fx.FACTORS[fid].direction).values
+            sc = (fx.compute_factor(fid, full) * fx.FACTORS[fid].direction).values
             d = run_portfolio(sc, fok, fO, fC, fV, fCff, fdates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
             res[cid] = split_segments(d)["final"] if len(d) else d
         return res
@@ -389,10 +401,11 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     write_prereg(out, len(candidate_grid(fx, a.smoke)), cost_bp, len(codes), a.smoke)
     log(f"构造面板：{len(codes)} 只")
-    panel = build_arrays(codes, fx, allmarket)
+    panel = build_arrays(codes, fx, allmarket, end=VALID[1])             # 选择阶段只载入到验证段末尾：连「数据够不够 400 行」的筛选都看不到最终段
     log(f"面板 {panel.close.shape}，开始候选搜索")
     lock = out / "FINAL_LOCK_SMOKE.json" if a.smoke else ROOT / "handoff" / "data" / "dev" / "FINAL_LOOKED.json"     # 正式锁在固定全局路径，换输出目录也绕不过
-    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock)
+    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock,
+                    full_panel_fn=lambda: build_arrays(codes, fx, allmarket))
     (out / "dev_results.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     (out / "report.md").write_text(render(rep, len(codes), cost_bp, a.smoke), encoding="utf-8")
     log("完成")
