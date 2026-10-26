@@ -38,14 +38,14 @@ def _date(x, what="日期") -> _dt.date:
             return _dt.date.fromisoformat(x.strip())
         except ValueError:
             pass
-    raise ValueError(f"{what}必须是 YYYY-MM-DD 格式的日期：{x!r}")
+    raise ValueError(f"{what}必须是 YYYY-MM-DD 格式的日期")                 # 不回显用户内容原文
 
 
 def _floats(xs, what, low=None, high=None, low_inclusive=True):
     out = []
     for i, v in enumerate(xs):
         if isinstance(v, bool) or not isinstance(v, (int, float)):
-            raise ValueError(f"{what}第 {i + 1} 个值不是数字：{v!r}")
+            raise ValueError(f"{what}第 {i + 1} 个值不是数字")
         f = float(v)
         if not math.isfinite(f):
             raise ValueError(f"{what}第 {i + 1} 个值不是有限数")

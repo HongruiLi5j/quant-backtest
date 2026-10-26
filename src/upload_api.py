@@ -1,0 +1,58 @@
+"""上传体检的接口层（T031 S2，纯函数）：把请求体（JSON 字节）解析成参数，调用 upload_check，返回 (HTTP 状态码, 可序列化字典)。
+
+只做：大小限制、JSON 解析、键名白名单、类型检查、错误信息整理。**不读写文件、不联网、不记录请求内容、不导入 app**。
+路由接线（app.py 里一行）和登录校验由调用方负责；本函数默认关闭开关：enabled 为 False 时一律返回 404（像这个接口不存在）。
+
+请求体 JSON：{"dates": [...], "returns": [...], "n_trials": 整数, 可选: "benchmark", "n_trades", "split_date",
+              "turnover", "cost_bp", "cost_included"}
+"""
+from __future__ import annotations
+
+import json
+
+from . import upload_check as uc
+
+MAX_BODY_BYTES = 2 * 1024 * 1024          # 2MB：约 2 万行日期+收益+基准+换手绰绰有余
+ALLOWED_KEYS = {"dates", "returns", "n_trials", "benchmark", "n_trades", "split_date", "turnover", "cost_bp", "cost_included"}
+REQUIRED_KEYS = ("dates", "returns", "n_trials")
+
+
+def _err(code, msg):
+    return code, {"error": msg}
+
+
+def handle(body: bytes, *, enabled: bool = False):
+    """返回 (status, payload)。错误信息是固定文案或来自 upload_check 的校验消息（不回显用户内容原文）。"""
+    if enabled is not True:
+        return _err(404, "not_found")
+    if not isinstance(body, (bytes, bytearray)):
+        return _err(400, "请求体必须是 JSON")
+    if len(body) > MAX_BODY_BYTES:
+        return _err(413, f"请求体超过 {MAX_BODY_BYTES // 1024 // 1024}MB 上限")
+    try:
+        data = json.loads(bytes(body).decode("utf-8"), parse_constant=_reject_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return _err(400, "请求体不是合法的 JSON（NaN/Infinity 也不允许）")
+    if not isinstance(data, dict):
+        return _err(400, "请求体必须是 JSON 对象")
+    unknown = sorted(set(data) - ALLOWED_KEYS)
+    if unknown:
+        return _err(400, f"不认识的字段数量：{len(unknown)}")            # 不回显字段名，避免把用户内容原样放进响应
+    missing = [k for k in REQUIRED_KEYS if k not in data]
+    if missing:
+        return _err(400, "缺少必填字段：" + "、".join(missing))
+    try:
+        out = uc.upload_check(
+            data["dates"], data["returns"], data["n_trials"], benchmark=data.get("benchmark"), n_trades=data.get("n_trades"),
+            split_date=data.get("split_date"), turnover=data.get("turnover"), cost_bp=data.get("cost_bp"),
+            cost_included=data.get("cost_included"))
+        json.dumps(out, ensure_ascii=False, allow_nan=False)
+    except ValueError as e:
+        return _err(400, str(e)[:200])
+    except Exception:
+        return _err(500, "体检计算失败")
+    return 200, out
+
+
+def _reject_constant(name):
+    raise ValueError(f"不允许 {name}")

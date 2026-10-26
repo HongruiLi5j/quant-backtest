@@ -179,6 +179,14 @@ class ValidationTests(unittest.TestCase):
         self.bad(split_date=self.d[-5])                                            # 样本外太短
         self.bad(split_date="not-a-date")
 
+    def test_errors_do_not_echo_user_values(self):
+        for kw in ({"returns": ["SECRET-X"] + self.r[1:]}, {"dates": ["SECRET-Y"] + self.d[1:]}):
+            a = dict(dates=self.d, returns=self.r)
+            a.update(kw)
+            with self.assertRaises(ValueError) as cm:
+                uc.upload_check(a["dates"], a["returns"], 1)
+            self.assertNotIn("SECRET", str(cm.exception))
+
     def test_row_limit(self):
         n = uc.MAX_ROWS + 1
         d0 = dt.date(1900, 1, 1)
