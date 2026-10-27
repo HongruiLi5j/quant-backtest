@@ -620,6 +620,8 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _guard(self) -> bool:
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length") not in (None, "", "0"):
+            self.close_connection = True      # 带请求体的请求(含 GET 带体)回完就关：本服务不会处理的残留字节不能留在复用的连接上被当成下一个请求(请求走私，Codex N1027_4)
         host = self.headers.get("Host", "")
         # 临时分享用的 Cloudflare Tunnel 网址（*.trycloudflare.com）也放行：
         # 令牌校验（_authed）没跳过，光知道这个随机网址进不来
