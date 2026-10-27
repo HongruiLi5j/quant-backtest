@@ -412,6 +412,14 @@ class TradeListTests(unittest.TestCase):
             update.assert_not_called()
             etf_update.assert_not_called()
 
+    def test_retry_reason_control_characters_escaped(self):
+        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': 'bad\n2026-01-01 FAKE LOG\r\x1b[31mred\x00'})
+        ok, reason = T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=90))
+        self.assertFalse(ok)
+        for ch in ('\n', '\r', '\x1b', '\x00'):
+            self.assertNotIn(ch, reason)                                          # 不能伪造日志行或终端控制序列
+        self.assertIn('FAKE LOG', reason)
+
     def test_retry_refusal_reason_includes_last_error(self):
         self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': 'RuntimeError: 价格缺失'})
         ok, reason = T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=90))

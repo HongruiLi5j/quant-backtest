@@ -142,6 +142,18 @@ class ApiTests(unittest.TestCase):
         code, out = api.handle(body(), enabled=True)
         self.assertNotIn("factor_attribution", out)                                   # 不要求时不出现
 
+    def test_attribution_uses_net_returns_like_main_report(self):
+        """毛收益 + 换手 + 费率 与「等价的净收益」，主报告相同，因子归因也必须相同(Codex T037：曾差 25 个百分点)。"""
+        o = json.loads(body(400))
+        turn = [1.0] * 400
+        gross = dict(o, turnover=turn, cost_bp=50, cost_included=False, factor_model="ff3")
+        net = dict(o, returns=[r - 1.0 * 50 / 1e4 for r in o["returns"]], turnover=turn, cost_bp=50, cost_included=True, factor_model="ff3")
+        _, a = api.handle(json.dumps(gross).encode(), enabled=True, factor_loader=lambda: self._factors())
+        _, b = api.handle(json.dumps(net).encode(), enabled=True, factor_loader=lambda: self._factors())
+        self.assertAlmostEqual(a["factor_attribution"]["alpha_annual"], b["factor_attribution"]["alpha_annual"], places=9)
+        _, c = api.handle(json.dumps(dict(gross, cost_bp=0)).encode(), enabled=True, factor_loader=lambda: self._factors())
+        self.assertGreater(abs(a["factor_attribution"]["alpha_annual"] - c["factor_attribution"]["alpha_annual"]), 0.05)   # 成本确实改变了归因
+
     def test_factor_model_errors(self):
         for bad in ("capm", 3, ["ff3"], {"a": 1}, ""):
             self.assertEqual(api.handle(body(400, factor_model=bad), enabled=True, factor_loader=lambda: self._factors())[0], 400, bad)

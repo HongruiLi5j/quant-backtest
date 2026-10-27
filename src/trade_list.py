@@ -564,7 +564,7 @@ def attempt_status(day, *, cache=None, now=None):
         if attempt.get("day") != day:
             return True, "新的发布日，自动次数重新计算"
         count = int(attempt.get("count", 0))
-        why = f"（上次失败：{str(attempt.get('error'))[:200]}）" if attempt.get("error") else ""     # 把真实失败原因带进日志，不再只说「已尝试 3 次」
+        why = f"（上次失败：{re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', str(attempt.get('error')))[:200]}）" if attempt.get("error") else ""     # 把真实失败原因带进日志，不再只说「已尝试 3 次」
         if count >= 3:
             return False, "同一发布日已自动尝试 3 次" + why
         if count:

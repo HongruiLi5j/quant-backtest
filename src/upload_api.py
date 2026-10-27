@@ -60,7 +60,7 @@ def handle(body: bytes, *, enabled: bool = False, factor_loader=extdata.load_fac
             factors = factor_loader()
             if factors is None:
                 return _err(400, "因子数据还没有下载（在终端运行 .venv/bin/python -m src.extdata）")
-            out["factor_attribution"] = fa.attribute(data["dates"], data["returns"], factors, model)
+            out["factor_attribution"] = fa.attribute(data["dates"], _net_returns(data), factors, model)
     except (uc.UploadInputError, fa.AttributionError) as e:
         return _err(400, str(e)[:200])                                # 只有明确的输入校验错误才把消息返回给调用方
     except Exception:
@@ -72,6 +72,16 @@ def handle(body: bytes, *, enabled: bool = False, factor_loader=extdata.load_fac
     except Exception:
         return _err(500, "体检计算失败")
     return 200, out
+
+
+def _net_returns(data):
+    """因子归因要和主报告用同一份净收益：用户说明收益是毛收益(cost_included=false)且给了换手与费率时，先扣 1 倍成本。
+    (主报告 upload_check 已校验过这些输入；这里只做同样的减法。)"""
+    r = data["returns"]
+    if data.get("cost_included") is False and data.get("turnover") is not None and data.get("cost_bp") is not None:
+        unit = float(data["cost_bp"]) / 1e4
+        return [x - t * unit for x, t in zip(r, data["turnover"])]
+    return r
 
 
 def _no_dup_keys(pairs):

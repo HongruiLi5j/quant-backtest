@@ -20,7 +20,8 @@ import sys
 import time
 import zipfile
 from pathlib import Path
-from urllib.request import Request, urlopen
+from datetime import datetime
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = ROOT / "data" / "external"
@@ -45,7 +46,18 @@ class ExtDataError(Exception):
     pass
 
 
-def _http(url: str, opener=urlopen) -> bytes:
+class _NoRedirect(HTTPRedirectHandler):
+    """白名单地址只允许原地返回，任何重定向都拒绝(重定向可能跳到白名单之外，甚至 http)。"""
+
+    def redirect_request(self, *a, **k):
+        raise ExtDataError("不允许重定向")
+
+
+_default_open = build_opener(_NoRedirect).open
+
+
+def _http(url: str, opener=None) -> bytes:
+    opener = opener or _default_open
     if url not in SOURCES.values():
         raise ExtDataError("地址不在白名单内")
     if not url.startswith("https://"):
@@ -90,6 +102,13 @@ def _num(s: str):
     return v
 
 
+def _valid_day(d: str):
+    try:
+        datetime.strptime(d, "%Y-%m-%d")
+    except ValueError:
+        raise ExtDataError("日期不是真实存在的日历日")
+
+
 def parse_french(text: str, columns: list[str]) -> list[dict]:
     """Ken French 日度 CSV：前面是说明文字，表头行以逗号开头(第一格为空)，数据行第一格是 YYYYMMDD；数据后面是版权说明。百分数 → 小数。"""
     lines = text.splitlines()
@@ -100,15 +119,19 @@ def parse_french(text: str, columns: list[str]) -> list[dict]:
     if header != columns:
         raise ExtDataError(f"列名不符：{header}")
     rows, seen = [], set()
-    for l in lines[start + 1:]:
+    body = lines[start + 1:]
+    for i, l in enumerate(body):
         p = [x.strip() for x in l.split(",")]
         if not p or not re.fullmatch(r"\d{8}", p[0]):
             if rows:
+                if any(re.match(r"\s*\d{8}\s*,", x) for x in body[i + 1:]):
+                    raise ExtDataError("数据中途出现坏行")        # 坏行后面还有数据行：不能把它当成数据结束
                 break                                           # 数据结束(后面是版权说明)
             continue
         if len(p) != len(columns) + 1:
             raise ExtDataError("数据行列数不对")
         d = f"{p[0][:4]}-{p[0][4:6]}-{p[0][6:]}"
+        _valid_day(d)
         if d in seen or (rows and d <= rows[-1]["date"]):
             raise ExtDataError("日期重复或倒序")
         seen.add(d)
@@ -129,6 +152,7 @@ def parse_fred(text: str, sid: str) -> list[dict]:
     for r in rd:
         if len(r) != 2 or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", r[0]) or r[0] <= last:
             raise ExtDataError("日期格式错误、重复或倒序")
+        _valid_day(r[0])
         last = r[0]
         rows.append({"date": r[0], sid.lower(): _num(r[1])})
     if len(rows) < 1000:
@@ -140,7 +164,8 @@ def _fmt(v):
     return "" if v is None else repr(v)
 
 
-def _write_csv(path: Path, rows: list[dict], cols: list[str]):
+def _stage_csv(path: Path, rows: list[dict], cols: list[str]):
+    """把 CSV 写成同目录的临时文件(还没替换正式文件)，返回 (临时路径, sha256)。"""
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(["date", *cols])
@@ -148,11 +173,10 @@ def _write_csv(path: Path, rows: list[dict], cols: list[str]):
         w.writerow([r["date"], *[_fmt(r.get(c)) for c in cols]])
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
     tmp.write_text(buf.getvalue(), encoding="utf-8")
-    tmp.replace(path)
-    return hashlib.sha256(buf.getvalue().encode("utf-8")).hexdigest()
+    return tmp, hashlib.sha256(buf.getvalue().encode("utf-8")).hexdigest()
 
 
-def fetch_all(base: Path = BASE, opener=urlopen) -> dict:
+def fetch_all(base: Path = BASE, opener=None) -> dict:
     """下载三份数据、解析、校验后一起写入；任何一份失败就一份都不写(不留下半新半旧的组合)。"""
     base = Path(base)
     ff3 = parse_french(_unzip_csv(_http(SOURCES["ff3"], opener)), ["Mkt-RF", "SMB", "HML", "RF"])
@@ -161,13 +185,22 @@ def fetch_all(base: Path = BASE, opener=urlopen) -> dict:
     base.mkdir(parents=True, exist_ok=True)
     meta = {"fetched_at": time.strftime("%Y-%m-%d %H:%M:%S"), "sources": dict(SOURCES), "attribution": dict(ATTRIBUTION),
             "note": "仅本机研究使用；Ken French 原文件不转发；对外只展示派生结果并署名。收益为小数(已除以 100)，DTB3 为年化百分数。"}
-    for key, rows, cols, name in (("ff3", ff3, ["Mkt-RF", "SMB", "HML", "RF"], "ff3_daily.csv"), ("mom", mom, ["Mom"], "mom_daily.csv"),
-                                  ("dtb3", dtb3, ["dtb3"], "fred_dtb3.csv")):
-        sha = _write_csv(base / name, rows, cols)
-        meta[key] = {"file": name, "rows": len(rows), "first": rows[0]["date"], "last": rows[-1]["date"], "sha256": sha}
-    tmp = base / f"meta.json.{os.getpid()}.tmp"
-    tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(base / "meta.json")
+    staged = []
+    try:
+        for key, rows, cols, name in (("ff3", ff3, ["Mkt-RF", "SMB", "HML", "RF"], "ff3_daily.csv"), ("mom", mom, ["Mom"], "mom_daily.csv"),
+                                      ("dtb3", dtb3, ["dtb3"], "fred_dtb3.csv")):
+            tmp, sha = _stage_csv(base / name, rows, cols)
+            staged.append((tmp, base / name))
+            meta[key] = {"file": name, "rows": len(rows), "first": rows[0]["date"], "last": rows[-1]["date"], "sha256": sha}
+        mtmp = base / f"meta.json.{os.getpid()}.tmp"
+        mtmp.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        staged.append((mtmp, base / "meta.json"))
+    except Exception:
+        for tmp, _ in staged:                                         # 任何一份写不下就一份都不换，清掉临时文件
+            tmp.unlink(missing_ok=True)
+        raise
+    for tmp, dst in staged:                                           # 全部写好才开始替换；meta 最后换。读取时 load_factors 会按 meta 的 sha256 核对，半新半旧会被识别并拒用
+        tmp.replace(dst)
     return meta
 
 
@@ -175,14 +208,18 @@ def load_factors(base: Path = BASE) -> dict | None:
     """读本地缓存：{日期: {"Mkt-RF","SMB","HML","RF","Mom"}}（小数；缺失为 None）。没有缓存返回 None。"""
     base = Path(base)
     try:
+        meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
         out: dict = {}
-        for name in ("ff3_daily.csv", "mom_daily.csv"):
-            with open(base / name, encoding="utf-8", newline="") as f:
+        for key, name in (("ff3", "ff3_daily.csv"), ("mom", "mom_daily.csv")):
+            raw = (base / name).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != meta[key]["sha256"]:
+                return None                                           # 文件与 meta 对不上(半新半旧或被改动)：不使用
+            with io.StringIO(raw.decode("utf-8"), newline="") as f:
                 for r in csv.DictReader(f):
                     d = r.pop("date")
                     out.setdefault(d, {}).update({k: (float(v) if v != "" else None) for k, v in r.items()})
         return out
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         return None
 
 

@@ -57,11 +57,11 @@ class RunCheckTests(unittest.TestCase):
 
     def test_redact_bypass_attempts(self):
         home = Path.home()
-        leaks = [f"file://{pa.ROOT}/x", "file:///Users/someone/secret.txt", r"C:\Users\x\y.txt", "../../etc/passwd", "/etc/hosts", "/Library/Foo/bar",
+        leaks = ["C:/Users/alice/private.txt", "error:/etc/hosts", "FILE:///etc/hosts", "%2Fetc%2Fhosts", "..\\..\\etc\\hosts", "PATH=/usr/bin", f"file://{pa.ROOT}/x", "file:///Users/someone/secret.txt", r"C:\Users\x\y.txt", "../../etc/passwd", "/etc/hosts", "/Library/Foo/bar",
                  "/Applications/App", "/mnt/x/y", "/root/.x", "/data/daily/x", "/System/Volumes/Data/x", f"user {home.name} here", f"'{pa.ROOT}/a b'"]
         for c in leaks:
             out = pa.redact(c)
-            for bad in ("/Users", "/etc", "/Library", "/Applications", "/mnt", "/root", "/data/", "C:\\", "../", home.name, str(pa.ROOT)):
+            for bad in ("/Users", "/etc", "/Library", "/Applications", "/mnt", "/root", "/data/", "C:\\", "C:/", "..\\", "../", "%2F", home.name, str(pa.ROOT)):
                 self.assertNotIn(bad, out, (c, out))
         keep = ["上传这份快照：<项目>/build/2026-aa/site", ".venv/bin/python scripts/build_public_site.py --verify 2026-ab --release --expect-manifest-sha256 abc",
                 "构建/检查 and/or 1/2 https://example.com/a/b", "错误：a/b.json 缺失"]

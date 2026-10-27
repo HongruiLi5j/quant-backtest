@@ -20,24 +20,30 @@ EN = json.loads((UI / "i18n" / "en.json").read_text(encoding="utf-8"))
 
 
 def sample():
-    return {"today": "2026-10-26", "signal_days": ["a", "b"], "evaluated_days": ["a"], "min_sample": 30, "main": "m",
+    return {"today": "2026-10-26", "signal_days": ["2026-10-01", "2026-10-02", "x"], "evaluated_days": ["2026-10-01"], "min_sample": 30, "main": "m",
             "precision": {"m": [
                 {"action": "买入", "h": 1, "n": 10, "days": 1, "hit_excess": 0.5, "hit_excess_lo": 0.4, "hit_excess_hi": 0.6,
-                 "mean_excess": 0.001, "net_excess": float("nan"), "enough": False, "verdict": "样本不足", "code": "600000"},
+                 "mean_excess": 0.001, "net_excess": float("nan"), "enough": False, "verdict": "600000 买入 100 股", "code": "600000"},
                 {"action": "乱写", "h": 1}, "not a dict"]},
             "promotion": {"any_passed": False, "complete_weeks": 1, "gate": {"min_weeks": 12}},
-            "caveats": ["局限一", 5, None]}
+            "caveats": ["600001 卖出 200 股", 5, None]}
 
 
 class SummarizeTests(unittest.TestCase):
     def test_basic_and_no_codes(self):
         s = ledger_summary.summarize(sample())
-        self.assertEqual((s["signal_days"], s["evaluated_days"], s["strategy"]), (2, 1, "m"))
+        self.assertEqual((s["signal_days"], s["evaluated_days"], s["strategy"]), (2, 1, "m"))      # "x" 不是日期,不计
+        bad = sample(); bad["main"] = "600000 买入"; bad["today"] = "买入600000"
+        sb = ledger_summary.summarize(bad)
+        self.assertIsNone(sb["strategy"]); self.assertIsNone(sb["today"])
         self.assertEqual(len(s["rows"]), 1)                       # 非法动作、非字典行被丢弃
         self.assertNotIn("600000", json.dumps(s, ensure_ascii=False))   # 不带任何股票代码字段
         self.assertIsNone(s["rows"][0]["net_excess"])             # NaN 变 None
         self.assertFalse(s["any_enough"])
-        self.assertEqual(s["caveats"], ["局限一"])
+        self.assertEqual(s["caveats"], list(ledger_summary.CAVEATS))           # 固定文案,不转发账本里的自由文本
+        self.assertIsNone(s["rows"][0]["verdict"])                             # 非枚举的结论文字被丢弃
+        self.assertNotIn("600001", json.dumps(s, ensure_ascii=False))
+        self.assertNotIn("股", json.dumps(s["rows"], ensure_ascii=False))
         json.dumps(s, allow_nan=False)                            # 结果必须是合法 JSON
 
     def test_garbage_degrades(self):

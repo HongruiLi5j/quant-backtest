@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,7 +20,8 @@ def french_text(cols, n=1200, start=20000101, extra_footer=True, missing_at=None
         vals = [f"{(i % 7 - 3) * 0.1:8.2f}" for _ in cols]
         if missing_at == i:
             vals[0] = "-99.99"
-        rows.append(f"{d + i:8d}," + ",".join(vals))
+        day = date(2000, 1, 1) + timedelta(days=i)                      # 真实存在的日历日
+        rows.append(f"{day:%Y%m%d}," + ",".join(vals))
     return head + "\n".join(rows) + ("\n\nCopyright 2026 Eugene F. Fama and Kenneth R. French\n" if extra_footer else "\n")
 
 
@@ -31,7 +33,7 @@ def mkzip(text, name="x.csv"):
 
 
 def fred_text(n=1500, sid="DTB3"):
-    return f"observation_date,{sid}\n" + "\n".join(f"{2000 + i // 372:04d}-{(i % 372) // 31 + 1:02d}-{(i % 31) + 1:02d},{'.' if i == 5 else '1.5'}" for i in range(n)) + "\n"
+    return f"observation_date,{sid}\n" + "\n".join(f"{date(2000, 1, 1) + timedelta(days=i):%Y-%m-%d},{'.' if i == 5 else '1.5'}" for i in range(n)) + "\n"
 
 
 class FakeResp:
@@ -145,6 +147,58 @@ class FetchTests(unittest.TestCase):
 
     def test_no_app_import(self):
         self.assertNotIn("app", sys.modules)
+
+
+class HardeningTests(unittest.TestCase):
+    def test_bad_row_midway_rejected(self):
+        t = french_text(["Mom"])
+        lines = t.split("\n")
+        k = next(i for i, l in enumerate(lines) if l.startswith("20000301"))
+        lines[k] = "garbage,line"
+        with self.assertRaises(X.ExtDataError):
+            X.parse_french("\n".join(lines), ["Mom"])
+
+    def test_fake_calendar_day_rejected(self):
+        t = french_text(["Mom"]).replace("20000102,", "20000100,", 1)
+        with self.assertRaises(X.ExtDataError):
+            X.parse_french(t, ["Mom"])
+        with self.assertRaises(X.ExtDataError):
+            X.parse_fred(fred_text().replace("2000-01-03", "2000-02-30", 1), "DTB3")
+
+    def test_redirect_refused(self):
+        import urllib.request
+        with self.assertRaises(X.ExtDataError):
+            X._NoRedirect().redirect_request(urllib.request.Request(next(iter(X.SOURCES.values()))), None, 302, "Found", {}, "http://evil.example/x")
+
+    def test_default_fetch_uses_no_redirect_opener(self):
+        import inspect
+        self.assertIsNone(inspect.signature(X.fetch_all).parameters["opener"].default)       # 默认走拒绝重定向的 opener
+
+    def test_group_commit_all_or_nothing_and_sha_check(self):
+        mapping = {X.SOURCES["ff3"]: mkzip(french_text(["Mkt-RF", "SMB", "HML", "RF"])), X.SOURCES["mom"]: mkzip(french_text(["Mom"])),
+                   X.SOURCES["dtb3"]: fred_text().encode()}
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            X.fetch_all(base, opener_for(mapping))
+            self.assertIsNotNone(X.load_factors(base))
+            (base / "mom_daily.csv").write_text("date,Mom\n2000-01-01,0.5\n", encoding="utf-8")       # 与 meta 的 sha 对不上
+            self.assertIsNone(X.load_factors(base))
+            # 写入阶段失败:不留临时文件,已有文件不变
+            before = {p.name: p.read_bytes() for p in base.iterdir()}
+            orig = X._stage_csv
+            calls = []
+            def boom(path, rows, cols):
+                calls.append(path.name)
+                if len(calls) == 2:
+                    raise OSError("disk full")
+                return orig(path, rows, cols)
+            X._stage_csv = boom
+            try:
+                with self.assertRaises(OSError):
+                    X.fetch_all(base, opener_for(mapping))
+            finally:
+                X._stage_csv = orig
+            self.assertEqual({p.name: p.read_bytes() for p in base.iterdir()}, before)
 
 
 if __name__ == "__main__":

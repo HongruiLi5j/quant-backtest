@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote
 import subprocess
 import sys
 import threading
@@ -38,14 +39,20 @@ def _env() -> dict:
 
 # 任何以 / 开头的绝对路径(前面不是字母数字、点、冒号、斜杠、连字符、> )、file:// 地址、Windows 盘符路径、../ 开头的相对越界路径
 _ABS = re.compile(r"(?<![\w.:/\->])/[^\s'\"<>()\[\],;]+")
-_FILE_URL = re.compile(r"file://[^\s'\"<>]*")
-_WIN = re.compile(r"[A-Za-z]:\\[^\s'\"<>]*")
-_UP = re.compile(r"(?<![\w])(?:\.\./)+[^\s'\"<>]*")
+_FILE_URL = re.compile(r"file:(?://)?[^\s'\"<>]*", re.I)
+_WIN = re.compile(r"(?<![\w])[A-Za-z]:[\\/][^\s'\"<>]*")
+_UP = re.compile(r"(?<![\w])(?:\.\.[\\/])+[^\s'\"<>]*")
+_COLON_ABS = re.compile(r"(?<=[:=])/(?!/)[^\s'\"<>()\[\],;]+")           # error:/etc/hosts、PATH=/usr/bin 这类紧跟冒号或等号的绝对路径
 
 
 def redact(text: str) -> str:
     """把路径换掉再回传页面：项目根 → <项目>，用户主目录 → ~，用户名 → <用户>，其余绝对路径/file:// 地址/盘符路径/../ 路径 → <路径>。
     相对路径的命令（如 .venv/bin/python scripts/…）保持原样，方便复制。"""
+    for _ in range(2):                                            # 百分号编码的路径(%2Fetc%2Fhosts)先解码再脱敏，解码后的文字才是回传的内容
+        dec = unquote(text)
+        if dec == text:
+            break
+        text = dec
     text = text.replace(str(ROOT), "<项目>")
     try:
         home = Path.home()
@@ -57,6 +64,7 @@ def redact(text: str) -> str:
     text = _FILE_URL.sub("<路径>", text)
     text = _WIN.sub("<路径>", text)
     text = _UP.sub("<路径>", text)
+    text = _COLON_ABS.sub("<路径>", text)
     return _ABS.sub("<路径>", text)
 
 

@@ -10,13 +10,22 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LATEST = ROOT / "data" / "daily" / "ledger" / "latest.json"
 MAX_FILE_BYTES = 5_000_000
 MAX_ROWS = 40
+_ID = re.compile(r"[a-z][a-z0-9_]{0,23}")           # 策略内部代号：只允许这种形状，其余丢弃
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ACTIONS = {"买入", "卖出", "加仓", "减仓"}
+_VERDICTS = {"样本不足", "看不出差别", "有效", "无效", "反向"}          # signal_ledger.verdict 的全部取值；其他任何文字一律丢弃
+CAVEATS = (                                                          # 固定说明文案：不转发账本文件里的自由文本（里面可能带代码或股数）
+    "结果是统计，不是预测；样本小时波动很大。",
+    "入场按次日开盘价；「相对全市场」未扣费用，扣费后超额一栏已按来回约 16bp 估算；显著性按信号日聚合后检验。",
+    "连板或开盘涨停的股票已从召回统计里剔除。",
+)
 
 
 def _num(x):
@@ -24,12 +33,6 @@ def _num(x):
     if isinstance(x, bool) or not isinstance(x, (int, float)):
         return None
     return float(x) if math.isfinite(x) else None
-
-
-def _strs(xs, limit=20, width=300):
-    if not isinstance(xs, list):
-        return []
-    return [x[:width] for x in xs if isinstance(x, str)][:limit]
 
 
 def summarize(data) -> dict:
@@ -49,21 +52,21 @@ def summarize(data) -> dict:
             "hit_excess": _num(r.get("hit_excess")), "hit_lo": _num(r.get("hit_excess_lo")), "hit_hi": _num(r.get("hit_excess_hi")),
             "mean_excess": _num(r.get("mean_excess")), "net_excess": _num(r.get("net_excess")),
             "enough": r.get("enough") is True,
-            "verdict": r["verdict"][:40] if isinstance(r.get("verdict"), str) else None,
+            "verdict": r["verdict"] if r.get("verdict") in _VERDICTS else None,
         })
     promo = data.get("promotion") if isinstance(data.get("promotion"), dict) else {}
     return {
         "status": "ok",
-        "today": data.get("today") if isinstance(data.get("today"), str) else None,
-        "signal_days": len([d for d in signal_days if isinstance(d, str)]),
-        "evaluated_days": len([d for d in evaluated if isinstance(d, str)]),
+        "today": data["today"] if isinstance(data.get("today"), str) and _DAY.fullmatch(data["today"]) else None,
+        "signal_days": len([d for d in signal_days if isinstance(d, str) and _DAY.fullmatch(d)]),
+        "evaluated_days": len([d for d in evaluated if isinstance(d, str) and _DAY.fullmatch(d)]),
         "min_sample": _num(data.get("min_sample")),
-        "strategy": main,
+        "strategy": main if isinstance(main, str) and _ID.fullmatch(main) else None,
         "rows": rows,
         "any_enough": any(r["enough"] for r in rows),
         "promotion": {"any_passed": promo.get("any_passed") is True, "complete_weeks": _num(promo.get("complete_weeks")),
                       "min_weeks": _num((promo.get("gate") or {}).get("min_weeks")) if isinstance(promo.get("gate"), dict) else None},
-        "caveats": _strs(data.get("caveats")),
+        "caveats": list(CAVEATS),
     }
 
 
