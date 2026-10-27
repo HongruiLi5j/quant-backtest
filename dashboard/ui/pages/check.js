@@ -16,13 +16,13 @@ const STATUS_CLASS = { pass: 'is-rise', warn: 'is-flat', fail: 'is-fall', na: 'm
 /** 解析 CSV/表格文本：第 1 列日期(严格 YYYY-MM-DD)，第 2 列日收益(小数，0.01=1%)；可选第 3 列基准收益、第 4 列换手。
  *  只允许第一行是表头(第一列不是日期)；每行列数必须一致(2 到 4 列)；任何一行有问题都整体拒绝，不悄悄丢弃或改写。 */
 export function parseCsv(text) {
-  const rows = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const rows = String(text).replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!rows.length) throw new Error(t('chk.err.empty'));
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const split = (l) => l.split(/[,;\t]/).map((x) => x.trim());
   const first = split(rows[0]);
-  // 表头：第一行的每个单元格都不含数字(如 date,ret,bench)；含数字但不是合法日期的行(如 2020-01-02BAD)一律当坏数据整体拒绝
-  const isHeader = !DATE.test(first[0]) && first.every((c) => c !== '' && !/\d/.test(c));
+  // 表头只认明确的写法：第一格必须是 date/日期 之类的名字，其余格只含字母/汉字/下划线/空格；其他任何不是日期的首行(含全角数字、NaN 等)都按坏数据整体拒绝
+  const isHeader = !DATE.test(first[0]) && /^(date|datetime|day|time|日期|时间|交易日)$/i.test(first[0].replace(/^\uFEFF/, '')) && first.slice(1).every((c) => /^[A-Za-z_\u4e00-\u9fa5 ]+$/.test(c));
   const body = isHeader ? rows.slice(1) : rows;
   if (!body.length) throw new Error(t('chk.err.empty'));
   if (body.length > MAX_ROWS) throw new Error(t('chk.err.rows', { n: MAX_ROWS }));

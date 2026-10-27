@@ -55,10 +55,16 @@ class ParseCsvTests(unittest.TestCase):
         full = json.loads(self.run_js("2020-01-02,0.01,0.005,0.1\n2020-01-03,-0.02,0.001,0.2".replace("\\n", "\n")))
         self.assertEqual(full["turnover"], [0.1, 0.2])
 
+    def test_header_variants_accepted(self):
+        for h in ("date,ret", "Date , Ret", "日期,收益", "\ufeffdate,ret", "datetime,return"):
+            r = json.loads(self.run_js((h + "\n2020-01-02,0.01\n2020-01-03,0.02").replace("\\n", "\n")))
+            self.assertEqual(r["returns"], [0.01, 0.02], h)
+
     def test_strict_rejections(self):
         for bad in ("", "junk\ndate,ret\n2020-01-02,0.01", "2020-01-02BAD,0.01", "2020-01-02,0.1\n2020-01-03,0.1,0.2",
                     "2020-01-02,0.1,0.2,0.3,0.4", "2020-01-02,0.01\n2020-01-03,", "2020-01-02,abc",
-                    "2020-01-02BAD,0.5\n2020-01-03,0.02", "date\n2020-01-02,0.01", "date,ret,bench\n2020-01-02,0.01", "2020-1-2,0.5\n2020-01-03,0.02"):
+                    "2020-01-02BAD,0.5\n2020-01-03,0.02", "date\n2020-01-02,0.01", "date,ret,bench\n2020-01-02,0.01", "2020-1-2,0.5\n2020-01-03,0.02",
+                    "２０２０-０１-０２,０.５\n2020-01-03,0.02", "bad-date,NaN\n2020-01-03,0.02", "bad-date,Infinity\n2020-01-03,0.02", "foo,bar\n2020-01-03,0.02"):
             self.assertTrue(self.run_js(bad.replace("\\n", "\n")).startswith("ERR:"), bad)
 
 
