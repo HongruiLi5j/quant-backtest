@@ -21,11 +21,14 @@ export function parseCsv(text) {
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const split = (l) => l.split(/[,;\t]/).map((x) => x.trim());
   const first = split(rows[0]);
-  const body = DATE.test(first[0]) ? rows : rows.slice(1);          // 第一行不是日期 → 当作唯一的表头
+  // 表头：第一行的每个单元格都不含数字(如 date,ret,bench)；含数字但不是合法日期的行(如 2020-01-02BAD)一律当坏数据整体拒绝
+  const isHeader = !DATE.test(first[0]) && first.every((c) => c !== '' && !/\d/.test(c));
+  const body = isHeader ? rows.slice(1) : rows;
   if (!body.length) throw new Error(t('chk.err.empty'));
   if (body.length > MAX_ROWS) throw new Error(t('chk.err.rows', { n: MAX_ROWS }));
   const cols = split(body[0]).length;
   if (cols < 2 || cols > 4) throw new Error(t('chk.err.row'));
+  if (isHeader && first.length !== cols) throw new Error(t('chk.err.row'));      // 表头列数必须和数据一致
   const num = (x) => { if (x === '') throw new Error(t('chk.err.row')); const v = Number(x); if (!Number.isFinite(v)) throw new Error(t('chk.err.row')); return v; };
   const out = { dates: [], returns: [] };
   if (cols >= 3) out.benchmark = [];

@@ -57,7 +57,8 @@ class ParseCsvTests(unittest.TestCase):
 
     def test_strict_rejections(self):
         for bad in ("", "junk\ndate,ret\n2020-01-02,0.01", "2020-01-02BAD,0.01", "2020-01-02,0.1\n2020-01-03,0.1,0.2",
-                    "2020-01-02,0.1,0.2,0.3,0.4", "2020-01-02,0.01\n2020-01-03,", "2020-01-02,abc"):
+                    "2020-01-02,0.1,0.2,0.3,0.4", "2020-01-02,0.01\n2020-01-03,", "2020-01-02,abc",
+                    "2020-01-02BAD,0.5\n2020-01-03,0.02", "date\n2020-01-02,0.01", "date,ret,bench\n2020-01-02,0.01", "2020-1-2,0.5\n2020-01-03,0.02"):
             self.assertTrue(self.run_js(bad.replace("\\n", "\n")).startswith("ERR:"), bad)
 
 
