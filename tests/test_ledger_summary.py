@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,7 +74,8 @@ class WiringTests(unittest.TestCase):
             self.assertFalse(admin_settings.ledger_page_on())
         with patch.object(admin_settings, "get_all", return_value={"ledger_page_on": True}):
             self.assertTrue(admin_settings.ledger_page_on())
-        self.assertEqual(admin_settings.validate({"ledger_page_on": True}), {"ledger_page_on": True})
+        with patch.object(admin_settings, "get_all", return_value=dict(admin_settings.DEFAULTS)):     # 不连真实数据库(Codex N1027_5)
+            self.assertEqual(admin_settings.validate({"ledger_page_on": True}), {"ledger_page_on": True})
 
     def test_route_registered_and_gated(self):
         src = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -83,6 +85,34 @@ class WiringTests(unittest.TestCase):
         for need in ("ledger_page_on()", "_local_or_owner()", "not self._remote()", "_authed()", '"dashboard"', "members.hit"):
             self.assertIn(need, body)
         self.assertLess(body.index("ledger_page_on()"), body.index("_authed()"))   # 关闭时先 404,不暴露鉴权差异
+
+
+class HandlerBehaviourTests(unittest.TestCase):
+    """用 ast 取出真实的 Handler._ledger_summary，在桩对象上执行(不 import app)：关闭 404、未登录 401、缺头 403、非本机 404、限频 429、成功 200。"""
+
+    def run_handler(self, *, on=True, local=True, remote=False, authed=True, header="dashboard", hits=False):
+        from src import members
+        tree = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Handler")
+        fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_ledger_summary")
+        ns = {"members": members}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), "<ledger>", "exec"), ns)
+        out = []
+        h = SimpleNamespace(headers={"X-Requested-With": header}, _local_or_owner=lambda: local, _remote=lambda: remote, _authed=lambda: authed,
+                            _json=lambda obj, code=200: out.append(code), _send=lambda code, *a: out.append(code))
+        with patch.object(admin_settings, "ledger_page_on", return_value=on), patch.object(ledger_summary, "load", return_value={"status": "ok"}) as load, \
+                patch.object(members, "hit", return_value=hits):
+            ns["_ledger_summary"](h)
+        return out, load
+
+    def test_matrix(self):
+        out, load = self.run_handler(on=False);                    self.assertEqual(out, [404]); load.assert_not_called()
+        out, load = self.run_handler(local=False);                 self.assertEqual(out, [404]); load.assert_not_called()
+        out, load = self.run_handler(remote=True);                 self.assertEqual(out, [404]); load.assert_not_called()
+        out, load = self.run_handler(authed=False);                self.assertEqual(out, [401]); load.assert_not_called()
+        out, load = self.run_handler(header="");                   self.assertEqual(out, [403]); load.assert_not_called()
+        out, load = self.run_handler(hits=True);                   self.assertEqual(out, [429]); load.assert_not_called()
+        out, load = self.run_handler();                            self.assertEqual(out, [200]); load.assert_called_once()
 
 
 class StaticTests(unittest.TestCase):

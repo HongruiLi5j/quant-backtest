@@ -154,6 +154,30 @@ class ApiTests(unittest.TestCase):
         _, c = api.handle(json.dumps(dict(gross, cost_bp=0)).encode(), enabled=True, factor_loader=lambda: self._factors())
         self.assertGreater(abs(a["factor_attribution"]["alpha_annual"] - c["factor_attribution"]["alpha_annual"]), 0.05)   # 成本确实改变了归因
 
+    def test_split_date_and_model_are_forwarded(self):
+        """split_date 决定样本内外切分(Codex N1027_5：丢弃它曾全绿)；factor_model=ff4 必须真的用 ff4。"""
+        _, a = api.handle(body(400, split_date="2019-03-01"), enabled=True)
+        _, b = api.handle(body(400, split_date="2019-09-01"), enabled=True)
+        self.assertNotEqual(json.dumps(a["checks"], ensure_ascii=False), json.dumps(b["checks"], ensure_ascii=False))
+        self.assertIn("2019-03-01", json.dumps(a, ensure_ascii=False))
+        _, c = api.handle(body(400, factor_model="ff4"), enabled=True, factor_loader=lambda: self._factors())
+        self.assertEqual(c["factor_attribution"]["model"], "ff4")
+        self.assertIn("Mom", c["factor_attribution"]["coef"])
+
+    def test_gross_with_cost_equals_equivalent_net_in_main_report(self):
+        """毛收益+换手+费率 与 等价净收益，主报告各检查项一致；扣成本金额若翻倍则不一致。"""
+        o = json.loads(body(400))
+        turn = [0.5] * 400
+        gross = dict(o, turnover=turn, cost_bp=40, cost_included=False)
+        net = dict(o, returns=[r - 0.5 * 40 / 1e4 for r in o["returns"]], turnover=turn, cost_bp=40, cost_included=True)
+        dbl = dict(o, returns=[r - 2 * 0.5 * 40 / 1e4 for r in o["returns"]], turnover=turn, cost_bp=40, cost_included=True)
+        g = api.handle(json.dumps(gross).encode(), enabled=True)[1]
+        n = api.handle(json.dumps(net).encode(), enabled=True)[1]
+        d = api.handle(json.dumps(dbl).encode(), enabled=True)[1]
+        pick = lambda x: [(c["id"], c["status"]) for c in x["checks"] if c["id"] in ("sharpe_ci", "dsr", "excess", "oos")]
+        self.assertEqual(pick(g), pick(n))
+        self.assertNotEqual(json.dumps(g["checks"], ensure_ascii=False), json.dumps(d["checks"], ensure_ascii=False))
+
     def test_factor_model_errors(self):
         for bad in ("capm", 3, ["ff3"], {"a": 1}, ""):
             self.assertEqual(api.handle(body(400, factor_model=bad), enabled=True, factor_loader=lambda: self._factors())[0], 400, bad)

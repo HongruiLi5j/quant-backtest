@@ -170,6 +170,27 @@ class HardeningTests(unittest.TestCase):
         with self.assertRaises(X.ExtDataError):
             X._NoRedirect().redirect_request(urllib.request.Request(next(iter(X.SOURCES.values()))), None, 302, "Found", {}, "http://evil.example/x")
 
+    def test_default_http_path_refuses_redirect(self):
+        """默认下载链路(不注入 opener)真的经过 _NoRedirect：模拟 HTTPS 302，只允许发生一次请求。"""
+        from email.message import Message
+        from unittest.mock import patch
+        from urllib.request import HTTPSHandler
+        from urllib.response import addinfourl
+        seen = []
+
+        def response(handler, req):
+            seen.append(req.full_url)
+            assert len(seen) == 1, "发生了重定向跟随"
+            headers = Message()
+            headers["Location"] = "https://example.invalid/redirect"
+            r = addinfourl(io.BytesIO(b""), headers, req.full_url, 302)
+            r.msg = "Found"
+            return r
+        with patch.object(HTTPSHandler, "https_open", new=response):
+            with self.assertRaises(X.ExtDataError):
+                X._http(X.SOURCES["dtb3"])
+        self.assertEqual(seen, [X.SOURCES["dtb3"]])
+
     def test_default_fetch_uses_no_redirect_opener(self):
         import inspect
         self.assertIsNone(inspect.signature(X.fetch_all).parameters["opener"].default)       # 默认走拒绝重定向的 opener

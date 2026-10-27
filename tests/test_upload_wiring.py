@@ -72,6 +72,15 @@ class WiringTests(unittest.TestCase):
     def test_not_local_is_404_even_when_on(self):
         self.assertEqual(self.run_it(body=good_body(), local=False)[0], 404)
 
+    def test_remote_request_is_404_even_when_local_or_owner(self):
+        """分享链接/隧道来的请求(_remote 为真)即使 _local_or_owner 也为真，也必须 404(Codex N1027_5：Fake 的 _remote 曾永远为 False)。"""
+        class Remote(Fake):
+            def _remote(self): return True
+        h = Remote(good_body())
+        with patch.object(admin_settings, "get_all", return_value={"upload_check_on": True}):
+            h._upload_check()
+        self.assertEqual(h.out[0], 404)
+
     def test_auth_and_headers(self):
         self.assertEqual(self.run_it(body=good_body(), authed=False)[0], 401)
         self.assertEqual(self.run_it(body=good_body(), header="")[0], 403)

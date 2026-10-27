@@ -413,10 +413,10 @@ class TradeListTests(unittest.TestCase):
             etf_update.assert_not_called()
 
     def test_retry_reason_control_characters_escaped(self):
-        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': 'bad\n2026-01-01 FAKE LOG\r\x1b[31mred\x00'})
+        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': 'bad\n2026-01-01 FAKE LOG\r\x1b[31mred\x00\x7f\x85\x9b'})
         ok, reason = T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=90))
         self.assertFalse(ok)
-        for ch in ('\n', '\r', '\x1b', '\x00'):
+        for ch in ('\n', '\r', '\x1b', '\x00', '\x7f', '\x85', '\x9b'):
             self.assertNotIn(ch, reason)                                          # 不能伪造日志行或终端控制序列
         self.assertIn('FAKE LOG', reason)
 

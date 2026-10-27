@@ -129,15 +129,22 @@ class EvalScoreTests(unittest.TestCase):
         self.assertAlmostEqual(float(got["gross"].iloc[0]), float(expected), places=12)
         self.assertEqual(got["cost"].iloc[0], base["cost"].iloc[0])             # 首期成本与是否缺失无关
 
-    def test_limit_up_open_not_buyable_does_not_use_future_volume(self):
+    def test_limit_up_open_excluded_from_top_group(self):
+        """次日涨停开盘的高分股不可买：入选集合只剩可买股票，头部组合超额必须等于手算值(Codex N1027_5)。"""
         ctx, sc = make_ctx(seed=4)
         t = R.sample_positions(ctx.dates, 5)[0]
         ctx.O = ctx.O.copy()
-        ctx.O[t + 1, 250:] = ctx.C[t, 250:] * 1.10                              # 高分的 50 只次日涨停开盘
-        df = R.eval_score(sc, ctx, 5, 8.0)
-        self.assertEqual(len(df.index.intersection([ctx.dates[t]])), 1)
-        # 评估函数的参数里根本没有成交量:可买性只依赖 t+1 开盘与 t 收盘
-        self.assertFalse(hasattr(ctx, "V"))
+        ctx.O[t + 1, 250:] = ctx.C[t, 250:] * 1.10                              # 打分最高的 50 只次日涨停开盘
+        got = R.eval_score(sc, ctx, 5, 8.0)
+        r = ctx.O[t + 6, :250] / ctx.O[t + 1, :250] - 1                         # 可买的是 0..249，其中最高分 20% 为 200..249
+        self.assertAlmostEqual(float(got.loc[ctx.dates[t], "gross"]), float(r[200:].mean() - r.mean()), places=12)
+        self.assertFalse(hasattr(ctx, "V"))                                     # 可买性不依赖次日成交量
+
+    def test_sample_window_boundaries_and_bh_equality(self):
+        dates = pd.to_datetime(["2015-12-31", "2016-01-04", "2023-12-29", "2024-01-02"])
+        self.assertEqual(R.sample_positions(dates, 1), [1, 2])                   # 2024 年及以后、2016 年以前都不取
+        self.assertEqual(R.bh_fdr([0.05], q=0.05), [True])                       # p == q*rank/m 时拒绝(BH 是 ≤)
+        self.assertEqual(R.bh_fdr([0.0500001], q=0.05), [False])
 
     def test_placebo_family_shape(self):
         ctx, _ = make_ctx(n_stocks=300)
