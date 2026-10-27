@@ -155,8 +155,8 @@
   "mock-data/pub-translator.json": "6b292c500dce010247d3753afe5d77c8bf2672dce4f975f42fbb00a4470af8b7",
   "mock-data/pub-validation.json": "128ecaad582f6b8029ccf78ae5067051129b4f994669eab0787c28c9b55e54a8",
   "mock-data/share-links.json": "409a87a61d0c69367db2a0c723bbf1e719d19e6f689354a1b56c0e6052d045cf",
-  "shared/i18n-en.json": "b9ae79c5eb554f199dfca979682fdba5b4235368598d1660a7e1f7e64e361de3",
-  "shared/i18n-zh.json": "bfa46f88efeacef2904b84b3f6a726dfac744a315f90e21bf22b0514d0a4bf22",
+  "shared/i18n-en.json": "1948b3c56a4a3ced6c13afa6d4e84d42ab6592a26e0d427bebc21ff1fd434390",
+  "shared/i18n-zh.json": "4cff1bf3a278e2cf8d0f4ec13c8e0c1d3ff7a6dd251919288e124a817ff40737",
   "shared/icons.svg": "d60be14718b42a29c72b34af76237c296167e891fb2c0d8e31d873aa4b574ea0"
  },
  "_content_pins_说明": "字典、mock 数据、SVG 的内容哈希（导出并改写之后的文件）。这是 2026-10-25 的【变更检测基线】：来自当时本地导出并改写后的内容（改写包括：删除 mock 数据的 _meta.schema、覆盖三条写着内部接口路径的词条），所以【不等于线上内容】（线上响应包含较早的文案，可能是更早的部署，也可能是缓存或其他内容；未联网复核），也【不等于逐条人工审阅过】（自动扫描已知的内部接口路径说明已在构建时去掉，其余内容未逐条看）。任何改动都会让构建失败，必须重新审阅后用 --pin-report 的输出人工更新，不得自动更新。"
