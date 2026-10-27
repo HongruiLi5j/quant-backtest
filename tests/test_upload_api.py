@@ -125,6 +125,39 @@ class ApiTests(unittest.TestCase):
         api.handle(json.dumps(o).encode(), enabled=True)
         self.assertEqual(api.handle(body(), enabled=True)[0], 200)
 
+    def _factors(self, n=400):
+        import datetime as dt
+        import random
+        rng = random.Random(7)
+        d0 = dt.date(2019, 1, 1)
+        return {(d0 + dt.timedelta(days=i)).isoformat(): {"Mkt-RF": rng.gauss(0, 0.01), "SMB": rng.gauss(0, 0.005), "HML": rng.gauss(0, 0.005),
+                                                          "Mom": rng.gauss(0, 0.005), "RF": 0.0001} for i in range(n)}
+
+    def test_factor_model_adds_attribution(self):
+        code, out = api.handle(body(400, factor_model="ff3"), enabled=True, factor_loader=lambda: self._factors())
+        self.assertEqual(code, 200)
+        self.assertEqual(out["factor_attribution"]["status"], "ok")
+        self.assertEqual(out["factor_attribution"]["model"], "ff3")
+        json.dumps(out, allow_nan=False)
+        code, out = api.handle(body(), enabled=True)
+        self.assertNotIn("factor_attribution", out)                                   # 不要求时不出现
+
+    def test_factor_model_errors(self):
+        for bad in ("capm", 3, ["ff3"], {"a": 1}, ""):
+            self.assertEqual(api.handle(body(400, factor_model=bad), enabled=True, factor_loader=lambda: self._factors())[0], 400, bad)
+        code, out = api.handle(body(400, factor_model="ff3"), enabled=True, factor_loader=lambda: None)
+        self.assertEqual(code, 400)
+        self.assertIn("extdata", out["error"])                                        # 没有缓存：提示怎么下载，不联网
+        called = []
+        api.handle(body(400, factor_model="ff3"), enabled=True, factor_loader=lambda: called.append(1) or None)
+        api.handle(body(400), enabled=True, factor_loader=lambda: called.append(2))
+        self.assertEqual(called, [1])                                                 # 没要求因子归因就不读因子数据
+
+    def test_few_overlap_days_is_na(self):
+        code, out = api.handle(body(400, factor_model="ff3"), enabled=True, factor_loader=lambda: self._factors(100))
+        self.assertEqual(code, 200)
+        self.assertEqual(out["factor_attribution"]["status"], "na")
+
     def test_no_app_import(self):
         self.assertNotIn("app", sys.modules)
 

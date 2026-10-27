@@ -68,6 +68,24 @@ function resultView(out) {
     el('p', { class: 'muted' }, zh ? out.disclaimer?.zh : out.disclaimer?.en));
 }
 
+const f3 = (x) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : x.toFixed(3));
+const f5 = (x) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : x.toFixed(5));
+
+function attributionView(fa) {
+  if (!fa) return null;
+  if (fa.status !== 'ok') {
+    return el('div', { class: 'card' }, el('h3', {}, t('chk.fa.title')), el('p', { class: 'muted' }, t('chk.fa.na', { n: fa.n_obs })), fa.note ? el('p', { class: 'muted' }, fa.note) : null);
+  }
+  const rows = Object.entries(fa.coef).map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', { class: 'num' }, f5(v.coef)), el('td', { class: 'num' }, f3(v.t)), el('td', { class: 'num' }, f3(v.p))));
+  return el('div', { class: 'card' },
+    el('h3', {}, t('chk.fa.title')),
+    el('p', { class: 'muted' }, t('chk.fa.sum', { model: fa.model, n: fa.n_obs, a: fa.first, b: fa.last, r2: f3(fa.r2), alpha: f3(fa.alpha_annual) })),
+    el('div', { class: 'tablewrap' }, el('table', { class: 'table' },
+      el('thead', {}, el('tr', {}, el('th', {}, t('chk.fa.col.term')), el('th', {}, t('chk.fa.col.coef')), el('th', {}, t('chk.fa.col.t')), el('th', {}, t('chk.fa.col.p'))),),
+      el('tbody', {}, ...rows))),
+    el('p', { class: 'muted' }, t('chk.fa.caveat')));
+}
+
 export async function render(root) {
   const ta = el('textarea', { class: 'input', rows: '8', placeholder: '2020-01-02,0.0012,0.0008,0.15', 'aria-label': t('chk.csv') });
   const file = el('input', { type: 'file', accept: '.csv,.txt,text/csv,text/plain' });
@@ -77,6 +95,7 @@ export async function render(root) {
   const bp = el('input', { class: 'input', type: 'number', min: '0', max: '1000', step: '0.1' });
   const inc = el('select', { class: 'input' }, el('option', { value: '' }, t('chk.cost.unknown')),
     el('option', { value: 'true' }, t('chk.cost.net')), el('option', { value: 'false' }, t('chk.cost.gross')));
+  const fm = el('select', { class: 'input' }, el('option', { value: '' }, t('chk.fm.none')), el('option', { value: 'ff3' }, t('chk.fm.ff3')), el('option', { value: 'ff4' }, t('chk.fm.ff4')));
   const msg = el('div', { class: 'muted', role: 'status' });
   const out = el('div', {});
   const btn = el('button', { class: 'btn', type: 'button' }, t('chk.run'));
@@ -102,11 +121,12 @@ export async function render(root) {
       if (split.value) body.split_date = split.value;
       if (bp.value !== '') body.cost_bp = Number(bp.value);
       if (inc.value) body.cost_included = inc.value === 'true';
+      if (fm.value) body.factor_model = fm.value;
       btn.disabled = true;
       msg.textContent = t('chk.running');
       const res = await postJSON('/api/check/upload', body);
       msg.textContent = '';
-      out.replaceChildren(resultView(res));
+      out.replaceChildren(resultView(res), ...[attributionView(res.factor_attribution)].filter(Boolean));
     } catch (e) {
       msg.textContent = e.status === 404 ? t('chk.off') : e.status === 429 ? t('chk.busy') : (e.body?.error || e.message || t('ui.state.error'));
     } finally {
@@ -120,6 +140,6 @@ export async function render(root) {
     field('chk.csv', ta, 'chk.csv.hint'), file,
     field('chk.trials', trials, 'chk.trials.hint'),
     field('chk.trades', trades), field('chk.split', split),
-    field('chk.cost.flag', inc), field('chk.bp', bp, 'chk.bp.hint'),
+    field('chk.cost.flag', inc), field('chk.bp', bp, 'chk.bp.hint'), field('chk.fm', fm, 'chk.fm.hint'),
     btn, msg), out);
 }
