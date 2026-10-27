@@ -880,6 +880,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(code, obj.encode(), "text/plain")
         return self._json(obj, code)
 
+    # ---------- 上传收益序列体检(T031/T032):默认关闭(后台设置 upload_check_on);仅可信本机 + 令牌 + dashboard 头 + Origin;
+    # 校验与计算都在 src/upload_api.py,这里只接线;请求内容不写日志、不落盘,所有失败只返回固定码
+    def _upload_check(self):
+        try:
+            from src import admin_settings, upload_api
+            local = self._local_or_owner() and not self._remote()
+            if not local or not admin_settings.upload_check_on():
+                return self._send(404, b"not found", "text/plain")
+            if not self._authed():
+                return self._json({"error": "UNAUTHORIZED"}, 401)
+            if self.headers.get("X-Requested-With") != "dashboard" or not self._origin_ok():
+                return self._json({"error": "FORBIDDEN"}, 403)
+            if members.hit("upload_check", "local", 6, 60):
+                return self._json({"error": "体检请求太频繁，请稍后再试"}, 429)
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= n <= upload_api.MAX_BODY_BYTES:
+                self.close_connection = True
+                return self._json({"error": "请求体过大"}, 413)
+            code, obj = upload_api.handle(self.rfile.read(n), enabled=True)
+        except Exception:
+            code, obj = 500, {"error": "体检计算失败"}
+        return self._json(obj, code)
+
     # ---------- 实时盯盘(T006 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/market_monitor/wiring.py,这里只接线
     MONITOR_ROUTES = {("GET", "/api/market_monitor/status"): "handle_status",
                       ("GET", "/api/market_monitor/quotes"): "handle_quotes",
@@ -1227,6 +1250,8 @@ class Handler(BaseHTTPRequestHandler):
         if getattr(self, "_personal_mode", False) and urlparse(self.path).path in (
                 "/api/holdings/add", "/api/holdings/void", "/api/holdings/capital"):
             return self._holdings("POST", urlparse(self.path))
+        if urlparse(self.path).path == "/api/check/upload":
+            return self._upload_check()
         if urlparse(self.path).path.startswith("/api/market_monitor/"):
             if not getattr(self, "_personal_mode", False):
                 return self._send(404, b"not found", "text/plain")

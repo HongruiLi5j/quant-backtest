@@ -25,6 +25,7 @@ DEFAULTS = {
     "maintenance_on": False,        # 维护模式：默认关（读不到设置时网站保持开放）
     "new_ui_home": True,            # 首页默认进新界面（N18）；关掉就回到旧首页。所有者批准的「默认开」例外
     "admin_quick_enter": True,      # 新界面「后台」按钮本机点击即登录（N17）；关掉就要用管理令牌登录。同上例外
+    "upload_check_on": False,       # 上传收益序列体检（T031/T032）：默认关；所有者在后台打开后，登录的本机所有者才能用
     "maintenance_until": "",        # 预计恢复时间（文本，≤ 40 字）；用来算 Retry-After
     "features": {"member_backtest": True, "engines": True, "translate": True},
     "quota": {"free_backtest": 3, "pro_backtest": 30, "free_translate": 5, "pro_translate": 50},
@@ -32,7 +33,7 @@ DEFAULTS = {
     "sections": {sid: {"on": True} for sid in SECTION_IDS},
 }
 TIERS = ("free", "pro")
-_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter")
+_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter", "upload_check_on")
 UNTIL_MAX = 40
 DEFAULT_RETRY_AFTER = 3600
 _lock = threading.RLock()
@@ -95,6 +96,11 @@ def new_ui_home_on() -> bool:
 def admin_quick_enter_on() -> bool:
     """「后台」按钮本机免令牌登录用：只有明确关掉（False）才算关；读失败、脏数据都按默认（开）。"""
     return get_all().get("admin_quick_enter") is not False
+
+
+def upload_check_on() -> bool:
+    """上传体检用：只有明确等于 True 才放行，读失败、脏数据都按关闭。"""
+    return get_all().get("upload_check_on") is True
 
 
 def section_open(sid: str) -> bool:
