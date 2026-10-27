@@ -28,7 +28,7 @@ class CheckPageTests(unittest.TestCase):
         self.assertIn('data-page="check"', HTML)
 
     def test_calls_only_the_upload_endpoint(self):
-        self.assertEqual(re.findall(r"/api/[a-z_/]+", JS), ["/api/check/upload"])
+        self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/check/upload"})
         self.assertIn("404", JS)                                                    # 功能未开启时的提示分支
 
     def test_admin_toggle_present(self):
