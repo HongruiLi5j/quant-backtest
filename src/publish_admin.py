@@ -36,16 +36,27 @@ def _env() -> dict:
     return {"PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
 
 
-_ABS = re.compile(r"(?:/Users|/home|/private|/var|/tmp|/opt|/usr|/Volumes)/[^\s'\"]*")
+# 任何以 / 开头的绝对路径(前面不是字母数字、点、冒号、斜杠、连字符、> )、file:// 地址、Windows 盘符路径、../ 开头的相对越界路径
+_ABS = re.compile(r"(?<![\w.:/\->])/[^\s'\"<>()\[\],;]+")
+_FILE_URL = re.compile(r"file://[^\s'\"<>]*")
+_WIN = re.compile(r"[A-Za-z]:\\[^\s'\"<>]*")
+_UP = re.compile(r"(?<![\w])(?:\.\./)+[^\s'\"<>]*")
 
 
 def redact(text: str) -> str:
-    """把绝对路径换掉再回传页面：项目根 → <项目>，用户主目录 → ~，其余绝对路径 → <路径>。"""
+    """把路径换掉再回传页面：项目根 → <项目>，用户主目录 → ~，用户名 → <用户>，其余绝对路径/file:// 地址/盘符路径/../ 路径 → <路径>。
+    相对路径的命令（如 .venv/bin/python scripts/…）保持原样，方便复制。"""
     text = text.replace(str(ROOT), "<项目>")
     try:
-        text = text.replace(str(Path.home()), "~")
+        home = Path.home()
+        text = text.replace(str(home), "~")
+        if len(home.name) >= 3:
+            text = re.sub(r"(?<![\w])" + re.escape(home.name) + r"(?![\w])", "<用户>", text)
     except Exception:
         pass
+    text = _FILE_URL.sub("<路径>", text)
+    text = _WIN.sub("<路径>", text)
+    text = _UP.sub("<路径>", text)
     return _ABS.sub("<路径>", text)
 
 

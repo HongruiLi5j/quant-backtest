@@ -55,6 +55,19 @@ class RunCheckTests(unittest.TestCase):
         self.assertIn("<项目>/build/2026/site", out)
         self.assertIn(".venv/bin/python scripts/build_public_site.py", out)                   # 相对路径的命令保持可复制
 
+    def test_redact_bypass_attempts(self):
+        home = Path.home()
+        leaks = [f"file://{pa.ROOT}/x", "file:///Users/someone/secret.txt", r"C:\Users\x\y.txt", "../../etc/passwd", "/etc/hosts", "/Library/Foo/bar",
+                 "/Applications/App", "/mnt/x/y", "/root/.x", "/data/daily/x", "/System/Volumes/Data/x", f"user {home.name} here", f"'{pa.ROOT}/a b'"]
+        for c in leaks:
+            out = pa.redact(c)
+            for bad in ("/Users", "/etc", "/Library", "/Applications", "/mnt", "/root", "/data/", "C:\\", "../", home.name, str(pa.ROOT)):
+                self.assertNotIn(bad, out, (c, out))
+        keep = ["上传这份快照：<项目>/build/2026-aa/site", ".venv/bin/python scripts/build_public_site.py --verify 2026-ab --release --expect-manifest-sha256 abc",
+                "构建/检查 and/or 1/2 https://example.com/a/b", "错误：a/b.json 缺失"]
+        for c in keep:
+            self.assertEqual(pa.redact(c), c)                                              # 命令、相对路径、URL、普通斜杠文字不被误伤
+
     def test_fixed_argv_env_cwd(self):
         r = fake("构建 通过")
         with on():
