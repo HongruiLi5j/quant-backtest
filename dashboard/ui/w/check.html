@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!-- 文件: ui/w/check.html —— 上传体检（逻辑在 ui/pages/check.js；默认关闭，后台打开 upload_check_on 后才有接口） -->
+<html lang="zh-CN" data-market="cn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Check · Workspace · Quant Backtest</title>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0a0820">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236b5bff'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../shared/fonts.css">
+  <link rel="stylesheet" href="../theme/tokens.css">
+  <link rel="stylesheet" href="../shared/reset.css">
+  <link rel="stylesheet" href="../shared/layout.css">
+  <link rel="stylesheet" href="../shared/components-core.css">
+  <link rel="stylesheet" href="../shared/components-data.css">
+  <link rel="stylesheet" href="../shared/components-overlay.css">
+  <link rel="stylesheet" href="../shared/topnav.css">
+  <link rel="stylesheet" href="../theme/workspace.css">
+  <link rel="stylesheet" href="../pages/U4.css">
+  <script src="../shared/theme-boot.js"></script>
+  <script type="module" src="../shared/page-boot.js"></script>
+</head>
+<body class="ws" data-page="check">
+  <a class="skip-link" href="#main" data-i18n="common.skip">跳到主内容</a>
+  <header class="topnav" data-topnav></header>
+
+  <main id="main" class="ws-main" data-state="loading">
+    <div class="ws-head">
+      <h1 class="ws-head__title" data-i18n="chk.title">策略体检</h1>
+      <span class="muted" data-bind="meta"></span>
+      <span class="ws-head__spacer"></span>
+      <span class="muted" data-i18n="ws.head.hint">R 刷新 · ? 快捷键</span>
+    </div>
+
+    <div class="when-loading" aria-hidden="true">
+      <div class="ws-grid ws-grid--kpi">
+        <div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:96px"></div>
+      </div>
+      <div class="skeleton" style="height:320px;margin-top:16px"></div>
+    </div>
+
+    <div class="card state when-error" role="alert">
+      <svg class="state__icon" aria-hidden="true"><use href="../shared/icons.svg#i-cloud-off"/></svg>
+      <p class="state__title" data-bind="error-title" data-i18n="ui.state.error">数据没有加载出来</p>
+      <a class="btn btn--sm" data-bind="login-link" href="/" hidden data-i18n="ui.auth.home">回到首页</a>
+      <button class="btn btn--sm" type="button" data-action="retry" data-i18n="state.retry">重试</button>
+    </div>
+
+    <div class="card state when-empty">
+      <svg class="state__icon" aria-hidden="true"><use href="../shared/icons.svg#i-inbox"/></svg>
+      <p class="state__title" data-i18n="ui.state.empty">暂时没有数据</p>
+    </div>
+
+    <div class="when-ready" data-ws-body></div>
+  </main>
+</body>
+</html>
