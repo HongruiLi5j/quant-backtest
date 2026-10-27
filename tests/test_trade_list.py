@@ -412,6 +412,20 @@ class TradeListTests(unittest.TestCase):
             update.assert_not_called()
             etf_update.assert_not_called()
 
+    def test_retry_refusal_reason_includes_last_error(self):
+        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': 'RuntimeError: 价格缺失'})
+        ok, reason = T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=90))
+        self.assertFalse(ok)
+        self.assertIn('已自动尝试 3 次', reason)
+        self.assertIn('RuntimeError: 价格缺失', reason)
+        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 1, 'last_attempt': NOW.isoformat(), 'error': 'ValueError: x'})
+        ok, reason = T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=5))
+        self.assertFalse(ok)
+        self.assertIn('不足 30 分钟', reason)
+        self.assertIn('ValueError: x', reason)
+        self.write_json('trade_list_attempts.json', {'day': DAY, 'count': 3, 'last_attempt': NOW.isoformat(), 'error': ''})
+        self.assertEqual(T.attempt_status(DAY, cache=self.base, now=NOW + timedelta(minutes=90))[1], '同一发布日已自动尝试 3 次')   # 没有错误记录时文案不变
+
     def test_retry_limit_interval_and_next_day_reset(self):
         with patch.object(T, 'generate', side_effect=RuntimeError('模拟失败')) as generate, \
              patch.object(T.logging, 'exception'):

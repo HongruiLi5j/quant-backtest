@@ -564,12 +564,13 @@ def attempt_status(day, *, cache=None, now=None):
         if attempt.get("day") != day:
             return True, "新的发布日，自动次数重新计算"
         count = int(attempt.get("count", 0))
+        why = f"（上次失败：{str(attempt.get('error'))[:200]}）" if attempt.get("error") else ""     # 把真实失败原因带进日志，不再只说「已尝试 3 次」
         if count >= 3:
-            return False, "同一发布日已自动尝试 3 次"
+            return False, "同一发布日已自动尝试 3 次" + why
         if count:
             last = datetime.fromisoformat(attempt["last_attempt"])
             if _clock(now) - last < timedelta(minutes=30):
-                return False, "距上次自动尝试不足 30 分钟"
+                return False, "距上次自动尝试不足 30 分钟" + why
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return True, "可以自动尝试"
