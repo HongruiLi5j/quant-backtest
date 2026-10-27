@@ -909,11 +909,6 @@ class Handler(BaseHTTPRequestHandler):
             code, obj = 500, {"error": "体检计算失败"}
         return self._json(obj, code)
 
-    # ---------- 实时盯盘(T006 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/market_monitor/wiring.py,这里只接线
-    MONITOR_ROUTES = {("GET", "/api/market_monitor/status"): "handle_status",
-                      ("GET", "/api/market_monitor/quotes"): "handle_quotes",
-                      ("GET", "/api/market_monitor/alerts"): "handle_alerts",
-                      ("POST", "/api/market_monitor/start"): "handle_start",
     # ---------- 前向账本展示页(T040):默认关闭(后台设置 ledger_page_on);仅本机或已验证的所有者通道 + 令牌 + dashboard 头;只读统计,不含代码与买卖清单
     def _ledger_summary(self):
         try:
@@ -931,6 +926,11 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._json({"error": "账本读取失败"}, 500)
 
+    # ---------- 实时盯盘(T006 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/market_monitor/wiring.py,这里只接线
+    MONITOR_ROUTES = {("GET", "/api/market_monitor/status"): "handle_status",
+                      ("GET", "/api/market_monitor/quotes"): "handle_quotes",
+                      ("GET", "/api/market_monitor/alerts"): "handle_alerts",
+                      ("POST", "/api/market_monitor/start"): "handle_start",
                       ("POST", "/api/market_monitor/stop"): "handle_stop",
                       ("POST", "/api/market_monitor/config"): "handle_config"}
 
@@ -1077,13 +1077,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._ai("GET", u)
         if getattr(self, "_personal_mode", False) and u.path == "/api/holdings":   # 持仓台账:关闭个人模式时不分派
             return self._holdings("GET", u)
+        if u.path == "/api/ledger/summary":
+            return self._ledger_summary()
         if u.path.startswith("/api/market_monitor/"):   # 盯盘:个人模式关闭时 404,不启动任何线程
             if not getattr(self, "_personal_mode", False):
                 return self._send(404, b"not found", "text/plain")
             return self._market_monitor("GET", u)
         if u.path.startswith("/api/us_market_monitor/"):   # 美股盯盘:同上
-        if u.path == "/api/ledger/summary":
-            return self._ledger_summary()
             if not getattr(self, "_personal_mode", False):
                 return self._send(404, b"not found", "text/plain")
             return self._us_market_monitor("GET", u)
