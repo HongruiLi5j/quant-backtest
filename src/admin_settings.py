@@ -27,6 +27,7 @@ DEFAULTS = {
     "admin_quick_enter": True,      # 新界面「后台」按钮本机点击即登录（N17）；关掉就要用管理令牌登录。同上例外
     "upload_check_on": False,       # 上传收益序列体检（T031/T032）：默认关；所有者在后台打开后，登录的本机所有者才能用
     "publish_check_on": False,      # 后台「公开站导出并检查」（T020 步骤 2）：默认关；只在本机导出+检查，不上传
+    "ledger_page_on": False,        # 前向账本展示页（T040）：默认关；只读统计，不含股票代码与买卖清单
     "maintenance_until": "",        # 预计恢复时间（文本，≤ 40 字）；用来算 Retry-After
     "features": {"member_backtest": True, "engines": True, "translate": True},
     "quota": {"free_backtest": 3, "pro_backtest": 30, "free_translate": 5, "pro_translate": 50},
@@ -34,7 +35,7 @@ DEFAULTS = {
     "sections": {sid: {"on": True} for sid in SECTION_IDS},
 }
 TIERS = ("free", "pro")
-_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter", "upload_check_on", "publish_check_on")
+_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter", "upload_check_on", "publish_check_on", "ledger_page_on")
 UNTIL_MAX = 40
 DEFAULT_RETRY_AFTER = 3600
 _lock = threading.RLock()
@@ -105,6 +106,14 @@ def upload_check_on() -> bool:
     """上传体检用：只有明确等于 True 才放行，读失败、脏数据都按关闭。"""
     try:
         return get_all(strict=True).get("upload_check_on") is True
+    except Exception:
+        return False
+
+
+def ledger_page_on() -> bool:
+    """前向账本页用：只有明确等于 True 才放行，读失败、脏数据都按关闭。"""
+    try:
+        return get_all(strict=True).get("ledger_page_on") is True
     except Exception:
         return False
 

@@ -914,6 +914,23 @@ class Handler(BaseHTTPRequestHandler):
                       ("GET", "/api/market_monitor/quotes"): "handle_quotes",
                       ("GET", "/api/market_monitor/alerts"): "handle_alerts",
                       ("POST", "/api/market_monitor/start"): "handle_start",
+    # ---------- 前向账本展示页(T040):默认关闭(后台设置 ledger_page_on);仅本机或已验证的所有者通道 + 令牌 + dashboard 头;只读统计,不含代码与买卖清单
+    def _ledger_summary(self):
+        try:
+            from src import admin_settings, ledger_summary
+            local = self._local_or_owner() and not self._remote()
+            if not local or not admin_settings.ledger_page_on():
+                return self._send(404, b"not found", "text/plain")
+            if not self._authed():
+                return self._json({"error": "UNAUTHORIZED"}, 401)
+            if self.headers.get("X-Requested-With") != "dashboard":
+                return self._json({"error": "FORBIDDEN"}, 403)
+            if members.hit("ledger_summary", "local", 60, 60):
+                return self._json({"error": "RATE_LIMITED"}, 429)
+            return self._json(ledger_summary.load())
+        except Exception:
+            return self._json({"error": "账本读取失败"}, 500)
+
                       ("POST", "/api/market_monitor/stop"): "handle_stop",
                       ("POST", "/api/market_monitor/config"): "handle_config"}
 
@@ -1065,6 +1082,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, b"not found", "text/plain")
             return self._market_monitor("GET", u)
         if u.path.startswith("/api/us_market_monitor/"):   # 美股盯盘:同上
+        if u.path == "/api/ledger/summary":
+            return self._ledger_summary()
             if not getattr(self, "_personal_mode", False):
                 return self._send(404, b"not found", "text/plain")
             return self._us_market_monitor("GET", u)
