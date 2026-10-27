@@ -11,7 +11,7 @@ from src import admin, admin_settings, publish_admin as pa  # noqa: E402
 
 
 def on(flag=True):
-    return patch.object(admin_settings, "get_all", return_value={"publish_check_on": flag})
+    return patch.object(admin_settings, "get_all", return_value={"publish_check_on": flag})            # 替身接受 strict 参数
 
 
 def fake(stdout="ok", stderr="", code=0):
@@ -32,6 +32,28 @@ class RunCheckTests(unittest.TestCase):
                 pa.run_check(runner=fake())
         with patch.object(admin_settings, "get_all", side_effect=RuntimeError("boom")):
             self.assertFalse(pa.enabled())                                           # 读失败按关闭
+
+    def test_db_failure_does_not_fall_back_to_cached_true(self):
+        # 真实 get_all：缓存里是 True，但这一次读库失败 → strict 读取必须抛出，enabled() 返回 False，runner 不被调用
+        with patch.object(admin_settings, "_last_good", {"publish_check_on": True}), \
+                patch.object(admin_settings.members, "_conn", side_effect=RuntimeError("db down")):
+            self.assertFalse(pa.enabled())
+            r = fake()
+            with self.assertRaises(pa.PublishCheckError):
+                pa.run_check(runner=r)
+            self.assertEqual(r.calls, [])
+            self.assertFalse(admin_settings.upload_check_on())                              # 上传体检同样按关闭
+            self.assertTrue(admin_settings.get_all()["publish_check_on"])                    # 非 strict 仍退回缓存（其他功能的既有行为不变）
+
+    def test_output_is_redacted(self):
+        raw = f"构建 通过：{pa.ROOT}/build/2026/site\nfile {Path.home()}/Documents/x\n  /private/var/folders/ab/cd/T/x.tmp\n命令 .venv/bin/python scripts/build_public_site.py"
+        with on():
+            out = pa.run_check(runner=fake(raw, f"Traceback {pa.ROOT}/src/y.py"))["output"]
+        self.assertNotIn(str(pa.ROOT), out)
+        self.assertNotIn(str(Path.home()), out)
+        self.assertNotIn("/private/var", out)
+        self.assertIn("<项目>/build/2026/site", out)
+        self.assertIn(".venv/bin/python scripts/build_public_site.py", out)                   # 相对路径的命令保持可复制
 
     def test_fixed_argv_env_cwd(self):
         r = fake("构建 通过")
@@ -79,6 +101,48 @@ class RunCheckTests(unittest.TestCase):
             self.assertIn("已经有一个", str(cm.exception))
         finally:
             pa._BUSY.release()
+
+
+def _build_admin_post():
+    import ast
+    tree = ast.parse((Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8"))
+    handler = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Handler")
+    fn = next(n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == "_admin_post")
+    cls = ast.ClassDef(name="H", bases=[], keywords=[], decorator_list=[], body=[fn])
+    ns = dict(admin=admin, ADMIN_CTX={})
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])), "<h>", "exec"), ns)
+    return ns["H"]
+
+
+class OriginTests(unittest.TestCase):
+    def mk(self, origin):
+        H = _build_admin_post()
+
+        class F(H):
+            client_address = ("127.0.0.1", 1)
+            headers = {"X-Requested-With": "dashboard", **({"Origin": "http://127.0.0.1:8765"} if origin else {})}
+            out = None
+            def _local_or_owner(self): return True
+            def _admin_authed(self): return True
+            def _origin_ok(self): return True                                      # 真实实现在缺头时也返回 True
+            def _body(self): return {"action": "publish_check"}
+            def _json(self, obj, code=200): self.out = (code, obj)
+            def _send(self, code, body, ctype="text/plain"): self.out = (code, body)
+        return F()
+
+    def test_missing_origin_rejected_for_publish_check(self):
+        h = self.mk(origin=False)
+        with patch.object(admin, "dispatch", return_value={"ok": True}) as d, patch.object(admin, "set_actor_from_request"):
+            h._admin_post(SimpleNamespace(path="/api/admin/action"))
+        self.assertEqual(h.out[0], 403)
+        d.assert_not_called()
+
+    def test_with_origin_goes_to_dispatch(self):
+        h = self.mk(origin=True)
+        with patch.object(admin, "dispatch", return_value={"ok": True}) as d, patch.object(admin, "set_actor_from_request"):
+            h._admin_post(SimpleNamespace(path="/api/admin/action"))
+        self.assertEqual(h.out, (200, {"ok": True}))
+        d.assert_called_once()
 
 
 class AdminRouteTests(unittest.TestCase):

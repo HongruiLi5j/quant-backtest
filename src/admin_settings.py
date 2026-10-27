@@ -57,8 +57,8 @@ def _copy(d: dict) -> dict:
     return json.loads(json.dumps(d))
 
 
-def get_all() -> dict:
-    """返回完整设置（库里没有的键补默认值）。读失败时回退到上次成功的值，再回退到默认。"""
+def get_all(strict: bool = False) -> dict:
+    """返回完整设置（库里没有的键补默认值）。读失败时回退到上次成功的值，再回退到默认；strict=True 时读失败直接抛异常（给「默认关闭」的危险功能用，不能用缓存的 True）。"""
     global _last_good
     try:
         out = _copy(DEFAULTS)
@@ -81,6 +81,8 @@ def get_all() -> dict:
         _last_good = _copy(out)
         return out
     except Exception:
+        if strict:
+            raise
         return _copy(_last_good) if _last_good else _copy(DEFAULTS)
 
 
@@ -101,7 +103,10 @@ def admin_quick_enter_on() -> bool:
 
 def upload_check_on() -> bool:
     """上传体检用：只有明确等于 True 才放行，读失败、脏数据都按关闭。"""
-    return get_all().get("upload_check_on") is True
+    try:
+        return get_all(strict=True).get("upload_check_on") is True
+    except Exception:
+        return False
 
 
 def section_open(sid: str) -> bool:

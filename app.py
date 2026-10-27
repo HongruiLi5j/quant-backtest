@@ -750,6 +750,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             action = str(body.pop("action", ""))
+            if action == "publish_check" and not self.headers.get("Origin"):      # 公开站导出检查：浏览器同源 POST 必带 Origin，缺失一律拒绝
+                return self._json({"error": "缺少浏览器来源信息"}, 403)
             self._json(admin.dispatch(action, body, ADMIN_CTX))
         except admin.AdminError as e:
             self._json({"error": str(e)}, 400)

@@ -18,7 +18,7 @@ export async function render(root) {
     msg.textContent = t('pub.chk.running');
     btn.disabled = true;
     try {
-      const res = await postJSON('/api/admin/action', { action: 'publish_check' });
+      const res = await postJSON('/api/admin/action', { action: 'publish_check' }, { timeoutMs: 330000 });   // 后台最长跑 300 秒，页面多等 30 秒
       msg.textContent = t(res.ok ? 'pub.chk.pass' : 'pub.chk.fail');
       out.textContent = String(res.output ?? '');
     } catch (e) {

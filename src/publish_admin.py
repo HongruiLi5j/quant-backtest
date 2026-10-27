@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import threading
@@ -26,13 +27,26 @@ class PublishCheckError(Exception):
 def enabled() -> bool:
     from . import admin_settings
     try:
-        return admin_settings.get_all().get("publish_check_on") is True
+        return admin_settings.get_all(strict=True).get("publish_check_on") is True      # 读库失败不能退回缓存里的 True
     except Exception:
         return False
 
 
 def _env() -> dict:
     return {"PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
+
+
+_ABS = re.compile(r"(?:/Users|/home|/private|/var|/tmp|/opt|/usr|/Volumes)/[^\s'\"]*")
+
+
+def redact(text: str) -> str:
+    """把绝对路径换掉再回传页面：项目根 → <项目>，用户主目录 → ~，其余绝对路径 → <路径>。"""
+    text = text.replace(str(ROOT), "<项目>")
+    try:
+        text = text.replace(str(Path.home()), "~")
+    except Exception:
+        pass
+    return _ABS.sub("<路径>", text)
 
 
 def run_check(*, runner=subprocess.run) -> dict:
@@ -50,6 +64,7 @@ def run_check(*, runner=subprocess.run) -> dict:
         except OSError:
             raise PublishCheckError("无法启动导出检查")
         text = ((p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")).strip()
+        text = redact(text)
         if len(text) > MAX_OUTPUT_CHARS:
             text = text[:MAX_OUTPUT_CHARS] + "\n…（输出过长，已截断）"
         return {"ok": p.returncode == 0, "exit_code": int(p.returncode), "output": text}

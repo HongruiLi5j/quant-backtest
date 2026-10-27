@@ -63,7 +63,7 @@ async function request(path, init, opts) {
     return debugRecord(path, init, await readMock(mockName(path, opts.mock), init.method === 'POST' ? { ok: true, mock: true } : undefined));
   }
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), Number.isFinite(opts?.timeoutMs) && opts.timeoutMs > 0 ? opts.timeoutMs : TIMEOUT_MS);
   let res;
   try {
     res = await fetch(path, {

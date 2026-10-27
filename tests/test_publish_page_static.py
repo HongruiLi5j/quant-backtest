@@ -1,8 +1,11 @@
 """公开站导出检查页的静态检查:词条、不用 innerHTML、只调用一个后台动作。不启动服务,不读 data/。"""
 import json
 import re
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 UI = Path(__file__).resolve().parent.parent / "dashboard" / "ui"
 JS = (UI / "pages" / "publish.js").read_text(encoding="utf-8")
@@ -25,6 +28,14 @@ class PublishPageTests(unittest.TestCase):
         self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/admin/action"})
         self.assertIn("'publish_check'", JS)
         self.assertIn('data-page="publish"', HTML)
+
+    def test_front_timeout_exceeds_backend(self):
+        from src import publish_admin
+        m = re.search(r"timeoutMs:\s*(\d+)", JS)
+        self.assertIsNotNone(m)
+        self.assertGreater(int(m.group(1)), publish_admin.TIMEOUT_SECONDS * 1000)
+        api = (UI / "shared" / "api.js").read_text(encoding="utf-8")
+        self.assertIn("opts.timeoutMs", api)
 
     def test_admin_toggle(self):
         av = (UI / "pages" / "admin-views.js").read_text(encoding="utf-8")
