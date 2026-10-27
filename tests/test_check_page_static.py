@@ -1,6 +1,8 @@
 """上传体检页的静态检查:词条齐全、不用 innerHTML、默认关闭的提示存在。不启动服务,不读 data/。"""
 import json
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -36,6 +38,27 @@ class CheckPageTests(unittest.TestCase):
         self.assertIn("live('upload_check_on'", av)
         self.assertIn("adm.row.upload_check_on", ZH)
         self.assertIn("adm.row.upload_check_on.hint", EN)
+
+
+@unittest.skipUnless(shutil.which("node"), "需要 node")
+class ParseCsvTests(unittest.TestCase):
+    def run_js(self, text):
+        code = ("const fs=require('fs');const s=fs.readFileSync(process.argv[1],'utf8');const a=s.indexOf('export function parseCsv');"
+                "const b=s.indexOf('const field =');const MAX_ROWS=10000;const t=(k)=>k;"
+                "const f=eval('('+s.slice(a,b).replace('export function parseCsv','function')+')');"
+                "try{console.log(JSON.stringify(f(process.argv[2])))}catch(e){console.log('ERR:'+e.message)}")
+        r = subprocess.run(["node", "-e", code, str(UI / "pages" / "check.js"), text], capture_output=True, text=True, timeout=20)
+        return r.stdout.strip()
+
+    def test_valid(self):
+        self.assertEqual(json.loads(self.run_js("date,ret\n2020-01-02,0.01\n2020-01-03,0.02".replace("\\n", "\n")))["returns"], [0.01, 0.02])
+        full = json.loads(self.run_js("2020-01-02,0.01,0.005,0.1\n2020-01-03,-0.02,0.001,0.2".replace("\\n", "\n")))
+        self.assertEqual(full["turnover"], [0.1, 0.2])
+
+    def test_strict_rejections(self):
+        for bad in ("", "junk\ndate,ret\n2020-01-02,0.01", "2020-01-02BAD,0.01", "2020-01-02,0.1\n2020-01-03,0.1,0.2",
+                    "2020-01-02,0.1,0.2,0.3,0.4", "2020-01-02,0.01\n2020-01-03,", "2020-01-02,abc"):
+            self.assertTrue(self.run_js(bad.replace("\\n", "\n")).startswith("ERR:"), bad)
 
 
 if __name__ == "__main__":

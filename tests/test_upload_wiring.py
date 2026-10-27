@@ -27,8 +27,10 @@ H = build()
 
 
 class Fake(H):
-    def __init__(self, body=b"", local=True, authed=True, header="dashboard", origin=True, length=None):
+    def __init__(self, body=b"", local=True, authed=True, header="dashboard", origin=True, length=None, origin_header="http://127.0.0.1:8765"):
         self.headers = {"X-Requested-With": header, "Content-Length": str(len(body) if length is None else length)}
+        if origin_header:
+            self.headers["Origin"] = origin_header
         self.rfile = io.BytesIO(body)
         self._local, self._auth, self._origin = local, authed, origin
         self.out = None
@@ -74,6 +76,7 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(self.run_it(body=good_body(), authed=False)[0], 401)
         self.assertEqual(self.run_it(body=good_body(), header="")[0], 403)
         self.assertEqual(self.run_it(body=good_body(), origin=False)[0], 403)
+        self.assertEqual(self.run_it(body=good_body(), origin_header="")[0], 403)           # 缺 Origin 头：即使 _origin_ok 放行也要拒绝
 
     def test_ok(self):
         code, obj = self.run_it(body=good_body())
@@ -95,7 +98,8 @@ class WiringTests(unittest.TestCase):
         h2.headers["Content-Length"] = "abc"
         with patch.object(admin_settings, "get_all", return_value={"upload_check_on": True}):
             h2._upload_check()
-        self.assertEqual(h2.out[0], 500)                                           # 异常只返回固定文案
+        self.assertEqual(h2.out[0], 400)                                           # 非法长度：客户端错误并关闭连接，不回显
+        self.assertTrue(h2.close_connection)
         self.assertNotIn("abc", json.dumps(h2.out[1]))
 
     def test_route_registered_in_do_post(self):

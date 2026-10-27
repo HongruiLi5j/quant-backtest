@@ -13,30 +13,31 @@ const MAX_ROWS = 10000;
 const MAX_CHARS = 1500000;
 const STATUS_CLASS = { pass: 'is-rise', warn: 'is-flat', fail: 'is-fall', na: 'muted' };
 
-/** 解析 CSV/表格文本：第 1 列日期，第 2 列日收益(小数，0.01=1%)；可选第 3 列基准收益、第 4 列换手。自动跳过表头。 */
+/** 解析 CSV/表格文本：第 1 列日期(严格 YYYY-MM-DD)，第 2 列日收益(小数，0.01=1%)；可选第 3 列基准收益、第 4 列换手。
+ *  只允许第一行是表头(第一列不是日期)；每行列数必须一致(2 到 4 列)；任何一行有问题都整体拒绝，不悄悄丢弃或改写。 */
 export function parseCsv(text) {
   const rows = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!rows.length) throw new Error(t('chk.err.empty'));
-  const out = { dates: [], returns: [], benchmark: [], turnover: [] };
-  let cols = 0;
-  for (const line of rows) {
-    const p = line.split(/[,;\t]/).map((x) => x.trim());
-    if (!/^\d{4}-\d{2}-\d{2}/.test(p[0])) { if (out.dates.length === 0) continue; throw new Error(t('chk.err.row'));
-    }
-    cols = Math.max(cols, p.length);
-    const r = Number(p[1]);
-    if (p[1] === '' || !Number.isFinite(r)) throw new Error(t('chk.err.row'));
-    out.dates.push(p[0].slice(0, 10));
-    out.returns.push(r);
-    if (p.length > 2) out.benchmark.push(p[2] === '' ? NaN : Number(p[2]));
-    if (p.length > 3) out.turnover.push(p[3] === '' ? NaN : Number(p[3]));
-    if (out.dates.length > MAX_ROWS) throw new Error(t('chk.err.rows', { n: MAX_ROWS }));
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const split = (l) => l.split(/[,;\t]/).map((x) => x.trim());
+  const first = split(rows[0]);
+  const body = DATE.test(first[0]) ? rows : rows.slice(1);          // 第一行不是日期 → 当作唯一的表头
+  if (!body.length) throw new Error(t('chk.err.empty'));
+  if (body.length > MAX_ROWS) throw new Error(t('chk.err.rows', { n: MAX_ROWS }));
+  const cols = split(body[0]).length;
+  if (cols < 2 || cols > 4) throw new Error(t('chk.err.row'));
+  const num = (x) => { if (x === '') throw new Error(t('chk.err.row')); const v = Number(x); if (!Number.isFinite(v)) throw new Error(t('chk.err.row')); return v; };
+  const out = { dates: [], returns: [] };
+  if (cols >= 3) out.benchmark = [];
+  if (cols >= 4) out.turnover = [];
+  for (const line of body) {
+    const p = split(line);
+    if (p.length !== cols || !DATE.test(p[0])) throw new Error(t('chk.err.row'));
+    out.dates.push(p[0]);
+    out.returns.push(num(p[1]));
+    if (cols >= 3) out.benchmark.push(num(p[2]));
+    if (cols >= 4) out.turnover.push(num(p[3]));
   }
-  if (!out.dates.length) throw new Error(t('chk.err.empty'));
-  if (cols < 3) delete out.benchmark;
-  else if (out.benchmark.some((x) => !Number.isFinite(x))) throw new Error(t('chk.err.row'));
-  if (cols < 4) delete out.turnover;
-  else if (out.turnover.some((x) => !Number.isFinite(x))) throw new Error(t('chk.err.row'));
   return out;
 }
 

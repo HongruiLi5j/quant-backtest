@@ -880,7 +880,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(code, obj.encode(), "text/plain")
         return self._json(obj, code)
 
-    # ---------- 上传收益序列体检(T031/T032):默认关闭(后台设置 upload_check_on);仅可信本机 + 令牌 + dashboard 头 + Origin;
+    # ---------- 上传收益序列体检(T031/T032):默认关闭(后台设置 upload_check_on);仅本机或已验证的所有者通道(与持仓一致) + 令牌 + dashboard 头 + 必须有合法 Origin;
     # 校验与计算都在 src/upload_api.py,这里只接线;请求内容不写日志、不落盘,所有失败只返回固定码
     def _upload_check(self):
         try:
@@ -890,11 +890,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, b"not found", "text/plain")
             if not self._authed():
                 return self._json({"error": "UNAUTHORIZED"}, 401)
-            if self.headers.get("X-Requested-With") != "dashboard" or not self._origin_ok():
-                return self._json({"error": "FORBIDDEN"}, 403)
+            if self.headers.get("X-Requested-With") != "dashboard" or not self.headers.get("Origin") or not self._origin_ok():
+                return self._json({"error": "FORBIDDEN"}, 403)       # 浏览器同源 POST 一定带 Origin；缺失一律拒绝
             if members.hit("upload_check", "local", 6, 60):
                 return self._json({"error": "体检请求太频繁，请稍后再试"}, 429)
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                self.close_connection = True
+                return self._json({"error": "请求头不合法"}, 400)
             if not 0 <= n <= upload_api.MAX_BODY_BYTES:
                 self.close_connection = True
                 return self._json({"error": "请求体过大"}, 413)
