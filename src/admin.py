@@ -646,6 +646,12 @@ def _do(action: str, body: dict, ctx: dict, market, code: str) -> dict:
         return {"ok": True, "started": started, "note": "" if started else "已经有一个更新在运行"}
     if action == "kick_update":
         return {"ok": kick_update()}
+    if action == "publish_check":                      # T020 步骤 2：只导出+检查，不上传；默认关闭(publish_check_on)
+        from . import publish_admin
+        try:
+            return publish_admin.run_check()
+        except publish_admin.PublishCheckError as e:
+            raise AdminError(str(e))
     if action == "task_start":
         started = task_start(str(body.get("task", "")))
         return {"ok": True, "started": started, "note": "" if started else "这个任务已经在运行"}

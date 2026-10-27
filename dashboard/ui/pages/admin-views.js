@@ -42,6 +42,7 @@ export function rows() {
     live('new_ui_home', 'site', () => toggle('new_ui_home', t('adm.row.new_ui_home'))),
     live('admin_quick_enter', 'site', () => toggle('admin_quick_enter', t('adm.row.admin_quick_enter'))),
     live('upload_check_on', 'site', () => toggle('upload_check_on', t('adm.row.upload_check_on'))),
+    live('publish_check_on', 'site', () => toggle('publish_check_on', t('adm.row.publish_check_on'))),
     need('online', 'site', lockedSw('online', true)),
     need('guest', 'site', lockedSw('guest', false)),
     need('showcase', 'site', lockedSw('showcase', false)),

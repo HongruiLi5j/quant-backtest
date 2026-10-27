@@ -26,6 +26,7 @@ DEFAULTS = {
     "new_ui_home": True,            # 首页默认进新界面（N18）；关掉就回到旧首页。所有者批准的「默认开」例外
     "admin_quick_enter": True,      # 新界面「后台」按钮本机点击即登录（N17）；关掉就要用管理令牌登录。同上例外
     "upload_check_on": False,       # 上传收益序列体检（T031/T032）：默认关；所有者在后台打开后，登录的本机所有者才能用
+    "publish_check_on": False,      # 后台「公开站导出并检查」（T020 步骤 2）：默认关；只在本机导出+检查，不上传
     "maintenance_until": "",        # 预计恢复时间（文本，≤ 40 字）；用来算 Retry-After
     "features": {"member_backtest": True, "engines": True, "translate": True},
     "quota": {"free_backtest": 3, "pro_backtest": 30, "free_translate": 5, "pro_translate": 50},
@@ -33,7 +34,7 @@ DEFAULTS = {
     "sections": {sid: {"on": True} for sid in SECTION_IDS},
 }
 TIERS = ("free", "pro")
-_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter", "upload_check_on")
+_BOOL_KEYS = ("membership_on", "share_links_on", "registration_open", "maintenance_on", "new_ui_home", "admin_quick_enter", "upload_check_on", "publish_check_on")
 UNTIL_MAX = 40
 DEFAULT_RETRY_AFTER = 3600
 _lock = threading.RLock()
