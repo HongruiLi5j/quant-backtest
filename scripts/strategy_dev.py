@@ -58,11 +58,11 @@ def log(msg):
 
 
 # ---------------------------------------------------------------- 引擎
-def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
+def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp, bench_ok=None):
     """逐期 TopkDropout 回测（numpy）。全部输入是 (T, N) 数组，dates 是长度 T 的 DatetimeIndex。
     信号用 t 日及以前；t+1 开盘成交；持有到下一个调仓日的 t'+1 开盘。成本按实际买入+卖出金额（占净值比例）× 单边 bp。
     买不进（无开盘价/开盘涨幅≥9.5%）的候选顺延到下一名；卖不出（无开盘价/开盘跌幅≥9.5%）的旧仓继续持有；
-    停牌期间退出价用决策日以前的最后一个收盘价；能否成交只看次日是否有开盘价(本地数据停牌日没有行)，不用次日成交量。基准 = t 日可交易、t+1 能买进、有退出价的股票等权，不扣成本。
+    停牌期间退出价用决策日以前的最后一个收盘价；能否成交只看次日是否有开盘价(本地数据停牌日没有行)，不用次日成交量。基准 = t 日可交易(bench_ok，缺省用 ok)、t+1 能买进、有退出价的股票等权，不扣成本；基准池与因子得分是否缺失无关，所有候选用同一个基准。
     返回 DataFrame：sig_date、exit_date、gross、cost、net、bench、excess、turnover、n_hold。"""
     T, N = O.shape
     pos = rebalance_positions(T, step)
@@ -109,7 +109,7 @@ def run_portfolio(score, ok, O, C, V, Cff, dates, step, K, ndrop, cost_bp):
         gross = float((w_tgt * r_f).sum())
         buys, sells = np.maximum(w_tgt - w_pre, 0).sum(), np.maximum(w_pre - w_tgt, 0).sum()
         cost = float((buys + sells) * cost_bp / 1e4)
-        elig = valid & can_buy & np.isfinite(r)
+        elig = (ok[a] if bench_ok is None else bench_ok[a]) & can_buy & np.isfinite(r)     # 基准池不看因子得分：不同因子的缺失值不能改变比较基准
         bench = float(r[elig].mean()) if elig.any() else 0.0           # 没有可买股票(如清仓期)：基准按空仓 0 计，保证清仓成本进入超额统计
         rows.append({"sig_date": dates[a], "exit_date": dates[b + 1], "gross": gross, "cost": cost, "net": gross - cost, "bench": bench,
                      "excess": gross - cost - bench, "turnover": float((buys + sells) / 2), "n_hold": int(keep.sum())})
@@ -309,7 +309,7 @@ def check_same_history(sel, full, end):
         raise ValueError("完整面板与选择面板的 market_ret 不一致")
 
 
-def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, full_panel_fn=None):
+def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, full_panel_fn=None, allow_final=True):
     """选择阶段只用截到验证段末尾的面板；留下的候选要看最终段时，先用 full_panel_fn(验证段末尾) 预检历史一致(失败不消耗锁)，再拿全局锁，再调用 full_panel_fn(None) 取完整面板，
     只跑这几个候选，且股票池限定为选择面板的股票。full_panel_fn 缺省时用 panel 自己(仅测试)。
     lock_path 为 None 且有候选需要看最终段时直接报错(不允许没有锁地看最终段)。"""
@@ -328,6 +328,8 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, 
             log(f"候选 {i + 1}/{len(grid)}")
 
     def final_provider(ids):
+        if not allow_final:                                             # 本次运行不看最终段(不拿锁、不载入完整面板)
+            return None
         if lock_path is None:
             raise RuntimeError("需要看最终段但没有提供全局锁路径")
         if full_panel_fn:                                               # 锁前预检：只载入到验证段末尾，校验失败不消耗全局锁
@@ -349,6 +351,8 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, 
         return res
 
     rep = select_and_test(cands, final_provider)
+    if not allow_final:
+        rep["final_blocked"], rep["final_skipped"] = False, True
     # PBO 与 DSR 只用训练+验证段（最终段保持干净）
     M = pd.concat({k: monthly(pd.concat([v["train"], v["valid"]])) for k, v in cands.items()}, axis=1).dropna(how="any")
     rep["pbo"], rep["pbo_splits"] = cscv_pbo(M.values) if len(M) else (float("nan"), 0)
@@ -368,7 +372,7 @@ def run_all(panel, fx, cost_bp, smoke=False, n_random=N_RANDOM, lock_path=None, 
         means = []
         for _ in range(n_random):
             rs = rng.standard_normal(scores[fid].shape)
-            d = run_portfolio(rs, ok_r, O, C, V, Cff, dates, step, K, max(1, int(K * DROP_FRAC)), cost_bp)
+            d = run_portfolio(rs, ok_r, O, C, V, Cff, dates, step, K, max(1, int(K * DROP_FRAC)), cost_bp, bench_ok=ok)
             if len(d):
                 s = split_segments(d)
                 means.append(seg_stats(pd.concat([s["train"], s["valid"]]))["mean"])
@@ -402,7 +406,7 @@ def render(rep, n_codes, cost_bp, smoke):
                  + (f"{f['mean']:+.4f} | {f['nw_t']:+.2f} | {f['mean_cost_x2']:+.4f} | {f['turnover']:.2f} | {'**存活**' if f['survive'] else '未存活'} | {'是' if f['above_hlz'] else '否'} |" if f
                     else "- | - | - | - | 未进入最终段 | - |"))
     kept = [r for r in rep["top"] if r["kept"]]
-    blocked = "（最终段已被看过，全局锁存在，本次拒绝再看）" if rep.get("final_blocked") else ""
+    blocked = "（最终段已被看过，全局锁存在，本次拒绝再看）" if rep.get("final_blocked") else "（本次按设定不看最终段：未拿全局锁，留下的候选等所有者决定）" if rep.get("final_skipped") else ""
     L += ["", f"**结论**：训练段前 {len(rep['top'])} 名里，验证段留下 {len(kept)} 个；最终段存活 {sum(1 for r in kept if r['final'] and r['final']['survive'])} 个，"
           f"其中 t>3.0 的 {sum(1 for r in kept if r['final'] and r['final'].get('survive_hlz'))} 个{blocked}。「存活」用的是 t>2.0，只有 t>3.0 才接近多重检验下的门槛。",
           "", "## 局限", "", "- 名单与历史在之前的检验里全部被看过，这不是真正的样本外，只是新增一批检验；候选数量已计入 PBO/DSR。",
@@ -415,6 +419,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--no-final", action="store_true", help="只做到验证段：不拿全局锁、不载入最终段，留下的候选等所有者决定")
     a = ap.parse_args(argv)
     out = Path(a.out_dir)
     from src import allmarket, datasource
@@ -430,8 +435,8 @@ def main(argv=None):
     panel = build_arrays(codes, fx, allmarket, end=VALID[1])             # 选择阶段只载入到验证段末尾：连「数据够不够 400 行」的筛选都看不到最终段
     log(f"面板 {panel.close.shape}，开始候选搜索")
     lock = out / "FINAL_LOCK_SMOKE.json" if a.smoke else ROOT / "handoff" / "data" / "dev" / "FINAL_LOOKED.json"     # 正式锁在固定全局路径，换输出目录也绕不过
-    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock,
-                    full_panel_fn=lambda end=None: build_arrays(codes, fx, allmarket, end=end))
+    rep, _ = run_all(panel, fx, cost_bp, smoke=a.smoke, n_random=10 if a.smoke else N_RANDOM, lock_path=lock, allow_final=not (a.no_final or a.smoke),
+                    full_panel_fn=None if a.smoke else (lambda end=None: build_arrays(codes, fx, allmarket, end=end)))     # smoke 永远不载入完整面板
     (out / "dev_results.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     (out / "report.md").write_text(render(rep, len(codes), cost_bp, a.smoke), encoding="utf-8")
     log("完成")

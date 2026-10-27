@@ -23,6 +23,12 @@ function rowsTable(rows) {
     el('tbody', {}, ...body)));
 }
 
+function csvOf(rows) {
+  const head = ['action', 'hold_days', 'n', 'signal_days', 'hit_excess', 'hit_lo', 'hit_hi', 'mean_excess', 'net_excess', 'enough', 'verdict'];
+  const cell = (x) => (x === null || x === undefined ? '' : String(x));
+  return [head.join(','), ...rows.map((r) => [r.action, r.h, r.n, r.days, r.hit_excess, r.hit_lo, r.hit_hi, r.mean_excess, r.net_excess, r.enough, r.verdict].map(cell).join(','))].join('\n') + '\n';
+}
+
 export async function render(root) {
   let d;
   try {
@@ -37,8 +43,19 @@ export async function render(root) {
   }
   const warn = d.any_enough ? null : el('div', { class: 'card u1-note is-warn', role: 'alert' },
     t('led.small', { days: int(d.evaluated_days), min: int(d.min_sample) }));
+  const refresh = el('button', { class: 'btn btn--sm btn--ghost', type: 'button' }, t('led.btn.refresh'));
+  refresh.addEventListener('click', () => render(root));
+  const csv = el('button', { class: 'btn btn--sm btn--ghost', type: 'button', disabled: !d.rows.length }, t('led.btn.csv'));
+  csv.addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([csvOf(d.rows)], { type: 'text/csv;charset=utf-8' }));
+    const a = el('a', { href: url, download: 'forward_ledger_summary.csv' });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
   root.replaceChildren(
-    el('div', { class: 'card' }, el('p', {}, t('led.intro')), el('p', { class: 'muted' }, t('led.nosignal'))),
+    el('div', { class: 'card' }, el('p', {}, t('led.intro')), el('p', { class: 'muted' }, t('led.nosignal')), el('div', { class: 'row' }, refresh, csv)),
     warn,
     el('div', { class: 'card' },
       el('p', {}, t('led.counts', { s: int(d.signal_days), e: int(d.evaluated_days), date: d.today || '—' })),

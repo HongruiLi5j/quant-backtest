@@ -558,6 +558,43 @@ class RandomControlPoolTests(unittest.TestCase):
             self.assertTrue(not ok_r[1500:, 0].any())                                # 因子缺失的 0 号股票没有被随机对照放进池子
 
 
+class BenchmarkAndNoFinalTests(unittest.TestCase):
+    """Codex 夜间审计(N1027_3)：基准不能随因子得分缺失而变；allow_final=False 不拿锁、不载入完整面板。"""
+
+    def test_benchmark_independent_of_score_nan(self):
+        dates, O, C, V = arrays()
+        T, N = O.shape
+        rng = np.random.default_rng(0)
+        O = O * (1 + rng.normal(0, 0.01, (T, N)).cumsum(axis=0) * 0.1)
+        C = O.copy()
+        ok = np.ones((T, N), bool)
+        score = np.tile(np.arange(N, 0, -1, dtype=float), (T, 1))
+        a = run(score, ok, O, C, V, dates)
+        s2 = score.copy()
+        s2[:, N - 1] = np.nan                                                      # 一只没持有的低分股票得分缺失
+        b = run(s2, ok, O, C, V, dates)
+        self.assertTrue(np.allclose(a["gross"], b["gross"]))                       # 持仓不变
+        self.assertTrue(np.allclose(a["bench"], b["bench"]))                       # 基准也不变
+
+    def test_allow_final_false_never_touches_lock_or_full_panel(self):
+        from src.market_monitor import factors as fx
+        dates = pd.bdate_range("2016-01-04", "2024-06-28")
+        T, N = len(dates), 30
+        rng = np.random.default_rng(1)
+        px = pd.DataFrame(10 * np.cumprod(1 + rng.normal(0.0004, 0.01, (T, N)), axis=0), index=dates, columns=[f"{i:06d}" for i in range(N)])
+        panel = fx.Panel(px, px * 1.01, px * 0.99, px, pd.DataFrame(1e6, index=dates, columns=px.columns),
+                         pd.Series(["a"] * N, index=px.columns), pd.Series(["x"] * N, index=px.columns))
+        calls = []
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / "L.json"
+            rep, _ = sd.run_all(panel, fx, 8, smoke=True, n_random=1, lock_path=lock, allow_final=False,
+                                full_panel_fn=lambda end=None: calls.append(end) or panel)
+            self.assertEqual(calls, [])                                            # 完整面板回调一次都没被调用
+            self.assertFalse(lock.exists())                                        # 没有拿锁
+        self.assertTrue(rep.get("final_skipped"))
+        self.assertFalse(rep["final_blocked"])
+
+
 class ImportTests(unittest.TestCase):
     def test_import_guard(self):
         self.assertNotIn("app", sys.modules)

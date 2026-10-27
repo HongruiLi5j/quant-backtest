@@ -13,6 +13,45 @@ const MAX_ROWS = 10000;
 const MAX_CHARS = 1500000;
 const STATUS_CLASS = { pass: 'is-rise', warn: 'is-flat', fail: 'is-fall', na: 'muted' };
 
+/** 浏览器端下载一个文本文件（只用 Blob，不经过服务器，不执行任何内容）。 */
+function download(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  const a = el('a', { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const TEMPLATE = 'date,ret,benchmark,turnover\n2020-01-02,0.0012,0.0008,0.15\n2020-01-03,-0.0021,-0.0015,0.10\n';
+
+/** 合成示例：确定性伪随机（固定种子的线性同余），约 3 年日收益，均值接近 0——不是任何真实策略。 */
+export function sampleCsv(n = 750) {
+  let x = 20261027;
+  const rnd = () => { x = (x * 1664525 + 1013904223) % 4294967296; return x / 4294967296; };
+  const gauss = () => { const u = Math.max(rnd(), 1e-12); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); };
+  const lines = ['date,ret,benchmark,turnover'];
+  const d = new Date(Date.UTC(2021, 0, 4));
+  for (let i = 0; i < n; i++) {
+    while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+    const m = gauss() * 0.009;
+    lines.push(`${d.toISOString().slice(0, 10)},${(0.0003 + m * 0.6 + gauss() * 0.006).toFixed(6)},${(0.0002 + m).toFixed(6)},${(0.1 + rnd() * 0.1).toFixed(3)}`);
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return lines.join('\n') + '\n';
+}
+
+/** 把体检结果整理成 Markdown 文本（纯文本拼接，供下载）。 */
+export function resultMarkdown(out, zh) {
+  const v = out.verdict || {};
+  const L = [`# ${zh ? v.title_zh : v.title_en}`, '', zh ? v.zh : v.en, '', '| id | status | detail |', '|---|---|---|'];
+  for (const c of out.checks || []) L.push(`| ${c.id} | ${c.status} | ${String(zh ? c.zh : c.en).replace(/\|/g, '/').replace(/\n/g, ' ')} |`);
+  L.push('', zh ? '## 局限' : '## Caveats');
+  for (const c of out.caveats || []) L.push(`- ${zh ? c.zh : c.en}`);
+  L.push('', `> ${zh ? out.disclaimer?.zh : out.disclaimer?.en}`);
+  return L.join('\n') + '\n';
+}
+
 /** 解析 CSV/表格文本：第 1 列日期(严格 YYYY-MM-DD)，第 2 列日收益(小数，0.01=1%)；可选第 3 列基准收益、第 4 列换手。
  *  只允许第一行是表头(第一列不是日期)；每行列数必须一致(2 到 4 列)；任何一行有问题都整体拒绝，不悄悄丢弃或改写。 */
 export function parseCsv(text) {
@@ -99,6 +138,13 @@ export async function render(root) {
   const msg = el('div', { class: 'muted', role: 'status' });
   const out = el('div', {});
   const btn = el('button', { class: 'btn', type: 'button' }, t('chk.run'));
+  const tplBtn = el('button', { class: 'btn btn--sm btn--ghost', type: 'button' }, t('chk.btn.template'));
+  const sampleBtn = el('button', { class: 'btn btn--sm btn--ghost', type: 'button' }, t('chk.btn.sample'));
+  const exportBtn = el('button', { class: 'btn btn--sm btn--ghost', type: 'button', hidden: true }, t('chk.btn.export'));
+  let lastResult = null;
+  tplBtn.addEventListener('click', () => download('returns_template.csv', TEMPLATE, 'text/csv'));
+  sampleBtn.addEventListener('click', () => { ta.value = sampleCsv(); trials.value = '5'; msg.textContent = t('chk.sample.note'); });
+  exportBtn.addEventListener('click', () => { if (lastResult) download('strategy_check.md', resultMarkdown(lastResult, lang() === 'zh'), 'text/markdown'); });
 
   file.addEventListener('change', () => {
     const f = file.files?.[0];
@@ -127,6 +173,8 @@ export async function render(root) {
       const res = await postJSON('/api/check/upload', body);
       msg.textContent = '';
       out.replaceChildren(resultView(res), ...[attributionView(res.factor_attribution)].filter(Boolean));
+      lastResult = res;
+      exportBtn.hidden = false;
     } catch (e) {
       msg.textContent = e.status === 404 ? t('chk.off') : e.status === 429 ? t('chk.busy') : (e.body?.error || e.message || t('ui.state.error'));
     } finally {
@@ -141,5 +189,5 @@ export async function render(root) {
     field('chk.trials', trials, 'chk.trials.hint'),
     field('chk.trades', trades), field('chk.split', split),
     field('chk.cost.flag', inc), field('chk.bp', bp, 'chk.bp.hint'), field('chk.fm', fm, 'chk.fm.hint'),
-    btn, msg), out);
+    el('div', { class: 'row' }, btn, tplBtn, sampleBtn, exportBtn), msg), out);
 }
