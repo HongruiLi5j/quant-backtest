@@ -1,7 +1,0 @@
-{
- "a03.state.error_hint": "The web service may not be running, the network may be down, or the API hit a temporary error. Click Retry or press R to reload.",
- "a03.state.error_reason": "Reason: {msg}",
- "a03.state.error_script": "The page script failed; see the browser console for details.",
- "a03.state.empty_hint": "There is nothing to show on this page yet (this is not an error). Press R to refresh after the data updates.",
- "a03.err.bad_reply": "The {api} API returned an unexpected reply"
-}

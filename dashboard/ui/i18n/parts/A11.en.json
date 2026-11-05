@@ -1,5 +1,0 @@
-{
- "a11y.watch_add": "Add {n} to watchlist",
- "a11y.watch_remove": "Remove {n} from watchlist",
- "a11y.void_trade": "Void the {code} trade on {date}"
-}
