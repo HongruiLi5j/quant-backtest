@@ -28,7 +28,7 @@
 
 .ws-main {
   padding: var(--ws-pad);
-  animation: ws-in 240ms var(--ease-out) both;
+  /* 所有者 2026-11-05：切页淡入让点击显得慢，去掉（原 ws-in 240ms） */
 }
 
 @keyframes ws-in { from { opacity: 0; } }
@@ -418,3 +418,8 @@
 /* —— D71「终端」主题的工作台密度：表格行更紧、去掉顶部紫色光晕（颜色本身在 tokens.css） —— */
 :root[data-theme="terminal"] .ws { --ws-row: 30px; --ws-card-pad: 16px; background: var(--bg-base); }
 :root[data-theme="terminal"] .ws .table td { padding-top: var(--space-2); padding-bottom: var(--space-2); }
+
+/* —— 所有者 2026-11-05：可点击元素的悬停/按下反馈立即生效（原来颜色、背景、边框要渐变 150–280ms，感觉按钮反应慢） —— */
+.ws a, .ws button, .ws [role="button"], .ws .btn, .ws .tab, .ws summary, .ws select, .ws label, .ws-nav a, nav a, header a, header button {
+  transition-duration: 0s !important;
+}
