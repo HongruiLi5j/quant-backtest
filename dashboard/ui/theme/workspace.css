@@ -419,7 +419,6 @@
 :root[data-theme="terminal"] .ws { --ws-row: 30px; --ws-card-pad: 16px; background: var(--bg-base); }
 :root[data-theme="terminal"] .ws .table td { padding-top: var(--space-2); padding-bottom: var(--space-2); }
 
-/* —— 所有者 2026-11-05：可点击元素的悬停/按下反馈立即生效（原来颜色、背景、边框要渐变 150–280ms，感觉按钮反应慢） —— */
-.ws a, .ws button, .ws [role="button"], .ws .btn, .ws .tab, .ws summary, .ws select, .ws label, .ws-nav a, nav a, header a, header button {
-  transition-duration: 0s !important;
-}
+/* —— 所有者 2026-11-05：悬停/按下反馈一律立即生效（原来按钮、链接、表格行、卡片要渐变 150–280ms，感觉反应慢）。
+ * 只保留进度条的动画；卡片「聚光」变暗也不再渐变。 —— */
+body *:not(.progress__bar) { transition-duration: 0s !important; transition-delay: 0s !important; }
