@@ -210,7 +210,7 @@ def main():
                 extra[m][c] = _slim(detail.build(m, c, MARKETS[m], "blend2", "1y"))
             except Exception as e:
                 print("扩展个股失败", m, c, e)
-    xb64 = base64.b64encode(gzip.compress(json.dumps(extra, ensure_ascii=False, default=float, separators=(",", ":")).encode("utf-8"), 9)).decode()
+    xb64 = base64.b64encode(gzip.compress(json.dumps(extra, ensure_ascii=False, default=float, separators=(",", ":")).encode("utf-8"), 9, mtime=0)).decode()
     print("扩展个股", {m: len(v) for m, v in extra.items()}, "压缩后", len(xb64) // 1024, "KB")
     blob = json.dumps(data, ensure_ascii=False, default=float, separators=(",", ":"))
     blob = blob.replace("</", "<\\/")
