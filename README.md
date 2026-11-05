@@ -90,6 +90,10 @@ Full page: [docs/research_findings.en.md](docs/research_findings.en.md) (中文�
 
 I built the platform step by step with Claude and ChatGPT, and I directed the design and the rules above. The AmiBroker strategy and the data checks are my own work.
 
+## Overnight sandbox changes (2026-11-04)
+
+An overnight review of both sites ran in a separate sandbox branch (`sandbox-1104`); nothing was changed on the live site. Every approved change (D01–D74) is listed with its commits and a one-line undo command in [`docs/通宵变更_2026-11-04.md`](docs/通宵变更_2026-11-04.md) (Chinese). Strategy rules and parameters were not changed. New API fields are in `dashboard/ui/API_MAP.md` §4. Read-only browser checks: `overnight/tools/ui_smoke.py` (every page) and `overnight/tools/ui_journeys.py` (12 user journeys).
+
 ## Quick start
 
 Python 3 on macOS. All commands use the virtual environment's Python.
