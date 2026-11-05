@@ -13,7 +13,17 @@ from . import paths
 
 _MODEL_FIELDS = ("version", "adapter_path", "adapter_sha256", "base_model_sha256", "schema_sha256")
 _PRIVATE = re.compile(r"authorization|cookie|password|secret|token|client_ip|headers", re.I)
-_CREDENTIAL = re.compile(r"(?i)\b(?:authorization|cookie|password|secret|token|api[_-]?key)\b[^\n,;]*")
+# 凭据赋值：「关键词 + 冒号/等号 + 值」（如 token=abc、"password": "x"、Authorization: Bearer abc）。
+# 只遮这一小段（关键词连同值），不再吞掉后面整行；普通文字里单独出现的 token / secret 不动。
+# 前后用 ASCII 字母数字的环视而不是 \b：中文紧挨着英文时（如"我的password:abc"）\b 不成立。
+_CREDENTIAL = re.compile(
+    r"""(?<![A-Za-z0-9_])(?i:authorization|cookie|password|secret|token|api[_-]?key)(?![A-Za-z0-9_])"""
+    r"""["']?\s*[:=：]\s*["']?(?i:(?:bearer|basic)\s+)?[^\s,;"'}\]\x80-\U0010ffff]+""")
+# 注意：不能用全局 (?i)——忽略大小写时 \x80 以上的非 ASCII 范围会连带包含 ı/İ，它们和 i 等价，值里的字母 i 会被误排除。
+# 值只取 ASCII 段，不吞后面紧跟的中文。
+# 疑似密钥串：长度 ≥16 的字母数字（含 _ -，因为真实密钥常带连接符）。
+# 只用于自由文本（想法、模型原文、反馈备注）；request_id、哈希这类结构化字段不经过它。
+_LONG_SECRET = re.compile(r"(?<![A-Za-z0-9_\-])[A-Za-z0-9][A-Za-z0-9_\-]{15,}(?![A-Za-z0-9_\-])")
 _IP = re.compile(r"(?<![\w])(?:\d{1,3}\.){3}\d{1,3}(?![\w])|(?<![\w])(?:[0-9a-fA-F]*:){2,}[0-9a-fA-F:.]*(?![\w])")
 
 
@@ -23,6 +33,13 @@ def _redact_ip(match):
         return "[redacted]"
     except ValueError:
         return match.group()
+
+
+def _safe_text(value):
+    """自由文本的脱敏：在 _safe 的基础上再遮住 ≥16 位的疑似密钥串。非字符串原样返回。"""
+    if not isinstance(value, str):
+        return value
+    return _LONG_SECRET.sub("[redacted]", _safe(value))
 
 
 def _safe(value):
@@ -63,7 +80,7 @@ class LogStore:
         self._append(paths.log_path(now.strftime("%Y%m"), self.root), {
             "event": "translate", "ts": now.isoformat(), "request_id": request_id,
             "backend_id": backend_id, "model": {k: model.get(k) for k in _MODEL_FIELDS},
-            "idea": idea, "precheck": precheck, "raw_output": _safe(raw_output)[:4000],
+            "idea": _safe_text(idea), "precheck": precheck, "raw_output": _safe_text(raw_output)[:4000],
             "parse_mode": parse_mode, "config": config, "gate": gate,
             "flags": flags, "status": status, "latency_ms": latency_ms,
             **({"usage": usage} if usage is not None else {})})
@@ -76,7 +93,7 @@ class LogStore:
     def feedback(self, *, request_id, note):
         self._append(self.directory / "feedback.jsonl", {
             "event": "feedback", "ts": self._now().isoformat(), "request_id": request_id,
-            "verdict": "wrong", "note": _safe(note)[:200], "status": "pending_review"})
+            "verdict": "wrong", "note": _safe_text(note)[:200], "status": "pending_review"})
 
     def contains(self, request_id):
         """只认翻译事件；确认和反馈不能凭空建立一个有效 request_id。"""

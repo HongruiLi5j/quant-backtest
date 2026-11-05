@@ -1,0 +1,16 @@
+{
+ "g03.head.updated": "Updated {g}",
+ "g03.actions.hold_note": "Stocks whose weight is unchanged or moves by no more than {pp} percentage points are not listed, so there is no \"hold\" count here; see \"Position changes\" for hold / rebalance on the benchmark.",
+ "g03.pos.title": "Position changes",
+ "g03.pos.paper_sum": "{n} paper positions: sell {sell} · reduce {reduce} · buy {buy} · add {add} · exceptions {exc} · no signal {none}",
+ "g03.pos.no_signal": "No signal",
+ "g03.pos.empty": "The paper account has no positions.",
+ "g03.pos.more": "{n} more",
+ "g03.risk.title": "Watch out",
+ "g03.risk.exceptions": "{n} stocks have data problems or are suspended and are not in today's list.",
+ "g03.risk.price": "Adjusted prices are unavailable for {n} signals; price and lot cost will show \"insufficient data\".",
+ "g03.risk.held_sell": "{n} of your paper positions have a sell / reduce signal today: {codes}.",
+ "g03.risk.held_exc": "{n} of your paper positions have data problems or are suspended today: {codes}.",
+ "g03.risk.none": "Nothing else to flag right now.",
+ "g03.details": "Details"
+}

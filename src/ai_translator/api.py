@@ -12,7 +12,7 @@ import threading
 import time
 import unicodedata
 
-from . import api_llm, config, consistency, gate, local_lora, paths, plainview, precheck, registry
+from . import api_llm, config, consistency, gate, local_lora, paths, plainview, precheck, registry, unused
 from .backend import TranslatorBackend, TranslatorError, make_result, output_kind
 from .logstore import LogStore
 
@@ -286,6 +286,8 @@ class API:
                 if kind == "clarify":
                     clarify = copy.deepcopy(doc["clarify"])
                 else:
+                    # 在交给闸门前先清掉模型给"用不到的参数"填的值，并留下 warn（用户确认时要看到）。
+                    doc, flags = unused.prune_unused(doc)
                     if self.oracle:
                         oracle = self.oracle
                     elif cfg["backend"] == "api_llm":
@@ -297,18 +299,15 @@ class API:
                         oracle = gate.Gate.from_config(cfg)
                     validation = oracle.validate(doc)
                     if not validation["legal"]:
-                        refusal = plainview.make_refusal(validation["code"], "gate")
-                        # 仅展示已知字段路径；不回显校验器自由文本或内部路径。
-                        fields = [item.get("path") for item in validation.get("errors", [])
-                                  if isinstance(item, dict) and item.get("path") in plainview.LABELS]
-                        if fields:
-                            refusal["fields"] = list(dict.fromkeys(fields))[:3]
+                        # 只带白名单里的字段名和规则码；不回显校验器自由文本或内部路径。
+                        fields, rules = plainview.gate_fields(validation.get("errors"))
+                        refusal = plainview.make_refusal(validation["code"], "gate", fields=fields, rules=rules)
                     elif kind == "reject":
                         refusal = plainview.make_refusal(doc["reject"]["code"], "model")
                         refusal["message"] = doc["reject"]["message"]
                     else:
                         comparison = consistency.compare(idea, doc, oracle)
-                        refusal, flags = comparison["refusal"], comparison["flags"]
+                        refusal, flags = comparison["refusal"], flags + comparison["flags"]
                         if not refusal:
                             view = plainview.build_view(doc, comparison["sources"])
         except TranslatorError as exc:

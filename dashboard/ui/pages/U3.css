@@ -68,3 +68,11 @@
 @media (max-width: 720px) {
   .ws-grid--kpi6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* A04：375px 下 KPI 两列，每张卡内容区只有约 100px，22px 等宽字体的 “500,000.00” 要 128px，数字压过卡片边框。
+   字号降到 16px（约 92px）；.u3-capital 是 flex 容器、不受列宽约束，加 min-width/max-width 锁住；
+   overflow-wrap 兜底：位数更多的真实数据宁可折行也不伸出卡片 */
+@media (max-width: 480px) {
+  .ws-grid--kpi6 .metric__value { font-size: 16px; overflow-wrap: anywhere; }
+  .u3-capital { min-width: 0; max-width: 100%; }
+  .u3-capital .metric__value { max-width: 100%; }
+}

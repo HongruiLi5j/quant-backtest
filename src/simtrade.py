@@ -17,6 +17,8 @@ import threading
 from datetime import date, timedelta
 from pathlib import Path
 
+from . import costs, market_clock
+
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "simtrade.db"
 OUT = ROOT / "data" / "daily" / "simtrade"
@@ -24,8 +26,10 @@ LOT = 100
 FILL_PRICE = "open"
 FEE_VERIFIED = False      # 费率还没和真实账户核对；核对后改 True 并更新 FEE
 FEE = {
-    "stock": {"commission_rate": 0.00025, "min_commission": 5.0, "transfer_rate": 0.00001, "stamp_rate": 0.0005},
-    "etf": {"commission_rate": 0.00015, "min_commission": 5.0, "transfer_rate": 0.0, "stamp_rate": 0.0},
+    "stock": {"commission_rate": costs.COMMISSION_RATE, "min_commission": costs.MIN_COMMISSION,
+              "transfer_rate": costs.TRANSFER_RATE, "stamp_rate": costs.STAMP_DUTY_RATE},
+    "etf": {"commission_rate": costs.ETF_COMMISSION_RATE, "min_commission": costs.MIN_COMMISSION,
+            "transfer_rate": 0.0, "stamp_rate": 0.0},
 }
 STOP_LOSS = 0.15          # 持仓亏损达到成本的 15%，下一个交易日卖出（固定风控）
 HALT_DD = 0.20            # 账户从最高点回撤超过 20%，暂停新买入
@@ -354,7 +358,7 @@ class StaleListError(Exception):
 
 def expected_day(cal, now_bj):
     """最近已收盘交易日（北京时间 15:30 后算当天）。日历必须覆盖到截止日，否则无法确定，拒绝（不退回旧日期）。"""
-    cutoff = now_bj.date() if now_bj.hour * 60 + now_bj.minute >= 15 * 60 + 30 else now_bj.date() - timedelta(days=1)
+    cutoff = market_clock.last_usable_bar_date(now_bj)
     if not cal or max(cal) < cutoff:
         raise StaleListError(f"交易日历只到 {max(cal) if cal else '无'}，不足以确定最近已收盘交易日（截止 {cutoff}），今天不撮合、不挂单")
     return max(d for d in cal if d <= cutoff).isoformat()

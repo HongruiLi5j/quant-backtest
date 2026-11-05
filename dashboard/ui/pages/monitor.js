@@ -115,7 +115,7 @@ export async function render(root) {
 
   async function fetchAll() {
     const [q, a] = await Promise.all([getJSON(`${base}/quotes`), getJSON(`${base}/alerts`)]);
-    if (q?.ok !== true || a?.ok !== true) throw new ApiError(200, 'monitor 返回异常', q?.ok !== true ? q : a);
+    if (q?.ok !== true || a?.ok !== true) throw new ApiError(200, t('a03.err.bad_reply', { api: 'monitor' }), q?.ok !== true ? q : a);   // 显示在错误卡片「原因」里
     st.status = q.status; st.quotes = q.quotes || []; st.alerts = a.alerts || []; st.intraday = q.intraday || null;
   }
 

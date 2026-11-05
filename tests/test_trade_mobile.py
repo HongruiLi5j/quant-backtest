@@ -15,6 +15,12 @@ class Element {
   addEventListener(name, callback) { this.events[name] = callback; }
   querySelectorAll() { return []; }
   setAttribute() {}
+  // 和浏览器 Element.replaceChildren 一致：先清空原有子节点，再按参数顺序追加；非节点参数(字符串等)变成文本节点
+  replaceChildren(...nodes) {
+    this.childNodes = nodes.map(n => (n !== null && typeof n === 'object') ? n : {nodeType: 3, textContent: String(n)});
+    this.innerHTML = '';
+    this.textContent = this.childNodes.map(n => n.textContent ?? '').join('');
+  }
 }
 function make(mobile, mine) {
   const elements = new Map();

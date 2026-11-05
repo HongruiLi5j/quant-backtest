@@ -42,3 +42,29 @@
   .topnav__classic, .search-trigger__text, .search-trigger .kbd { display: none; }
   .ws-head { gap: var(--space-2) var(--space-3); }
 }
+
+/* A04：check.js / ledger.js 的表格容器 class 写成 tablewrap（少了连字符），全站没有这条规则，
+   表格一宽就被 html/body 的 overflow-x: clip 直接裁掉；这里补成和 .table-wrap 一样的横向滚动容器 */
+.tablewrap { overflow-x: auto; max-width: 100%; }
+
+/* A04：check 页表单。.field__label 在基础样式里是「浮动标签」（绝对定位、垂直居中，只配 .field__input 使用），
+   check.js 把它用在普通表单行上，标签就压在输入框和提示文字上；.input / .row 全站也没有样式。
+   这里把表单行改成纵向排列：标签 → 控件 → 提示，控件占满宽度，按钮自动换行 */
+[data-page="check"] .field { display: grid; gap: var(--space-1); margin-top: var(--space-3); }
+[data-page="check"] .field__label { position: static; transform: none; pointer-events: auto; font-size: var(--fs-sm); color: var(--text-primary); }
+[data-page="check"] .field .muted { font-size: var(--fs-xs); line-height: 1.5; }
+[data-page="check"] .input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+[data-page="check"] .input:focus { outline: none; border-color: var(--accent-glow); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 22%, transparent); }
+[data-page="check"] .card > p + p { margin-top: var(--space-2); }
+[data-page="check"] .card > input[type="file"] { display: block; max-width: 100%; margin-top: var(--space-2); font-size: var(--fs-sm); }
+[data-page="check"] .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
+[data-page="check"] .card > [role="status"] { margin-top: var(--space-2); }

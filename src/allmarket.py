@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from . import market_clock
 from .datasource import CACHE, COLS
 
 ALL = CACHE / "cn_all"
@@ -241,8 +242,7 @@ def trade_calendar() -> list[date]:
 
 def last_trading_day(now_bj: datetime, cal: list[date]) -> date:
     """北京时间 15:30 之后算今天，否则算上一个交易日。"""
-    cutoff = now_bj.date() if now_bj.hour * 60 + now_bj.minute >= 15 * 60 + 30 else now_bj.date() - timedelta(days=1)
-    return max(d for d in cal if d <= cutoff)
+    return market_clock.last_usable_bar_date(now_bj, cal)
 
 
 def prev_trading_day(d: date, cal: list[date]) -> date:
@@ -605,7 +605,7 @@ def daily_update(max_repair_minutes: float = 30) -> dict:
     result = {"trade_day": day.isoformat()}
     prev = load_progress()
     resuming = prev.get("trade_day") == day.isoformat() and not prev.get("complete")
-    trading_now = now_bj.date() in cal and (9 * 60 + 15) <= now_bj.hour * 60 + now_bj.minute < 15 * 60 + 30
+    trading_now = now_bj.date() in cal and (9 * 60 + 15) <= now_bj.hour * 60 + now_bj.minute and not market_clock.is_close_ready(now_bj)
     if trading_now:
         # 盘中：今天还没收盘，历史数据已经是最新的上一个交易日，没什么可更新的
         result["skipped"] = "A 股交易时间，等收盘后再更新"
@@ -728,7 +728,7 @@ def _drop_unfinished(df: pd.DataFrame) -> pd.DataFrame:
         return df
     now = _now_bj()
     cutoff = pd.Timestamp(now.date())
-    if now.hour * 60 + now.minute < 15 * 60 + 30:
+    if not market_clock.is_close_ready(now):
         return df[df.index < cutoff]
     return df[df.index <= cutoff]
 
@@ -742,14 +742,13 @@ def strip_intraday() -> int:
     for code in cached_codes():
         p = path(code)
         saved = datetime.fromtimestamp(p.stat().st_mtime, bj)
-        df = load(code)
-        if df.empty:
+        idx = pd.read_parquet(p, columns=[]).index   # 只读日期索引：判断有没有盘中 K 线用不到 OHLCV 五列
+        if len(idx) == 0:
             continue
-        ready = pd.Timestamp(saved.date()) if saved.hour * 60 + saved.minute >= 15 * 60 + 30 \
-            else pd.Timestamp(saved.date()) - pd.Timedelta(days=1)
-        bad = df.index > ready
-        if bad.any():
-            save(code, df[~bad])
+        ready = pd.Timestamp(market_clock.last_usable_bar_date(saved))
+        if (idx > ready).any():          # 绝大多数股票走不到这里，只有真有半天 K 线才整份读出来改写
+            df = load(code)
+            save(code, df[~(df.index > ready)])
             fixed += 1
     return fixed
 

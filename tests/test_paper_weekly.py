@@ -3,6 +3,7 @@
 """
 import contextlib
 import hashlib
+import importlib
 import io
 import os
 import shutil
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -119,8 +121,15 @@ class TestNormalWeek(Base):
         self.assertNotIn("需要立即处理", md)
 
     def test_no_forbidden_modules(self):
-        for name in ("src.notify", "src.datasource", "notify", "datasource"):
-            self.assertNotIn(name, sys.modules)
+        # 环境隔离：全套 pytest 时别的测试文件会先导入 src.notify 等，sys.modules 里本来就有。
+        # 临时去掉项目自己的模块，重新导入本文件用到的模块，再做原来的检查；退出 with 后 sys.modules 原样恢复。
+        with mock.patch.dict(sys.modules):
+            for name in [n for n in sys.modules if n.split(".")[0] in ("src", "notify", "datasource", "weekly_summary")]:
+                del sys.modules[name]
+            for name in ("src.promotion", "src.signal_ledger", "src.paper_review.weekly", "src.validation.paper", "weekly_summary"):
+                importlib.import_module(name)
+            for name in ("src.notify", "src.datasource", "notify", "datasource"):
+                self.assertNotIn(name, sys.modules)
         with open(os.path.join(ROOT, "src", "paper_review", "weekly.py"), encoding="utf-8") as f:
             src = f.read()
         for banned in ("import notify", "datasource", "requests", "urllib", "socket", "INSERT", "UPDATE ", "DELETE", ".commit("):

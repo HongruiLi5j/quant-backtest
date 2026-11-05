@@ -199,3 +199,17 @@
   .search-trigger__text,
   .search-trigger .kbd { display: none; }
 }
+
+/* A04：375px 下品牌文字 + 三个按钮占掉约 2/3 的顶栏，13 个导航项挤在一小段（滚动条还被隐藏）里，
+   「信号」被搜索按钮压成半个字。≤480px 把品牌文字改成「视觉隐藏」：logo 图标还在，读屏软件仍能读到名称，
+   腾出的宽度全给导航条。用 clip 而不是 display:none，是为了保住链接的可访问名称 */
+@media (max-width: 480px) {
+  .topnav__brand > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

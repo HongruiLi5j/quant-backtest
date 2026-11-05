@@ -1,0 +1,5 @@
+{
+ "a11y.watch_add": "把 {n} 加入自选",
+ "a11y.watch_remove": "把 {n} 移出自选",
+ "a11y.void_trade": "撤销 {date} 的 {code} 这笔成交"
+}

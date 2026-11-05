@@ -1,0 +1,23 @@
+{
+ "engines.lock.rq_title": "RQAlpha engine",
+ "f03.cards.less": "Show only the first {n}",
+ "f03.cards.more": "Show all {n}",
+ "f03.chart.dd_axis": "Y-axis: how far equity sits below its previous peak (%); 0 means a new high.",
+ "f03.chart.eq_axis": "Y-axis: cumulative return since the start (%), starting at 0. Solid line = strategy, dashed line = buy-and-hold benchmark.",
+ "f03.heat.note": "Unit: %. Red = up month, green = down month (A-share convention); darker means a larger move. Every cell shows its number and losses carry a minus sign, so colour is not needed to read it. The last column is the full year.",
+ "f03.kline.note": "The y-axis is price. Red candles closed above the open, green candles below it (A-share convention). Buys are upward arrows under the bar (B) and sells are downward arrows above it (S); the shape and letter tell them apart without colour.",
+ "f03.market.adv": "Advancing",
+ "f03.market.adv_foot": "{d} declining · {f} flat",
+ "f03.market.heat_note": "Red = up, green = down (A-share convention, the reverse of Western charts); darker means a larger move. Every tile shows the signed change, so colour is not needed to read it. n = number of stocks in the sector.",
+ "f03.market.limit_foot": "{d} limit-down",
+ "f03.market.limit_up": "Limit-up",
+ "f03.params.none": "No parameters",
+ "f03.replay.hint": "The composite score combines CAGR, Sharpe, max drawdown and consistency into one number used only for ranking. Everything in this table is synthetic demo data; do not use it to pick a strategy.",
+ "f03.signals.count": "Signals",
+ "f03.strategies.list": "All strategies",
+ "f03.unit.pp": "pp",
+ "f03.wf.months": "months",
+ "lock.engines.title": "Backtrader / RQAlpha engines",
+ "pub.engine.rq": "RQAlpha",
+ "t5.pub.engines": "Engines: in-house / Backtrader / RQAlpha"
+}

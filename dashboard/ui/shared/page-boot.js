@@ -18,7 +18,10 @@ import { initCursor } from './custom-cursor.js';
 import { initTickers } from './number-ticker.js';
 import { initPalette, openPalette } from './command-palette.js';
 import { toast } from './toast.js';
+import { restoreFocusOnClose } from './a11y.js';
 import { renderTopnav, NAV, navTarget } from '../nav.js';
+import { stateLines, resolveLines, fillStateCard } from './state-card.js';
+import { stockPage } from './stock-link.js';
 
 const page = document.body.dataset.page || '';
 const params = new URLSearchParams(window.location.search);
@@ -52,7 +55,14 @@ function showError(err) {
   if (link) link.hidden = !auth;
   const retry = box?.querySelector('[data-action="retry"]');
   if (retry) retry.hidden = auth;
+  fillStateCard(box?.querySelector('.when-error'), resolveLines(stateLines('error', err)));   // 标题下的说明和原因（A03）
   setState('error');
+}
+
+/** 空状态卡片：标题下补一句说明，告诉用户这不是出错（A03） */
+function showEmpty() {
+  fillStateCard(main()?.querySelector('.when-empty'), resolveLines(stateLines('empty')));
+  setState('empty');
 }
 
 async function renderPage() {
@@ -61,7 +71,7 @@ async function renderPage() {
   setState('loading');
   if (forced === 'loading') return;
   if (forced === 'error') { showError(null); return; }
-  if (forced === 'empty') { setState('empty'); return; }
+  if (forced === 'empty') { showEmpty(); return; }
   const body = document.querySelector('[data-ws-body]') ?? main();
   if (params.get('debug') === '1') {   // 页脚「接口字段核对」：每次重绘前清空，接口返回时 api.js 会逐个登记
     try { (await import('./debug-fields.js')).resetDebug(); } catch (err) { console.warn('debug-fields 加载失败', err); }
@@ -70,7 +80,7 @@ async function renderPage() {
     if (!mod) mod = await import(`../pages/${page}.js`);
     const result = await mod.render(body);
     if (seq !== renderSeq) return;   // 期间又触发了一次渲染，丢掉这次
-    if (result === 'empty') { setState('empty'); return; }
+    if (result === 'empty') { showEmpty(); return; }
     initTickers();
     setState('ready');
   } catch (err) {
@@ -91,9 +101,13 @@ function keysDialog() {
       el('p', { class: 'card__title' }, t('ws.keys.title')),
       el('dl', {}, ...rows.flatMap(([k, v]) => [el('dt', {}, el('span', { class: 'kbd' }, k)), el('dd', {}, v)])));
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.tabIndex = -1;   // 里面没有可聚焦的东西：让对话框自己能拿到焦点，读屏才会读标题（A11）
+    dlg.rememberOpener = restoreFocusOnClose(dlg);
     document.body.append(dlg);
   }
+  dlg.rememberOpener();
   dlg.showModal();
+  dlg.focus();
 }
 
 function onKey(e) {
@@ -126,7 +140,7 @@ async function boot() {
   drawNav();
   initPalette({
     pages: NAV.map((n) => ({ key: n.key, href: navTarget(n), group: 'palette.group.pages' })),
-    stockHref: (code) => `stock.html?code=${encodeURIComponent(code)}`,   // 新个股页 w/stock.html；不带 market 时用默认市场
+    stockHref: (code) => stockPage(code),   // 新个股页 w/stock.html；不带 market 时用默认市场；预览模式带上 ?mock=1（G01）
   });
   // 自定义鼠标圆圈已去掉（不再调用 initCursor），保留系统鼠标
   document.addEventListener('keydown', onKey);

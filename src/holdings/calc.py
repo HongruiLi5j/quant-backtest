@@ -12,6 +12,8 @@
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
+from .. import costs
+
 MILLI = Decimal(1000)
 CENT = Decimal(100)
 
@@ -70,12 +72,13 @@ def default_fee_estimate(code, side, amount):
     费率尚未与真实账户核对,仅是估算,页面应标"估算"。
     """
     amount = Decimal(amount)
-    fee = max(amount * Decimal("0.00025"), Decimal(5))
+    # 费率数值在 src/costs.py;Decimal(str(float)) 取最短十进制表示,与原来的字符串字面量完全相等(测试里逐值核对)
+    fee = max(amount * Decimal(str(costs.COMMISSION_RATE)), Decimal(str(costs.MIN_COMMISSION)))
     if code[:1] in ("5", "6"):
-        fee += amount * Decimal("0.00001")
+        fee += amount * Decimal(str(costs.TRANSFER_RATE))
     is_etf = code[:2] in ("51", "56", "58") or code.startswith("159")
     if side == "sell" and not is_etf:
-        fee += amount * Decimal("0.0005")
+        fee += amount * Decimal(str(costs.STAMP_DUTY_RATE))
     return q2(fee)
 
 

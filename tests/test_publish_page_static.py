@@ -25,7 +25,7 @@ class PublishPageTests(unittest.TestCase):
 
     def test_safe_and_single_action(self):
         self.assertNotIn("innerHTML", JS)
-        self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/admin/action"})
+        self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/admin/action", "/api/publish/latest"})   # N23：多了一个只读接口；写操作仍只有 publish_check
         self.assertIn("'publish_check'", JS)
         self.assertIn('data-page="publish"', HTML)
 

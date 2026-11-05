@@ -25,6 +25,8 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
+from .. import costs as rates    # 费率常量的单一来源(src/costs.py,叶子模块);别名与 validation/costs.py 保持一致
+
 # from_strategy 默认路径支持的单品种策略(dual_momentum 需要多品种 dict,blend/vol_scale 不是策略,均不在内)
 KNOWN_STRATEGIES = ("trend_vol_target", "trend_ensemble", "donchian_breakout", "donchian_s1",
                     "rsi2_reversion", "ma_adx_plus", "ma_adx_original")
@@ -328,7 +330,7 @@ def _import_src():
 
 
 def from_strategy(df, strategy: str, params: Optional[Mapping] = None, *, code: str = "X",
-                  cost: float = 0.0005, band: float = 0.0, limit: Optional[float] = None,
+                  cost: float = rates.ENGINE_DEFAULT_ONE_WAY, band: float = 0.0, limit: Optional[float] = None,
                   cash_ret=None, strategy_fn: Optional[Callable] = None,
                   run_fn: Optional[Callable] = None, cost_included=None) -> RunRecord:
     """只读调用现有回测:strategies.<strategy>(df, **params) 得目标仓位 -> run_weights -> RunRecord。
@@ -369,7 +371,7 @@ def from_strategy(df, strategy: str, params: Optional[Mapping] = None, *, code: 
     return _result_to_record(res, meta)
 
 
-def rerun_with_held(df, held, *, code: str = "X", cost: float = 0.0005,
+def rerun_with_held(df, held, *, code: str = "X", cost: float = rates.ENGINE_DEFAULT_ONE_WAY,
                     run_fn: Optional[Callable] = None, cost_included=None) -> RunRecord:
     """用"受限后的持仓路径" held 交回 run_weights 重算收益(成交约束压力用)。
 

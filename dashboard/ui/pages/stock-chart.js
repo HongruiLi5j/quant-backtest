@@ -1,7 +1,7 @@
 /* ==========================================================
  * 文件: ui/pages/stock-chart.js
  * 用途: 个股 K 线（对应旧 kChart）。lightweight-charts 5 的多窗格：
- *   0 价格（K 线 ≤300 根，更多时用收盘面积线）+ 策略均线 / 止损线 + 布林带 + 买卖点标记
+ *   0 价格（K 线 ≤300 根，更多时用收盘面积线，且默认只显示最近约 1 年）+ 策略均线 / 止损线 + 布林带 + 买卖点标记
  *   1 仓位条（越深仓位越重） 2 成交量 3 策略副图（ADX / RSI(2)） 4+ MACD / RSI / KDJ
  *   悬浮提示：开高低收 + 涨跌 + 各线数值 + 仓位。颜色取 CSS tokens，换主题时重绘。
  *   d = GET /api/stock 的返回（src/detail.py: build）
@@ -12,6 +12,11 @@ import { attachTooltip, chartColors, withAlpha } from '../shared/chart-helpers.j
 import { baseOptions, chartMissing, isNum, pct, toneClass, track } from './u2-lib.js';
 
 const H = { price: 300, pos: 36, vol: 70, sub: 90, ind: 100 };
+const CANDLE_MAX = 300;     // 超过这个根数价格窗格改画收盘面积线
+const RECENT_BARS = 252;    // 默认可见窗口：最近约 1 年（A 股一年约 245~252 个交易日）
+
+/** 数据量够大（已经改画面积线）时才有「近 1 年 / 全部」两种视图；否则一屏本来就放得下 */
+export const canZoomRecent = (n) => n > CANDLE_MAX;
 
 /** 把 values（与 dates 对齐，可含 null）变成 [{time, value}] 并丢掉空值 */
 const points = (dates, values) => dates.map((time, i) => ({ time, value: values[i] })).filter((p) => isNum(p.value));
@@ -54,10 +59,11 @@ function tipRows(d, i, ind, panes) {
 }
 
 /**
- * 在 box 里画图，返回 { chart }；box 高度由窗格总高度决定。
+ * 在 box 里画图，返回 { chart, showRange }；box 高度由窗格总高度决定。
  * ind = 'all' | 'macd' | 'rsi' | 'kdj' | 'off'（旧页面「技术指标」下拉）
+ * view = 'recent' | 'all'：数据多时首屏只显示最近 RECENT_BARS 根（数据仍全部加载，可拖动）；showRange(view) 之后随时切换
  */
-export function kChart(box, d, ind) {
+export function kChart(box, d, ind, view = 'recent') {
   const lib = window.LightweightCharts;
   box.replaceChildren();
   if (!lib) return chartMissing(box);
@@ -72,7 +78,7 @@ export function kChart(box, d, ind) {
   const chart = lib.createChart(box, baseOptions(c0));
   const paint = [];                         // 每项 (c) => void：创建时和换主题时都执行一遍
   const idx = new Map(dates.map((x, i) => [x, i]));
-  const candles = n <= 300;
+  const candles = !canZoomRecent(n);
 
   // —— 窗格 0：价格
   const price = candles
@@ -144,7 +150,12 @@ export function kChart(box, d, ind) {
   });
 
   paint.forEach((f) => f(c0));
-  chart.timeScale().fitContent();
+  // 只改「看哪一段」（逻辑坐标 = 第几根 K 线），不改喂给各序列的数据，所以买卖点标记数量不受影响
+  const showRange = (v) => {
+    if (v === 'recent' && canZoomRecent(n)) chart.timeScale().setVisibleLogicalRange({ from: n - RECENT_BARS, to: n - 1 });
+    else chart.timeScale().fitContent();
+  };
+  showRange(view);
   track(chart, (c) => paint.forEach((f) => f(c)));
 
   // 窗格高度（lightweight-charts 里是权重，按像素给即可）+ 窗格标题
@@ -161,5 +172,5 @@ export function kChart(box, d, ind) {
     const i = idx.get(String(param.time));
     return i === undefined ? null : tipRows(d, i, ind, panels);
   });
-  return { chart };
+  return { chart, showRange };
 }

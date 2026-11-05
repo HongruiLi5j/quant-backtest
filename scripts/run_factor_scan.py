@@ -35,7 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.market_monitor import factors as fx
 from src.market_monitor.core import BEIJING
-from src.market_monitor.eod_analysis import CLOSE_READY, LOCKED_SEGMENT_START, _read_list
+from src import market_clock
+from src.market_monitor.eod_analysis import LOCKED_SEGMENT_START, _read_list
 
 HORIZON = 20                 # 未来收益窗口（交易日）
 WARMUP = 260                 # 每个 chunk 前多取的预热行数（mom252 需要 253 根）
@@ -174,7 +175,7 @@ def parse_day(text):
 def load_history(daily_dir, end_ts, now=None):
     """读 <目录>/*.parquet（Open/High/Low/Close/Volume，日期索引），截到 end_ts（含）。北京时间 15:30 前当天的 K 线丢弃。返回 Panel。"""
     now = (now or datetime.now(BEIJING)).astimezone(BEIJING)
-    drop_today = now.time() < CLOSE_READY
+    drop_today = not market_clock.is_close_ready(now)
     root = Path(daily_dir)
     if not root.is_dir():
         raise ScanError('no_daily_data')

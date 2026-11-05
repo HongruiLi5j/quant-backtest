@@ -1,15 +1,17 @@
 /* ==========================================================
  * 文件: ui/pages/research.js —— 研究（旧页「信号跟踪」/#/track 的内容）
  * 接口: GET /api/meta、GET /api/tracking?market=
- * 只有「信号跟踪」有真实接口；Replay 排行 / Validation / Factor Scan / Monotonic 在后端没有 HTTP 接口，
- * 这几个 tab 显示「暂未提供」，不放假数据。
+ * 只有「信号跟踪」有真实接口；Replay 排行 / Validation / Monotonic 在后端没有 HTTP 接口，显示「暂未提供」，不放假数据。
+ * Factor 标签（N24）：读 T008 冻结结果导出的静态文件，见 research-factor.js。
  * 信号跟踪: 实盘记录里 20 天样本不足 30 条时，改用「历史回放」并在顶部说明（和旧页规则一致）。
  * ========================================================== */
 
 import { el, store } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { getJSON } from '../shared/api.js';
+import { stockPage } from '../shared/stock-link.js';
 import { dataMarket, marketSwitch, fmt, pct, pill, toneClass } from './u4-util.js';
+import { factorView } from './research-factor.js';
 
 const KEY = 'qb-ws-research';
 const TABS = ['tracking', 'replay', 'validation', 'factor', 'monotonic'];
@@ -52,10 +54,10 @@ function tracking() {
   const recentHead = [t('u4.res.r_date'), t('u4.c.stock'), t('u4.s.strategy'), t('u4.res.h_sig'), t('u4.res.r5'), t('u4.res.r20'), t('u4.res.r60'), t('u4.res.r_now'), t('u4.res.r_x')];
   const recent = ev.recent.map((x) => {
     const tr = el('tr', { class: 'u4-click' },
-      el('td', {}, x.signal_date), el('td', {}, el('a', { href: `/#/stock/${encodeURIComponent(x.code)}` }, x.name), el('span', { class: 'u4-code' }, x.code)),
+      el('td', {}, x.signal_date), el('td', {}, el('a', { href: stockPage(x.code, ctx.market) }, x.name), el('span', { class: 'u4-code' }, x.code)),
       el('td', {}, label(x.strategy)), el('td', {}, pill(x.action)),
       ...['r5', 'r20', 'r60', 'r_now', 'x_now'].map((k) => el('td', { class: `num ${toneClass(x[k])}` }, pct(x[k]))));
-    tr.addEventListener('click', (e) => { if (!e.target.closest('a')) window.location.href = `/#/stock/${encodeURIComponent(x.code)}`; });
+    tr.addEventListener('click', (e) => { if (!e.target.closest('a')) window.location.href = stockPage(x.code, ctx.market); });   // G01：去新个股页
     return tr;
   });
   const table = (head, body, numFrom) => el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
@@ -79,7 +81,7 @@ function draw(root) {
   root.replaceChildren(
     el('div', { class: 'u4-bar', style: { padding: '0 0 var(--space-3)', border: '0' } },
       marketSwitch(ctx.meta, ctx.market, () => window.dispatchEvent(new CustomEvent('langchange')))),
-    tabs, tab === 'tracking' ? tracking() : soon(tab));
+    tabs, tab === 'tracking' ? tracking() : tab === 'factor' ? factorView() : soon(tab));
 }
 
 export async function render(root) {

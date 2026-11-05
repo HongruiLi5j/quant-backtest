@@ -1,0 +1,12 @@
+{
+ "path": "overnight_2026-10-24/replay_500/report.md",
+ "title": "T008 逐日回放报告(S1-S5)",
+ "kind": "replay",
+ "group": "overnight_2026-10-24",
+ "date": "2026-10-24",
+ "size": 3008,
+ "mtime": 1792900000,
+ "truncated": true,
+ "max_bytes": 600000,
+ "text": "> **示例数据**：回放结果好不代表策略有效。\n\n# T008 逐日回放报告(S1-S5)\n\n- 区间 2024-01-01 ~ 2026-03-31;股票池 500 只\n\n## 训练段淘汰\n\n| 段 | 幸存 | 淘汰 |\n|---|---:|---:|\n| 训练 | 0 | 485 |\n\n<script>alert(1)</script><img src=x onerror=alert(1)>[本地链接](../x.md) [外链](https://example.com)\n"
+}

@@ -18,9 +18,15 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 
 from engines import common, rq_base, rq_strategies  # noqa: E402
-from src import indicators  # noqa: E402
+from src import allmarket, datasource, indicators  # noqa: E402
+from env_guard import skip_unless  # noqa: E402
 
 CODE = "600531"
+
+# 这三项要读 600531 的本地日线（全市场缓存或自选股缓存）。干净副本里没有这个文件，跳过并写明原因；
+# QB_REQUIRE_FULL_ENV=1 时不跳过（缺数据直接失败）。条件只看文件是否存在，不吞任何异常。
+HAVE_DATA = allmarket.path(CODE).exists() or datasource.cache_path("cn", CODE).exists()
+requires_data = skip_unless(HAVE_DATA, f"缺 {CODE} 的本地日线：{allmarket.path(CODE)} 和 {datasource.cache_path('cn', CODE)} 都不存在")
 
 
 def targets(df, name):
@@ -28,6 +34,7 @@ def targets(df, name):
     return [s.on_bar(o, h, l, c) for o, h, l, c in df[["Open", "High", "Low", "Close"]].itertuples(index=False)]
 
 
+@requires_data
 def test_no_lookahead():
     df, _ = common.load_stock(CODE)
     for name in common.STRATS:
@@ -39,6 +46,7 @@ def test_no_lookahead():
     print("✓ 未来函数检查：7 个策略截断数据前后的目标仓位完全一致")
 
 
+@requires_data
 def test_indicators_match():
     df, _ = common.load_stock(CODE)
     a, x, r = rq_base.ATR(14), rq_base.ADX(14), rq_base.RSI(2)
@@ -53,6 +61,7 @@ def test_indicators_match():
     print("✓ 指标检查：RQAlpha 版的 ATR / ADX / RSI 和 src/indicators.py 数值完全一致")
 
 
+@requires_data
 def test_engines_agree():
     from engines import bt_engine, rq_engine
     raw, info = common.load_stock(CODE)
@@ -73,7 +82,12 @@ def test_engines_agree():
 
 
 if __name__ == "__main__":
-    test_no_lookahead()
-    test_indicators_match()
-    test_engines_agree()
-    print("全部通过")
+    import unittest
+    skipped = []
+    for fn in (test_no_lookahead, test_indicators_match, test_engines_agree):
+        try:
+            fn()
+        except unittest.SkipTest as e:      # 缺 600531 本地日线：如实报告跳过，不算通过
+            skipped.append(fn.__name__)
+            print("SKIP", fn.__name__, e)
+    print(f"没有失败，但跳过了 {len(skipped)} 项：{skipped}" if skipped else "全部通过")

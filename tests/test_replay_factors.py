@@ -232,6 +232,17 @@ class TestNoLookahead(unittest.TestCase):
             m = df.copy()
             m.iloc[-60:] = m.iloc[-60:].to_numpy() * np.random.default_rng(1).uniform(0.2, 5, (60, m.shape[1]))
             cls.mangled[k] = m
+        cls._score_cache = {}
+
+    @classmethod
+    def cached_score(cls, which, sid, p):
+        """同一(面板, 策略, 参数)的得分是确定性的:future_rows 与 not_trivially_empty 共用一次计算,
+        谁先跑谁算,与执行顺序无关。"""
+        key = (which, sid, tuple(sorted(p.items())))
+        if key not in cls._score_cache:
+            panel = cls.panel if which == "panel" else cls.mangled
+            cls._score_cache[key] = FA.score(sid, panel, cls.day, p, cls.ind)
+        return cls._score_cache[key]
 
     def test_all_scorable(self):
         cat = registry.load_catalog()["strategies"]
@@ -242,8 +253,8 @@ class TestNoLookahead(unittest.TestCase):
     def test_future_rows_do_not_change_score(self):
         for sid in FA.scorable_ids():
             for p in corner_params(sid):
-                a = FA.score(sid, self.panel, self.day, p, self.ind)
-                b = FA.score(sid, self.mangled, self.day, p, self.ind)
+                a = self.cached_score("panel", sid, p)
+                b = self.cached_score("mangled", sid, p)
                 self.assertEqual(a.keys(), b.keys(), f"{sid} {p}")
                 for k in a:
                     self.assertAlmostEqual(a[k], b[k], places=10, msg=f"{sid} {p} {k}")
@@ -262,7 +273,7 @@ class TestNoLookahead(unittest.TestCase):
         # 防止"全是 NaN 所以天然一致"的假通过:合成数据足够长,每个策略在最后一天应有有效得分
         for sid in FA.scorable_ids():
             for p in corner_params(sid):
-                self.assertGreater(len(FA.score(sid, self.panel, self.day, p, self.ind)), 0,
+                self.assertGreater(len(self.cached_score("panel", sid, p)), 0,
                                    f"{sid} {p}")
 
     def test_slice_guard(self):

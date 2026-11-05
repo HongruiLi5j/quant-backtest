@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import allmarket, datasource, metrics, registry
+from . import allmarket, datasource, metrics, registry, resultcache
 from .indicators import adx, atr, rsi, sma
 from .portfolio import run_weights
 
@@ -48,6 +48,34 @@ def lookup(market: str, code: str, mcfg: dict) -> tuple[pd.DataFrame | None, dic
     df = allmarket.load(code) if allmarket.path(code).exists() else datasource.load_cached(market, code)
     df = allmarket._drop_unfinished(df) if not df.empty else df
     return (df if not df.empty else None), info
+
+
+def input_stamps(market: str, code: str, mcfg: dict) -> tuple:
+    """build() 会读到的所有磁盘文件的指纹 + 北京时间 15:30 状态，给 /api/stock 的结果缓存当键（B08）。
+
+    对应关系（lookup / build 里读了什么）：
+      行情：ETF、自选股、美股自选 → datasource 的 csv；A 股全市场个股 → allmarket 的 parquet（没有就退回 csv）；
+            美股全市场个股 → usdata 的 parquet；美股名称/交易所 → usdata 的 universe.csv
+      名称/行业/自选标记：全市场股票清单 cn_all_list.csv、自选股名单 watchlist_<市场>.json
+      现金收益（策略对比的无风险利率）：mcfg["cash"] 的 csv
+      A 股显示价格的复权系数：display_price 的 engine_price_scale.json
+      时间：allmarket._drop_unfinished 会按北京时间 15:30 丢掉当天半根 K 线
+    不管 code 实际走哪条分支，所有候选文件都盖章：只会多失效，不会漏失效。新增读文件的代码时要同步这里。"""
+    from . import display_price, usdata
+    files = [datasource.cache_path(market, code), datasource.cache_path(market, mcfg["cash"]),
+             datasource._watch_path(market), allmarket.LIST_FILE, allmarket.path(code), display_price._SCALE_FILE]
+    root = usdata.root()
+    if root is not None:
+        files += [root / "data" / f"{code}.parquet", root / "universe.csv"]
+    return (tuple(resultcache.file_stamp(f) for f in files), resultcache.bj_clock_state(allmarket._now_bj()))
+
+
+def cacheable(result: dict) -> bool:
+    """哪些 build() 结果可以缓存：出错的不缓存；A 股没取到真实价格（临时网络问题，显示的是后复权价）也不缓存，
+    否则网络恢复后还会一直显示降级结果。"""
+    if not isinstance(result, dict) or result.get("error"):
+        return False
+    return not str(result.get("info", {}).get("price_basis", "")).startswith("未取到")
 
 
 def _overlays(name: str, df: pd.DataFrame, held: pd.Series) -> tuple[list, dict | None]:

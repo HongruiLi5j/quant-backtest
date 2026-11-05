@@ -20,7 +20,9 @@ from bisect import bisect_right
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from . import costs
+
+ROOT =Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "signal_ledger.db"
 OUT = ROOT / "data" / "daily" / "ledger"
 HORIZONS = (1, 5, 10, 20)      # 次日只是噪声；趋势类策略的持仓以周计，重点看 5/10/20 日
@@ -29,7 +31,7 @@ MIN_DAYS = 5       # 同一天的信号受同一个大盘行情影响，不是�
 WIN_PCT = 0.95
 WIN_MIN_RET = 0.10
 T_SIG = 2.0         # 按信号日聚合后的 t 值至少到 2，才说“显著”
-ROUND_TRIP_BP = 16  # 个股单边 8bp（config.stock_cost_bp），买入 + 卖出两边
+ROUND_TRIP_BP = costs.CN_STOCK_ROUND_TRIP_BP  # 个股单边 8bp（config.stock_cost_bp）×2，买入 + 卖出两边 = 16
 ACTIONS = ("买入", "卖出", "加仓", "减仓")
 BUYS = ("买入", "加仓")
 _lock = threading.RLock()

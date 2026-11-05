@@ -29,6 +29,7 @@ from unittest import mock  # noqa: E402
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from src.ai_translator import api, api_llm, backend, config, consistency, extract, gate, local_lora, logstore, paths, plainview, precheck, registry  # noqa: E402
+from env_guard import STRICT, skip_unless  # noqa: E402  缺外部目录时跳过（QB_REQUIRE_FULL_ENV=1 则不跳过）
 _S12_ONLY = __name__ == "__main__" and sys.argv[1:] == ["--s12-only"]
 _S13_NO_SOCKET = __name__ == "__main__" and sys.argv[1:] == ["--s13-no-socket"]
 _S13_ONLY = __name__ == "__main__" and (sys.argv[1:] == ["--s13-only"] or _S13_NO_SOCKET)
@@ -304,7 +305,9 @@ def test_defaults_are_valid_and_secret_free():
 
 # ---------------------------------------------------------------- 开关关闭：不启动任何进程（6 号中配置相关的部分）
 def test_disabled_never_starts_a_process():
-    with mock.patch("subprocess.Popen", side_effect=AssertionError("不应启动进程")) as popen:
+    # 环境隔离：本测试假设没配 API 密钥；运行环境里若设了 AI_TRANSLATOR_API_KEY，在本测试内临时去掉（退出后原样恢复）
+    with mock.patch.dict(os.environ), mock.patch("subprocess.Popen", side_effect=AssertionError("不应启动进程")) as popen:
+        os.environ.pop("AI_TRANSLATOR_API_KEY", None)
         for content in (None, {"enabled": False}, {"enabled": True, "backend": "api_llm"}, "{bad"):
             loader, _, _, _ = make(content)
             st = loader.load()
@@ -457,15 +460,30 @@ def test_red_line_strings_not_in_package():
 
 
 # ================================================================ S2：纯逻辑与闸门
-class Skip(Exception):
-    """依赖的外部项目（ai_layer、校验器所在项目）不在本机，跳过并在汇总里如实报告。"""
+class Skip(unittest.SkipTest):
+    """依赖的外部项目（ai_layer、校验器所在项目）不在本机，跳过并在汇总里如实报告。
+    继承 unittest.SkipTest：pytest 把它记成“跳过”而不是“失败”；脚本方式运行时由底部的 except 捕获。"""
+
+
+_AI_DIR = Path(os.environ.get("QB_AI_LAYER_DIR") or REPO.parent / "ai_layer")
+_STATARB_SRC = Path(os.environ.get("QB_STATARB_SRC") or REPO.parent / "regime-statarb" / "src")
+HAVE_STATARB_SRC = (_STATARB_SRC / "statarb" / "schema.py").exists()
+HAVE_EXTERNAL = (_AI_DIR / ".venv" / "bin" / "python").exists() and HAVE_STATARB_SRC
+
+# 跳过条件只看目录/文件是否存在；原因写明缺什么。东西在而测试失败仍是失败。
+requires_external = skip_unless(
+    HAVE_EXTERNAL, f"缺外部项目：需要 {_AI_DIR}/.venv/bin/python（ai_layer）和 {_STATARB_SRC}/statarb/schema.py（校验器源码）；"
+                   "可用 QB_AI_LAYER_DIR / QB_STATARB_SRC 指向它们")
+requires_statarb_src = skip_unless(
+    HAVE_STATARB_SRC, f"缺校验器源码 {_STATARB_SRC}/statarb/schema.py（regime-statarb 项目）；可用 QB_STATARB_SRC 指向它")
 
 
 def _external():
-    ai = Path(os.environ.get("QB_AI_LAYER_DIR") or REPO.parent / "ai_layer")
-    src = Path(os.environ.get("QB_STATARB_SRC") or REPO.parent / "regime-statarb" / "src")
+    ai, src = _AI_DIR, _STATARB_SRC
     py = ai / ".venv" / "bin" / "python"
-    if not py.exists() or not (src / "statarb" / "schema.py").exists():
+    if not HAVE_EXTERNAL:
+        if STRICT:      # 严格模式：缺环境不许悄悄跳过
+            raise AssertionError("QB_REQUIRE_FULL_ENV=1，但找不到 ai_layer 的 python 或校验器源码目录")
         raise Skip("找不到 ai_layer 的 python 或校验器源码目录")
     return ai, py, src
 
@@ -521,6 +539,7 @@ def facts_of(idea):
 
 
 # ---------------------------------------------------------------- 测试 2、3、5：闸门
+@requires_external
 def test_gate_accepts_legal_documents():
     g = real_gate()
     before = g.calls
@@ -532,6 +551,7 @@ def test_gate_accepts_legal_documents():
     assert g.calls == before + 7
 
 
+@requires_external
 def test_gate_rejects_with_validator_codes():
     g = real_gate()
     bad_signal = eq_cfg()
@@ -558,6 +578,7 @@ def test_gate_rejects_with_validator_codes():
     assert r["code"] == "UNSUPPORTED_REQUEST" and r["errors"][0]["code"] == "BAD_SCHEMA_VERSION"
 
 
+@requires_external
 def test_gate_module_allowlist_and_script_agree():
     _, py, src = _external()
     spec = __import__("importlib.util").util.spec_from_file_location("gate_script", REPO / "scripts" / "ai_gate_validate.py")
@@ -572,6 +593,7 @@ def test_gate_module_allowlist_and_script_agree():
     assert not any(m in res["modules"] for m in ("statarb.registry", "statarb.api"))
 
 
+@requires_external
 def test_import_opens_no_jsonl_or_registry_files():
     """notes 第 9.4 节：在隔离环境里导入校验器模块，记录期间所有被打开的文件。"""
     _, py, src = _external()
@@ -602,11 +624,11 @@ def test_import_opens_no_jsonl_or_registry_files():
     assert set(res["mods"]) <= gate.ALLOWED_STATARB_MODULES
 
 
-def _fake_script(body):
+def _fake_script(body, timeout_s=3):
     d = Path(tempfile.mkdtemp(prefix="qb_gate_"))
     p = d / "fake_gate.py"
     p.write_text(body)
-    return gate.Gate(sys.executable, d, script=p, timeout_s=3)
+    return gate.Gate(sys.executable, d, script=p, timeout_s=timeout_s)
 
 
 def test_gate_fails_closed():
@@ -622,7 +644,8 @@ def test_gate_fails_closed():
     }
     for name, body in cases.items():
         try:
-            _fake_script(body).validate(eq_cfg())
+            # "hang" 只需要触发超时，0.5 秒足够（原来等满 3 秒）；其他用例仍用默认 3 秒，不受影响
+            _fake_script(body, timeout_s=0.5 if name == "hang" else 3).validate(eq_cfg())
         except backend.TranslatorError as e:
             assert e.code == "TRANSLATOR_UNAVAILABLE", name
         else:
@@ -780,6 +803,7 @@ def _block(r):
     return [f for f in r["flags"] if f["level"] == "block"]
 
 
+@requires_external
 def test_counterfactual_out_of_range_becomes_block():
     g = real_gate()
     r = consistency.compare("市场β残差的5日反转,每周调仓,多空各取前后20%", resid_cfg(), g)         # 模型把越界的 20% 悄悄改回了 10%
@@ -792,6 +816,7 @@ def test_counterfactual_out_of_range_becomes_block():
     assert [(f["field"], f["code"]) for f in _block(r)] == [("market.cost_bp", "OUT_OF_RANGE")]
 
 
+@requires_external
 def test_counterfactual_legal_value_is_only_warn():
     g = real_gate()
     r = consistency.compare("等权基准,单边成本10bp", eq_cfg(), g)                              # 10 是合法取值，只是被改成了 5
@@ -803,6 +828,7 @@ def test_counterfactual_legal_value_is_only_warn():
     assert _block(r) == [] and {f["field"] for f in r["flags"]} == {"portfolio.band_entry", "portfolio.band_exit"}
 
 
+@requires_external
 def test_counterfactual_only_blocks_when_the_field_itself_is_illegal():
     g = real_gate()
     r = consistency.compare("momentum, add a hysteresis band: enter the top/bottom 10%, exit only beyond 30%", mom_cfg(), g)
@@ -905,6 +931,7 @@ def test_s14_pipeline_with_fake_backend():
     assert d["status"] == "ok" and d["config"] == ma_cfg() and d["can_confirm"] and not d["flags"]
 
 
+@requires_external
 def test_s14_real_gate_pipeline_blocks_silent_changes():
     """同上，但用真实校验器当 oracle（不再用自写的假范围）：证明生产链路里校验器报错的路径确实落在被替换的字段上。"""
     gate_ = real_gate()
@@ -947,6 +974,7 @@ def test_known_limit_default_label_means_nothing_extracted():
 
 
 # ---------------------------------------------------------------- plainview
+@requires_external
 def test_plainview_labels_cover_every_schema_field():
     _, py, src = _external()
     code = (
@@ -969,6 +997,7 @@ def test_plainview_labels_cover_every_schema_field():
         assert zh.strip() and en.strip() and zh != en, path
 
 
+@requires_external
 def test_plainview_reject_msg_matches_original():
     ai, py, _ = _external()
     code = (
@@ -1650,6 +1679,7 @@ def test_api_18_concurrent_confirmation_appends_once():
     assert [r["event"] for r in _rows(root)] == ["translate", "confirm"]
 
 
+@requires_external
 def test_api_29_full_pipeline_real_gate_fake_backend():
     oracle = real_gate()
     rejected = {"schema_version": "1.0", "reject": {"code": "MISSING_REQUIRED", "message": "Please specify a signal"}}
@@ -2868,7 +2898,9 @@ def _api_server(doc=None, *, raw=None, usage=True, status=200, delay=0, redirect
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    # serve_forever 默认每 0.5 秒才检查一次关闭标志，server.shutdown() 平均白等 0.25~0.5 秒；
+    # 改成 10 毫秒轮询。只改关闭延迟，服务器行为和测试断言不变。
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield "http://127.0.0.1:" + str(server.server_port), received
@@ -2892,6 +2924,7 @@ def _api_credential():
         yield os.environ["QB_S11_CREDENTIAL"]
 
 
+@requires_external
 def test_s11_prompt_examples_pass_real_gate():
     from src.ai_translator.api_prompt import EXAMPLES, SYSTEM_PROMPT
     oracle = real_gate()
@@ -2905,6 +2938,7 @@ def test_s11_prompt_examples_pass_real_gate():
     assert "12 months = 252" in SYSTEM_PROMPT and "1 month = 21" in SYSTEM_PROMPT
 
 
+@requires_statarb_src
 def test_s11_success_real_gate_pipeline_status_confirm_and_body():
     from src.ai_translator.api_prompt import SYSTEM_PROMPT
     with _api_credential(), _api_server(mom_cfg()) as (url, received):
@@ -2937,6 +2971,7 @@ def test_s11_success_real_gate_pipeline_status_confirm_and_body():
         assert disabled["state"] == "disabled" and disabled["budget"]["requests_today"] == 1
 
 
+@requires_statarb_src
 def test_s11_gate_consistency_precheck_and_model_refusal():
     reject = {"schema_version": "1.0", "reject": {"code": "MISSING_REQUIRED", "message": "Name a strategy."}}
     bad = mom_cfg()
@@ -3014,6 +3049,7 @@ def test_s11_request_parameters_and_text_contract_without_network():
             worker.close()
 
 
+@requires_statarb_src
 def test_s11_status_during_inflight_request_keeps_budget_and_ready():
     with _api_credential():
         loader, _, _, root = make(_api_cfg("https://api.anthropic.com"))
@@ -3081,6 +3117,7 @@ def test_s11_missing_key_and_key_never_persisted_or_returned():
                 service.close()
 
 
+@requires_statarb_src
 def test_s11_budget_daily_persist_restart_and_missing_usage():
     for kind in ("monthly", "daily", "reserve"):
         with _api_credential(), _api_server(usage=False) as (url, received):
@@ -3177,6 +3214,7 @@ def test_s11_api_configuration_and_destination_allowlist():
 
 def test_s11_switch_cli_backend_usage_and_environment_yes_no():
     with _api_credential():
+        os.environ.pop("AI_TRANSLATOR_API_KEY", None)      # 环境隔离：下面断言默认环境变量"未设置"；_api_credential 退出时会原样恢复 os.environ
         root = Path(tempfile.mkdtemp())
         out = _script("ai_translator_switch.py", "on", "--root", root, "--backend", "api_llm")
         assert out.returncode == 0, out.stderr
@@ -3750,7 +3788,7 @@ if __name__ == "__main__":
         if selected and callable(fn):
             try:
                 fn()
-            except Skip as e:
+            except unittest.SkipTest as e:      # 含 Skip 和 skip_unless 装饰器抛出的跳过
                 skipped.append(name)
                 print("SKIP", name, e)
                 continue

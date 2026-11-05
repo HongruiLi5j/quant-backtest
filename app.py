@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 
 from config import ENABLED, MARKETS, SERVER_HOST, SERVER_PORT
-from src import admin, admin_settings, allmarket, members, sharepass, daily_report, datasource, detail, display_price, notify, registry, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
+from src import admin, admin_settings, allmarket, login_throttle, members, sharepass, daily_report, datasource, detail, display_price, notify, registry, resultcache, scan, scan_us, tracking, trade_list, trade_private, trade_notifications, usdata
 from engines import codefiles, jobs
 from src import personal_mode
 try:
@@ -71,7 +71,7 @@ def get_token() -> str:
 TOKEN = get_token()
 ADMIN_TOKEN = admin.get_admin_token()      # 后台 /admin 用的独立令牌（.secret/admin_token）
 ADMIN_COOKIE = "qb_admin"
-ADMIN_ENTER_TARGETS = ("/admin", "/ui/w/admin.html")      # 「后台」按钮登录后只能回到这两个地址
+ADMIN_ENTER_TARGETS = ("/admin", "/ui/w/admin.html", "/ui/w/system.html")      # 「后台」按钮登录后只能回到这几个地址（N21 加了系统页）
 ALLOWED_HOSTS = {f"127.0.0.1:{SERVER_PORT}", f"localhost:{SERVER_PORT}"}
 
 # ---- 行情缓存：文件没变就不重复读
@@ -125,6 +125,12 @@ def prices_for(market: str) -> dict:
         _price_cache[market] = (key, p)
         return p
 
+
+# ---- 回测 / 逐只回测表的结果缓存（B07）：键里包含所有输入，见 Handler._backtest / _table
+_backtest_memo = resultcache.Memo(maxsize=16)
+_table_memo = resultcache.Memo(maxsize=16)
+# B08：/api/stock（个股详情，0.2~0.25 秒）。存的是编码好的 JSON 字节（不可变，不会被调用方改坏；体积也比 dict 小），最多 24 条、最久 10 分钟
+_stock_memo = resultcache.Memo(maxsize=24, ttl=600)
 
 # ---- 全市场扫描结果：文件没变就不重复读
 _scan_cache: dict = {}
@@ -443,13 +449,15 @@ def _gzip_cached(body: bytes, etag):
     return gzip.compress(body, 5, mtime=0)
 
 
-_bad_login: list = []
+_bad_login = login_throttle.LoginThrottle()     # 令牌登录失败计数：按来源分开、滑动窗口、过期清理、有大小上限（src/login_throttle.py）
 _alive: dict = {}
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "local"
     sys_version = ""
+    protocol_version = "HTTP/1.1"   # 连接复用：一个页面的十几个文件不用各开一次连接（所有响应都经 _send，带 Content-Length）
+    timeout = 30                    # 空闲连接 30 秒后断开，防止占满线程
 
     def log_message(self, fmt, *args):  # 不在终端刷屏
         pass
@@ -471,6 +479,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if self.command not in ("GET", "HEAD"):
+            self.close_connection = True      # POST 可能没读完请求体就返回，残留字节会污染下一个请求，所以回完就关
+            self.send_header("Connection", "close")
         self.send_header("Cache-Control", cache)
         if enc:
             self.send_header("Content-Encoding", enc)
@@ -608,6 +619,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _https(self) -> bool:
         return self._remote() or self._owner()
+
+    def _login_source(self) -> str:
+        """令牌登录失败计数用的「来源」：本机直连一个桶，其余按 CF-Connecting-IP（判断逻辑在 src/login_throttle.py）。"""
+        return login_throttle.source_key(self.headers, admin.is_local_request(self.headers, ALLOWED_HOSTS))
 
     def _log_visit(self, path: str):
         ua = self.headers.get("User-Agent", "")
@@ -749,12 +764,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._owner_session_revoke(u.path[len("/api/admin/owner/sessions/"):-len("/revoke")])
         if u.path != "/api/admin/action":
             return self._send(404, b"not found", "text/plain")
+        from src.http_errors import BodyError
         try:
             body = self._body()
             action = str(body.pop("action", ""))
             if action == "publish_check" and not self.headers.get("Origin"):      # 公开站导出检查：浏览器同源 POST 必带 Origin，缺失一律拒绝
                 return self._json({"error": "缺少浏览器来源信息"}, 403)
             self._json(admin.dispatch(action, body, ADMIN_CTX))
+        except BodyError as e:
+            self._json(e.payload, e.status)
         except admin.AdminError as e:
             self._json({"error": str(e)}, 400)
         except Exception as e:
@@ -871,10 +889,11 @@ class Handler(BaseHTTPRequestHandler):
                            "/api/holdings/capital": hapi.handle_capital}[u.path]
                 body = b""
                 if passed:   # 鉴权通过才读请求体
-                    n = int(self.headers.get("Content-Length") or 0)
+                    from src.http_errors import content_length
+                    n = content_length(self.headers)
                     if not 0 <= n <= hapi.MAX_BODY_BYTES:
                         self.close_connection = True
-                        code, obj = hapi._err("HOLDINGS_TOO_LARGE")
+                        code, obj = hapi._err("HOLDINGS_BAD_JSON" if n < 0 else "HOLDINGS_TOO_LARGE")
                         return self._json(obj, code)
                     body = self.rfile.read(n)
                 code, obj = handler(ctx, body)
@@ -928,6 +947,42 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._json({"error": "账本读取失败"}, 500)
 
+    def _reports(self, u, q):
+        """报告页(N22):只给本机或主人通道;分享链接访客 404。读文件的边界在 src/reports_view.py。"""
+        from src import reports_view
+        try:
+            if not (self._local_or_owner() and not self._remote()):
+                return self._send(404, b"not found", "text/plain")
+            if not self._authed():
+                return self._json({"error": "UNAUTHORIZED"}, 401)
+            if self.headers.get("X-Requested-With") != "dashboard":
+                return self._json({"error": "FORBIDDEN"}, 403)
+            if members.hit("reports", "local", 120, 60):
+                return self._json({"error": "RATE_LIMITED"}, 429)
+            if u.path == "/api/reports/list":
+                return self._json(reports_view.list_reports())
+            return self._json(reports_view.read_report(q.get("path", "")))
+        except reports_view.ReportError as e:
+            return self._json({"error": str(e)}, 404)
+        except Exception:
+            return self._json({"error": "报告读取失败"}, 500)
+
+    def _publish_latest(self):
+        """发布页(N23):只给本机或主人通道;只读 build/ 下的检查结果,不构建、不上传。边界在 src/publish_view.py。"""
+        try:
+            from src import publish_view
+            if not (self._local_or_owner() and not self._remote()):
+                return self._send(404, b"not found", "text/plain")
+            if not self._authed():
+                return self._json({"error": "UNAUTHORIZED"}, 401)
+            if self.headers.get("X-Requested-With") != "dashboard":
+                return self._json({"error": "FORBIDDEN"}, 403)
+            if members.hit("publish_latest", "local", 60, 60):
+                return self._json({"error": "RATE_LIMITED"}, 429)
+            return self._json(publish_view.latest())
+        except Exception:
+            return self._json({"error": "发布状态读取失败"}, 500)
+
     # ---------- 实时盯盘(T006 S3):仅个人模式、仅可信本机;鉴权与校验都在 src/market_monitor/wiring.py,这里只接线
     MONITOR_ROUTES = {("GET", "/api/market_monitor/status"): "handle_status",
                       ("GET", "/api/market_monitor/quotes"): "handle_quotes",
@@ -954,7 +1009,8 @@ class Handler(BaseHTTPRequestHandler):
             elif name == "handle_config":
                 body = b""
                 if passed:   # 鉴权通过才读请求体
-                    n = int(self.headers.get("Content-Length") or 0)
+                    from src.http_errors import content_length
+                    n = content_length(self.headers)
                     if not 0 <= n <= wiring.MAX_BODY_BYTES:
                         self.close_connection = True
                         return self._json(dict(wiring.INVALID[1]), 400)
@@ -992,7 +1048,8 @@ class Handler(BaseHTTPRequestHandler):
             elif name == "handle_config":
                 body = b""
                 if passed:   # 鉴权通过才读请求体
-                    n = int(self.headers.get("Content-Length") or 0)
+                    from src.http_errors import content_length
+                    n = content_length(self.headers)
                     if not 0 <= n <= wiring.MAX_BODY_BYTES:
                         self.close_connection = True
                         return self._json(dict(wiring.INVALID[1]), 400)
@@ -1081,6 +1138,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._holdings("GET", u)
         if u.path == "/api/ledger/summary":
             return self._ledger_summary()
+        if u.path in ("/api/reports/list", "/api/reports/file"):     # 报告页(N22):只读 reports/ 下的 .md,自己把关
+            return self._reports(u, q)
+        if u.path == "/api/publish/latest":     # 发布页(N23):只读最近一次导出检查结果,自己把关
+            return self._publish_latest()
         if u.path.startswith("/api/market_monitor/"):   # 盯盘:个人模式关闭时 404,不启动任何线程
             if not getattr(self, "_personal_mode", False):
                 return self._send(404, b"not found", "text/plain")
@@ -1097,15 +1158,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._log_visit("/")
             if u.path.startswith(("/api/code/", "/api/share", "/api/offline", "/api/eng/scan")):
                 return self._json({"error": "分享链接里不能用这个功能（只有你自己的电脑上可以）"}, 403)
-        if u.path == "/" and "t" in q and len([t for t in _bad_login if t > time.time() - 600]) >= 10:   # 10 分钟内错 10 次就暂停登录，防止有人猜令牌
-            return self._send(429, "尝试太多次，请 10 分钟后再试".encode(), "text/plain; charset=utf-8")
+        if u.path == "/" and "t" in q:
+            src_key = self._login_source()
+            if _bad_login.blocked(src_key):     # 同一来源 10 分钟内错 10 次就暂停它的登录，防止有人猜令牌；别的来源不受影响
+                return self._send(429, "尝试太多次，请 10 分钟后再试".encode(), "text/plain; charset=utf-8")
         if u.path == "/" and "t" in q:          # 用令牌登录，设置 cookie 后去掉地址栏里的令牌
             if hmac.compare_digest(q["t"], TOKEN):
                 self._send(303, b"", "text/plain", {
                     "Location": "/",
                     "Set-Cookie": f"{COOKIE}={TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000" + ("; Secure" if self._https() else "")})
             else:
-                _bad_login.append(time.time())
+                _bad_login.record(src_key)
                 self._send(401, "令牌不对".encode(), "text/plain; charset=utf-8")
             return
         if not self._authed():
@@ -1147,7 +1210,8 @@ class Handler(BaseHTTPRequestHandler):
                                (code in datasource.load_watchlist(m) or (m == "us" and usdata.has(code))) if m in MARKETS else False)
                 if m not in MARKETS or not (code in MARKETS[m]["universe"] or valid_stock):
                     return self._json({"error": "代码不对"}, 400)
-                self._json(detail.build(m, code, MARKETS[m], q.get("strategy", "blend2"), q.get("period", "1y")))
+                self._send(200, self._stock_body(m, code, q.get("strategy", "blend2"), q.get("period", "1y")),
+                           "application/json; charset=utf-8")
             elif u.path == "/api/offline":
                 # 下载离线版单文件：现场运行 export_offline.py 生成，5 分钟内重复点击直接用刚生成的文件
                 if self.headers.get("X-Requested-With") != "dashboard":
@@ -1321,8 +1385,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             return self._json({"error": "未知操作"}, 400)
         if u.path.startswith("/api/eng/") or u.path.startswith("/api/code/") or u.path == "/api/share":
+            from src.http_errors import BodyError
             try:
                 return self._json(self._post_engine(u))
+            except BodyError as e:
+                return self._json(e.payload, e.status)
             except Exception as e:
                 return self._json({"error": f"{e}"}, 400)
         if u.path == "/api/refresh":
@@ -1365,8 +1432,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         if members.hit("sharepw", self._client_ip(), 5, 600):
             return self._json({"error": "尝试太多次，请 10 分钟后再试"}, 429)
+        from src.http_errors import BodyError
         try:
             pw = str(self._body().get("password", ""))
+        except BodyError as e:
+            return self._json(e.payload, e.status)
         except Exception:
             return self._json({"error": "请求不对"}, 400)
         if not sharepass.is_set() or not sharepass.verify(pw):
@@ -1434,6 +1504,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "来源不对"}, 403)
         ip = self._client_ip()
         secure = "; Secure" if self._https() else ""
+        from src.http_errors import BodyError
         try:
             b = self._body()
             if u.path == "/api/member/register":
@@ -1489,19 +1560,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._mlog(user, "order", f"{'买入' if b.get('side') == 'buy' else '卖出'} {m} {q['code']} {q['name']} {r['qty']}股 @{r['price']:.3f} 手续费{r['fee']} 策略={b.get('strategy') or '无'} 当时信号={b.get('signal') or '无'}")
                 return self._json(r | {"name": q["name"], "day": q["day"]})
             self._send(404, b"not found", "text/plain")
+        except BodyError as e:
+            self._json(e.payload, e.status)
         except (members.MemberError, ValueError) as e:
             self._json({"error": str(e)}, 400)
         except Exception as e:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def _body(self) -> dict:
-        n = int(self.headers.get("Content-Length") or 0)
-        if n <= 0:
-            return {}
-        if n > 1_000_000:
-            raise ValueError("请求太大")
-        obj = json.loads(self.rfile.read(n).decode("utf-8"))
-        return obj if isinstance(obj, dict) else {}
+        from src.http_errors import read_json_object      # B15：读体 + 校验在 src/http_errors.py，失败抛 BodyError
+        return read_json_object(self.headers, self.rfile)
 
     def _post_engine(self, u) -> dict:
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -1537,16 +1605,21 @@ class Handler(BaseHTTPRequestHandler):
             return {"error": "参数不对"}
         cfg = MARKETS[m]
         sym = q.get("symbol", cfg["main"])
-        allowed = set(cfg["universe"]) | set(datasource.load_watchlist(m))
-        prices = prices_for(m)
+        watch = datasource.load_watchlist(m)
+        allowed = set(cfg["universe"]) | set(watch)
+        base_prices = prices_for(m)
+        prices = base_prices
+        extra_file = None       # 全市场里临时加载的那只股票的行情文件，指纹要进缓存键
         if sym not in allowed:
             # 全市场里的任意一只股票（已下载的）也可以回测
             if m == "cn" and datasource.is_valid_stock(sym) and allmarket.path(sym).exists():
                 prices = dict(prices)
                 prices[sym] = allmarket.load(sym)
+                extra_file = allmarket.path(sym)
             elif m == "us" and usdata.has(sym):
                 prices = dict(prices)
                 prices[sym] = usdata.load(sym)
+                extra_file = usdata.root() / "data" / f"{sym}.parquet"
             else:
                 return {"error": "品种不在列表里"}
         if sym not in prices:
@@ -1567,7 +1640,35 @@ class Handler(BaseHTTPRequestHandler):
                 start = str(pd.Timestamp(start).date())
             except Exception:
                 start = None
-        return registry.run(name, prices, sym, params, cfg, cost_bp=cost, start=start, market=m, detail=True)
+        # B07：回测是纯计算（同样的行情 + 参数一定同样的结果），约 0.65 秒；输入都进缓存键，任何一项变了就重算。
+        # 行情用 prices_for 缓存对象的 id（对象随文件修改时间换新）；自选股名单影响 A 股涨跌停判断，也进键。
+        key = (m, name, sym, json.dumps(params, sort_keys=True, default=str), cost, start, id(base_prices),
+               tuple(watch.items()), resultcache.file_stamp(extra_file) if extra_file else None)
+        return _backtest_memo.get_or_compute(
+            key, lambda: registry.run(name, prices, sym, params, cfg, cost_bp=cost, start=start, market=m, detail=True),
+            keepalive=base_prices)
+
+    def _cache_scope(self) -> tuple:
+        """结果缓存键里的「谁在看」：远程分享访客 / 主人通道 / 本机，再加个人模式开关（B08）。
+        /api/stock 的内容其实不分人（只有公开行情），这里仍然分开存，宁可少命中也不让不同身份共用一份缓存；
+        带个人数据的接口（持仓、我的相关、会员、后台）根本不走缓存，见 tests/test_resultcache_b08.py 的守卫测试。"""
+        who = "remote" if self._remote() else ("owner" if self._owner() else "local")
+        return (who, bool(getattr(self, "_personal_mode", False)))
+
+    def _stock_body(self, m: str, code: str, strategy: str, period: str) -> bytes:
+        """个股详情的 JSON 字节。m/code 已在 do_GET 里校验过。
+        键 = 身份 + 市场 + 代码 + 策略（不认识的策略 build 会当成 blend2，所以先归一）+ 周期 + 所有输入文件的指纹和 15:30 状态；
+        指纹在计算之前取：计算过程中文件又被更新的话，结果存在旧键下，下一次请求键变了会重算，不会拿旧结果冒充新结果。"""
+        key = (self._cache_scope(), m, code, strategy if strategy in detail.SINGLE else "blend2", period,
+               detail.input_stamps(m, code, MARKETS[m]))
+        hit = _stock_memo.get(key)
+        if hit is not None:
+            return hit
+        result = detail.build(m, code, MARKETS[m], strategy, period)
+        body = json.dumps(result, ensure_ascii=False, default=float).encode()      # 和 _json 的编码方式完全一致
+        if detail.cacheable(result):
+            _stock_memo.put(key, body)
+        return body
 
     def _table(self, q: dict) -> dict:
         m, name = q.get("market", ""), q.get("strategy", "")
@@ -1579,8 +1680,12 @@ class Handler(BaseHTTPRequestHandler):
                 start = str(pd.Timestamp(start).date())
             except Exception:
                 start = None
+        prices = prices_for(m)
+        # B07：逐只回测表（美股 14 只约 1 秒），同一份行情 + 同一份自选股 + 同样的策略/起点结果不变，缓存
+        key = (m, name, start, id(prices), tuple(datasource.load_watchlist(m).items()))
         try:
-            rows = daily_report.table_rows(m, MARKETS[m], prices_for(m), name, start)
+            rows = _table_memo.get_or_compute(
+                key, lambda: daily_report.table_rows(m, MARKETS[m], prices, name, start), keepalive=prices)
         except ValueError as e:
             return {"error": str(e)}
         return {"rows": rows, "pending": sorted(_pending)}

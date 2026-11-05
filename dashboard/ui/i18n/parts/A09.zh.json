@@ -1,0 +1,16 @@
+{
+ "a09.err.required": "必填，不能留空",
+ "a09.err.not_number": "请输入数字",
+ "a09.err.range": "要在 {min} ~ {max} 之间",
+ "a09.err.integer": "请填整数",
+ "a09.err.date_bad": "请选一个有效日期",
+ "a09.err.start_late": "要早于最新数据日 {end}",
+ "a09.err.symbol_required": "请选择品种",
+ "a09.err.symbol_cn": "A 股代码要 6 位数字，以 60 / 68 / 00 / 30 开头",
+ "a09.err.symbol_us": "美股代码以字母开头，只能含字母、数字、点和横线，最长 10 位",
+ "a09.warn.short": "只有约 {n} 天，样本太少，年化和夏普不可靠",
+ "a09.warn.fast_slow": "快线 {fast} 不小于慢线 {slow}，均线交叉没有意义",
+ "a09.hint.end": "回测算到最新数据日 {end}，没有单独的结束日期",
+ "a09.hint.cost_blank": "留空则用默认 {v} bp",
+ "a09.sum.blocked": "有 {n} 项输入需要修改，改好后才能运行"
+}

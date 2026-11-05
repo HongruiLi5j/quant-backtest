@@ -19,11 +19,12 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from .. import market_clock
 from .consistency import SEVERITY_ORDER, Thresholds, check_series
 from .status_table import board_of, parse_date
 
 BEIJING = ZoneInfo("Asia/Shanghai")
-CUTOFF_HOUR, CUTOFF_MINUTE = 15, 30
+CUTOFF_HOUR, CUTOFF_MINUTE = market_clock.CLOSE_READY.hour, market_clock.CLOSE_READY.minute   # 规则见 src/market_clock.py
 REPORT_MD = "data_quality.md"
 REPORT_JSON = "data_quality.json"
 HISTORY_DIR = "history"
@@ -175,7 +176,7 @@ def scan_dir(data_dir, *, sample: int | None = None, seed: int = 0, today: date 
 
         # 15:30 前不用当天 K 线
         drop_today = (today == now.astimezone(BEIJING).date()
-                      and (now.hour, now.minute) < (CUTOFF_HOUR, CUTOFF_MINUTE))
+                      and not market_clock.is_close_ready(now))
         res.intraday_dropped = drop_today
 
         kind_stocks: dict[str, int] = {}

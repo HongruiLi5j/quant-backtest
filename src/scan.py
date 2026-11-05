@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from . import allmarket, metrics, registry
+from . import allmarket, costs, metrics, registry
 from .datasource import CACHE, limit_pct, load_cached
 from .portfolio import run_weights
 
@@ -32,7 +32,7 @@ MIN_ROWS = 250          # 上市满一年（约 250 个交易日）
 MIN_EVAL = 400          # 至少这么多天才计算回测统计（前 250 天是指标预热期）
 SPLIT = "2020-01-01"    # 样本内：2013–2019；样本外：2020 至今
 MIN_PERIOD = 250        # 每段至少一年数据才算这一段的 Sharpe
-COST = 0.0008           # 个股单边 8bp
+COST = costs.CN_STOCK_ONE_WAY   # 个股单边 8bp（数值在 src/costs.py）
 log = logging.getLogger(__name__)
 
 _CASH = None

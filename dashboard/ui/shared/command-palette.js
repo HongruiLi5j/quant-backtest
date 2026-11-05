@@ -9,6 +9,8 @@ import { el, qs } from './dom.js';
 import { t, setLang, lang } from './i18n.js';
 import { setTheme, setMarket, currentTheme } from './theme-switcher.js';
 import { getJSON } from './api.js';
+import { restoreFocusOnClose } from './a11y.js';
+import { rankStocks } from './palette-match.js';
 
 /** 页面条目由 page-boot 传入（nav.js 的 NAV） */
 const ACTIONS = [
@@ -18,6 +20,7 @@ const ACTIONS = [
 ];
 
 let dialog;
+let rememberOpener = () => {};   // build() 里换成 restoreFocusOnClose(dialog) 返回的函数
 let input;
 let list;
 let items = [];
@@ -48,6 +51,7 @@ function build() {
     if (li) run(Number(li.dataset.index));
   });
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });   // 点遮罩关闭
+  rememberOpener = restoreFocusOnClose(dialog);   // 关闭后焦点回到打开前的元素（A11）
 }
 
 function entries() {
@@ -88,7 +92,7 @@ function onInput() {
     try {
       const rows = await getJSON(`/api/search?market=cn&q=${encodeURIComponent(q)}`);
       if (seq !== searchSeq || !Array.isArray(rows)) return;
-      stocks = rows.slice(0, 8);
+      stocks = rankStocks(q, rows, 8);   // 代码前缀命中排最前，再取前 8 条（A13）
     } catch {
       stocks = [];   // 登录过期或接口不可用：只剩页面和操作条目
     }
@@ -127,6 +131,7 @@ export function openPalette() {
   input.value = '';
   stocks = [];
   render();
+  rememberOpener();
   dialog.showModal();
   input.focus();
 }

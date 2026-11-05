@@ -32,11 +32,10 @@ def read_json(p):
 
 
 def expected_day():
-    from src import allmarket
+    from src import allmarket, market_clock
     cal = allmarket.trade_calendar()
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    cutoff = now.date() if now.hour * 60 + now.minute >= 15 * 60 + 30 else now.date().fromordinal(now.date().toordinal() - 1)
-    return max(d for d in cal if d <= cutoff).isoformat()
+    return market_clock.last_usable_bar_date(now, cal).isoformat()
 
 
 def list_day():

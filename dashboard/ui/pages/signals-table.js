@@ -2,6 +2,7 @@
  * 17 列全部保留；手机（≤600px）改成卡片。所有文本走 el()，不拼 HTML。 */
 import { el, fmt, toneClass } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { tDefault } from '../shared/t-fallback.js';
 import { actBadge, numNA, isNum, tr, stockHref } from './U1-common.js';
 
 /** [排序键, 词条, 是否数字列]；reason / flags 不能排序 */
@@ -28,7 +29,7 @@ export function sortRows(rows, view, reduceFirst = false) {
 const position = (v) => (isNum(v) ? `${(v * 100).toFixed(1)}%` : t('u1.na'));
 /** 没有信号的相关股票显示“无信号”；有异常标记但仓位缺失仍显示“数据不足” */
 export const targetText = (r) => ((!r.action && !isNum(r.now) && !isNum(r.next) && !(r.flags?.length)) ? t('u1.sig.no_signal') : position(r.next));
-const flagsText = (r) => (r.flags?.length ? r.flags.join('；') : t('u1.sig.no_flags'));
+const flagsText = (r) => (r.flags?.length ? r.flags.join(tDefault('a02.sep.semi')) : t('u1.sig.no_flags'));
 const beatText = (p) => (typeof p.beat_bh === 'boolean' ? t(p.beat_bh ? 'u1.yes' : 'u1.no') : t('u1.na'));
 
 function nameCell(r, note) {
@@ -108,7 +109,7 @@ export const CSV_COLUMNS = [[(r) => r.code, 'u1.sig.col.code'], [(r) => r.name, 
   [(r) => r.now, 'u1.sig.col.now'], [(r) => r.next, 'u1.sig.col.next'], [(r) => r.close, 'u1.sig.col.close'], [(r) => r.d1, 'u1.sig.col.d1'],
   [(r) => r.avg_turnover_20d, 'u1.sig.col.turnover'], [(r) => r.liquidity, 'u1.sig.col.liquidity'], [(r) => r.lot_cost, 'u1.sig.col.lot'], [(r) => r.reason, 'u1.sig.col.reason'],
   [(r) => r.performance?.total, 'u1.sig.col.total'], [(r) => r.performance?.b_total, 'u1.sig.col.b_total'], [(r) => r.performance?.maxdd, 'u1.sig.col.maxdd'],
-  [(r) => r.performance?.trades, 'u1.sig.col.trades'], [(r) => r.performance?.sharpe, 'u1.sig.col.sharpe'], [(r) => (r.flags ?? []).join('；'), 'u1.sig.col.flags']];
+  [(r) => r.performance?.trades, 'u1.sig.col.trades'], [(r) => r.performance?.sharpe, 'u1.sig.col.sharpe'], [(r) => (r.flags ?? []).join(tDefault('a02.sep.semi')), 'u1.sig.col.flags']];
 
 /** 下载 CSV（带 BOM 让 Excel 认中文）。导出范围 = 当前标签筛选后的行，不含持仓联动信息 */
 export function downloadCSV(name, rows) {

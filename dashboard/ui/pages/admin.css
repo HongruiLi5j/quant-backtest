@@ -163,3 +163,11 @@
 }
 
 .adm .table-wrap { overflow-x: auto; }
+
+/* 公开站访问分区：外链按钮一行、可换行；两栏说明列表 */
+.adm-pub-links { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-bottom: var(--space-3); }
+.adm-pub-sub { font-size: var(--fs-sm); font-weight: 600; margin: 0 0 var(--space-2); }
+.adm-pub-list { margin: 0 0 var(--space-3); padding-left: 1.4em; font-size: var(--fs-sm); line-height: 1.7; color: var(--text-secondary); }
+.adm-pub-list li + li { margin-top: var(--space-1); }
+ol.adm-pub-list { list-style: decimal; }
+ul.adm-pub-list { list-style: disc; }

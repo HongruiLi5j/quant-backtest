@@ -1,0 +1,12 @@
+{
+ "a07.date.line": "Data date: {d} (updates after the 15:30 Beijing-time close)",
+ "a07.date.line_other": "Data date: {d} ({tz})",
+ "a07.date.unknown": "Data date: unknown (the API returned no valid date)",
+ "a07.banner.stale": "This list is based on the close of {d}. It is not an intraday signal.",
+ "a07.banner.before_close": "Today's ({today}) candle has not closed yet; it updates after 15:30 Beijing time. Half-day intraday data must not be used for decisions.",
+ "a07.banner.after_close": "It is past 15:30 Beijing time but today's ({today}) data has not appeared: the market may be closed today, or the after-close update may not have finished.",
+ "a07.banner.weekend": "Today ({today}) is a weekend and the A-share market is closed; the latest list is from the previous trading day.",
+ "a07.banner.intraday": "The data date is today ({d}) but it is not yet 15:30 Beijing time: this candle may be half-day intraday data, so do not treat it as a closing signal.",
+ "a07.banner.future": "The data date ({d}) is later than today ({today}); the computer clock or the data may be wrong, so do not act on it yet.",
+ "a07.banner.unknown": "No valid data date was found, so we cannot tell whether this list is current."
+}

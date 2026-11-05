@@ -3,6 +3,7 @@
  * 不写进信号数据、不进 CSV 导出、不写浏览器存储；离开页面或重新加载清单时清空。 */
 import { el } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { tDefault } from '../shared/t-fallback.js';
 import { getJSON } from '../shared/api.js';
 
 const SELL = ['卖出', '减仓'];
@@ -39,7 +40,7 @@ export function noteFor(link, r) {
   const tag = (text) => el('small', { class: 'u1-sub' }, text);
   if (SELL.includes(r.action)) {
     if (!pos) return { cls: 'u1-link-dim', node: tag(t('u1.link.not_held')) };
-    const pnl = pos.floating_pnl === null || pos.floating_pnl === undefined ? '—' : `${n(pos.floating_pnl, 2)}（${n(Number(pos.floating_pct) * 100, 2)}%）`;
+    const pnl = pos.floating_pnl === null || pos.floating_pnl === undefined ? '—' : tDefault('a02.fmt.pnl_pct', { pnl: n(pos.floating_pnl, 2), pct: n(Number(pos.floating_pct) * 100, 2) });
     return { cls: 'u1-link-held', node: tag(t('u1.link.held', { s: n(pos.shares, 0), c: n(pos.avg_cost, 3), d: pos.held_days ?? '—', p: pnl })) };
   }
   if (BUY.includes(r.action) && pos) return { cls: 'u1-link-owned', node: tag(t('u1.link.owned')) };

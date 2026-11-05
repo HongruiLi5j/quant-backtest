@@ -10,7 +10,7 @@
 .u2-result[hidden] { display: none; }
 
 /* —— 表单：标签在上、控件在下 —— */
-.u2-form, .u2-params { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: flex-end; }
+.u2-form, .u2-params { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: flex-start; }   /* A09：输入框下面会出提示，所以改成顶对齐（原 flex-end 会让有提示的那一列整体上移） */
 .u2-params { margin-top: var(--space-3); }
 .u2-field { display: grid; gap: 4px; font-size: var(--fs-sm); min-width: 0; }
 .u2-field .ws-select, .u2-field .ws-input { min-width: 150px; }
@@ -18,6 +18,15 @@
 .u2-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
 .u2-err { color: var(--color-fall-text, var(--amber)); font-size: var(--fs-sm); }
 .u2-err a { text-decoration: underline; }
+
+/* —— A09：输入校验的就地提示（红 = 错误，挡住运行；黄 = 提醒，不挡；灰 = 说明） —— */
+/* width:0 + min-width:100% 让提示文字不撑宽这一列：宽度跟着输入框走，超出就换行 */
+.u2-field__msg { width: 0; min-width: 100%; font-size: var(--fs-xs); line-height: 1.4; overflow-wrap: anywhere; color: var(--text-secondary); }
+.u2-field__msg:empty { display: none; }
+.u2-field__msg.is-err { color: var(--red); }
+.u2-field__msg.is-warn { color: var(--amber); }
+.u2-field .is-invalid { border-color: var(--red); }
+.u2-field .is-invalid:focus { border-color: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 28%, transparent); }
 
 /* —— 指标卡 —— */
 .u2-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: var(--space-4); }
@@ -81,3 +90,5 @@
 .ws-main .table-wrap { overflow-x: auto; max-width: 100%; }
 .ws-main .chart-legend { flex-wrap: wrap; }
 .u2-k, .u2-chart { max-width: 100%; }
+/* G01：回测运行中，上一次的结果变淡、暂时不能点，提示它不是这次参数的结果 */
+.u2-result[aria-busy="true"] { opacity: .45; pointer-events: none; }

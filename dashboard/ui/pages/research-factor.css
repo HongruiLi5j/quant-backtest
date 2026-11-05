@@ -1,0 +1,50 @@
+/* ==========================================================
+ * 文件: ui/pages/research-factor.css —— 研究 › Factor 标签（N24，逻辑在 research-factor.js）
+ * 颜色全部来自 theme/tokens.css 和 shared/layout.css 的变量；红涨绿跌跟随 --fill-rise / --fill-fall。
+ * ========================================================== */
+.n24 { display: grid; gap: var(--space-4); }
+.n24-intro { font-size: var(--fs-sm); max-width: 80ch; }
+.n24-small { font-size: var(--fs-xs); }
+.n24-chart-card { display: grid; gap: var(--space-3); }
+.n24-chart-card .card__head, .n24-card .card__head { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; justify-content: space-between; }
+.n24-chart-wrap { overflow-x: auto; }
+.n24-scatter { display: block; width: 100%; min-width: 560px; height: auto; }
+.n24-groups { display: block; width: 100%; height: auto; }
+.n24-scatter text, .n24-groups text { fill: var(--chart-text); font-family: var(--font-mono); font-size: 11px; }
+.n24-grid { stroke: var(--chart-grid); }
+.n24-zero { stroke: var(--chart-text); }
+.n24-cap { stroke: var(--amber); stroke-dasharray: 5 4; }
+.n24-scatter .n24-cap-label { fill: var(--amber); }
+.n24-dot { fill: none; stroke-width: 1.2; stroke-opacity: .6; cursor: pointer; }
+.n24-dot.is-up { stroke: var(--fill-rise); }
+.n24-dot.is-down { stroke: var(--fill-fall); }
+.n24-dot.is-mono { stroke-opacity: 1; }
+.n24-dot.is-mono.is-up { fill: var(--fill-rise); }
+.n24-dot.is-mono.is-down { fill: var(--fill-fall); }
+.n24-dot.is-sel { stroke: var(--text-primary); stroke-width: 2; stroke-opacity: 1; }
+.n24-dot:focus-visible { outline: none; stroke: var(--accent-glow); stroke-width: 3; stroke-opacity: 1; }
+.n24-bar { fill: var(--chart-2); fill-opacity: .55; }
+.n24-bar.is-top { fill: var(--chart-1); fill-opacity: 1; }
+.n24-card { display: grid; gap: var(--space-4); }
+.n24-key { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.n24-badges { display: inline-flex; gap: var(--space-2); flex-wrap: wrap; }
+.n24-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.n24-detail { gap: var(--space-4); }
+.n24-panel { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+.n24-h3 { margin: 0; font-size: var(--fs-sm); font-weight: 650; }
+.n24-cost { display: grid; gap: var(--space-2); }
+.n24-cost-row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr 4.5rem; gap: var(--space-3); align-items: center; font-size: var(--fs-sm); }
+.n24-cost-row .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.n24-cost-bar { height: 10px; border-radius: 5px; background: var(--bg-sunken); overflow: hidden; }
+.n24-cost-bar i { display: block; height: 100%; }
+.n24-cost-bar i.is-up { background: var(--fill-rise); }
+.n24-cost-bar i.is-down { background: var(--fill-fall); }
+.n24-cost-bar i.is-cost { background: var(--amber); }
+.n24-rules { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.n24-rules li { font-size: var(--fs-sm); padding: 6px 10px; border-radius: var(--radius-sm); background: var(--bg-sunken); }
+.n24-rules li.is-hit { color: var(--red); }
+.n24-rules li.is-pass { color: var(--green); }
+@media (max-width: 760px) {
+  .n24-mini, .n24-detail { grid-template-columns: 1fr 1fr; }
+  .n24-detail { grid-template-columns: 1fr; }
+}

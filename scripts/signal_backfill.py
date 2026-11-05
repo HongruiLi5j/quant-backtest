@@ -28,7 +28,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.market_monitor.core import BEIJING
-from src.market_monitor.eod_analysis import CLOSE_READY
+from src import market_clock
 
 HORIZONS = (1, 3, 5, 20)
 MAIN_STRATEGY = 'blend2'
@@ -77,7 +77,7 @@ def read_signals(ledger_path, since_day, until_day):
 def load_open_close(daily_dir, now=None):
     """返回 (open, close) 两张宽表；北京时间 15:30 前丢弃当天 K 线。"""
     now = (now or datetime.now(BEIJING)).astimezone(BEIJING)
-    drop_today = now.time() < CLOSE_READY
+    drop_today = not market_clock.is_close_ready(now)
     root = Path(daily_dir)
     if not root.is_dir():
         raise BackfillError('no_daily_data')

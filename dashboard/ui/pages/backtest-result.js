@@ -7,6 +7,7 @@
  * ========================================================== */
 import { el, fmt } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { tDefault } from '../shared/t-fallback.js';
 import { attachTooltip, drawdownChart, equityChart, syncTimeScale } from '../shared/chart-helpers.js';
 import { card, isNum, legend, pct, table, tb, toneClass } from './u2-lib.js';
 
@@ -82,10 +83,10 @@ function chartsCard(r, label) {
 
 /** 当前持仓 / 明日目标，如「沪深300ETF 60%、…」；空仓显示「空仓」 */
 function positionText(r, names) {
-  const ps = (p) => (Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${names[k] || k} ${(v * 100).toFixed(0)}%`).join('、') : t('u2.bt.flat'));
+  const ps = (p) => (Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${names[k] || k} ${(v * 100).toFixed(0)}%`).join(tDefault('a02.sep.list')) : t('u2.bt.flat'));
   return el('p', { class: 'muted u2-pos' },
     t('u2.bt.pos_range', { start: r.start, end: r.end, cost: fmt(r.cost_bp, 0) }), ' ',
-    t('u2.bt.pos_now'), el('b', {}, ps(r.position_now)), t('u2.bt.pos_next'), el('b', {}, ps(r.position_next)), '。');
+    t('u2.bt.pos_now'), el('b', {}, ps(r.position_now)), t('u2.bt.pos_next'), el('b', {}, ps(r.position_next)), tDefault('a02.punct.end'));
 }
 
 const RECENT = [['1D', 'u2.bt.r.1d'], ['1W', 'u2.bt.r.1w'], ['1M', 'u2.bt.r.1m'], ['3M', 'u2.bt.r.3m'], ['1Y', 'u2.bt.r.1y'], ['YTD', 'u2.bt.r.ytd']];

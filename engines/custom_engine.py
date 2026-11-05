@@ -15,13 +15,14 @@ from pathlib import Path
 import pandas as pd
 
 from engines import common
+from engines.codefiles import SLUG_BAD_CHARS
 
 ROOT = Path(__file__).resolve().parent.parent
 CUSTOM_DIR = ROOT / "engines" / "custom"
 
 
 def _load(name: str):
-    slug = re.sub(r"[^A-Za-z0-9_一-鿿-]", "", str(name))[:40]
+    slug = re.sub(SLUG_BAD_CHARS, "", str(name))[:40]      # 和「代码」页保存入口同一条白名单
     path = CUSTOM_DIR / f"{slug}.py"
     if not path.exists():
         raise ValueError(f"没有找到这个自定义策略文件：engines/custom/{slug}.py（可能还没保存）")

@@ -174,7 +174,7 @@ def order(uid: int, market: str, code: str, side: str, qty, q: dict, strategy: s
         raise MemberError("方向只能是买入或卖出")
     try:
         qty = int(qty)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):      # JSON 里的 1e999 会被解析成 inf，int(inf) 抛 OverflowError
         raise MemberError("数量要是整数")
     if qty <= 0 or qty > 100_000_000:
         raise MemberError("数量不对")

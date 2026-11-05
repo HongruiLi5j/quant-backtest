@@ -8,16 +8,19 @@
  * ========================================================== */
 import { el, fmt, store } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
-import { getJSON, postJSON } from '../shared/api.js';
+import { activateOnKey } from '../shared/a11y.js';
+import { getJSON, postJSON, isMock } from '../shared/api.js';
 import { toast } from '../shared/toast.js';
-import { kChart } from './stock-chart.js';
+import { canZoomRecent, kChart } from './stock-chart.js';
 import { actionBadge, card, legend, lineChart, paletteVars, pct, table, tb, toneClass } from './u2-lib.js';
 
 const PERIODS = ['6m', '1y', '3y', '5y', 'all'];
 const INDS = ['all', 'macd', 'rsi', 'kdj', 'off'];
-const KEY = { strategy: 'qb-u2-stock-strategy', period: 'qb-u2-stock-period', ind: 'qb-u2-stock-ind' };
+const VIEWS = ['recent', 'all'];     // 数据多时 K 线的可见范围：最近约 1 年 / 全部
+const KEY = { strategy: 'qb-u2-stock-strategy', period: 'qb-u2-stock-period', ind: 'qb-u2-stock-ind', view: 'qb-a12-stock-view' };
 
 let data = null;      // 当前 /api/stock 返回，切换指标时只重画 K 线用
+let kc = null;        // 当前 K 线的 { chart, showRange }，切换可见范围时不重画、只移动窗口
 
 function head(d, meta, market) {
   const i = d.info;
@@ -43,10 +46,19 @@ function toolbar(d, meta, market, code, st, actions) {
   const period = el('div', { class: 'segmented', role: 'group', 'aria-label': t('u2.st.period') },
     ...PERIODS.map((p) => el('button', { class: 'segmented__btn', type: 'button', 'aria-pressed': String(p === st.period), dataset: { p } }, t(`u2.st.p.${p}`))));
   period.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) actions.set('period', b.dataset.p); });
-  const lab = el('a', { class: 'btn btn--sm', href: `backtest.html?${new URLSearchParams({ market, symbol: code, strategy: st.strategy })}` }, t('u2.st.to_lab'));
+  const view = canZoomRecent(d.dates.length)
+    ? el('div', { class: 'u2-field' }, el('span', { class: 'muted' }, t('a12.range.label')),
+      el('div', { class: 'segmented', role: 'group', 'aria-label': t('a12.range.label') },
+        ...VIEWS.map((v) => el('button', { class: 'segmented__btn', type: 'button', 'aria-pressed': String(v === st.view), dataset: { v } }, t(`a12.range.${v}`)))))
+    : null;
+  if (view) view.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) actions.set('view', b.dataset.v); });
+  const labQ = new URLSearchParams({ market, symbol: code, strategy: st.strategy });
+  if (isMock()) labQ.set('mock', '1');   // G01：预览模式把 ?mock=1 带过去（以前丢了，预览里点过去是 404 错误卡片）
+  const lab = el('a', { class: 'btn btn--sm', href: `backtest.html?${labQ}` }, t('u2.st.to_lab'));
   const nodes = [
     el('label', { class: 'u2-field' }, el('span', { class: 'muted' }, t('u2.bt.strategy')), select(singles, st.strategy, t('u2.bt.strategy'), (v) => actions.set('strategy', v))),
     el('div', { class: 'u2-field' }, el('span', { class: 'muted' }, t('u2.st.period')), period),
+    view,
     el('label', { class: 'u2-field' }, el('span', { class: 'muted' }, t('u2.st.ind')), select(INDS.map((k) => [k, t(`u2.st.ind.${k}`)]), st.ind, t('u2.st.ind'), (v) => actions.set('ind', v))),
     el('span', { class: 'ws-head__spacer' }), lab];
   if (d.info.kind === '个股') {
@@ -63,9 +75,10 @@ function chartCard(d, meta, market, st, actions, code) {
   const markers = [{ label: t('u2.st.legend_buy'), color: 'var(--color-rise)' }, { label: t('u2.st.legend_sell'), color: 'var(--color-fall)' }, { label: t('u2.st.legend_pos'), color: 'var(--chart-2)' }];
   const i = d.info;
   const note = t('u2.st.note', { first: i.first_date, last: i.last_date, rows: i.rows, tz: tb(meta.markets[market]?.timezone_label ?? ''), cost: fmt(d.cost_bp, 0) });
-  queueMicrotask(() => requestAnimationFrame(() => kChart(box, d, st.ind)));
+  queueMicrotask(() => requestAnimationFrame(() => { kc = kChart(box, d, st.ind, st.view); }));
   box.dataset.kchart = '1';
-  return el('section', { class: 'card' }, toolbar(d, meta, market, code, st, actions), legend([...items, ...markers]), box, el('p', { class: 'ws-note' }, note));
+  const hint = canZoomRecent(d.dates.length) ? el('p', { class: 'ws-note' }, t('a12.range.hint', { n: d.dates.length })) : null;
+  return el('section', { class: 'card' }, toolbar(d, meta, market, code, st, actions), legend([...items, ...markers]), box, el('p', { class: 'ws-note' }, note), hint);
 }
 
 function compareCard(d, meta, actions) {
@@ -78,7 +91,7 @@ function compareCard(d, meta, actions) {
   node.querySelectorAll('tbody tr[data-k]').forEach((tr) => {
     tr.tabIndex = 0;
     tr.addEventListener('click', () => actions.set('strategy', tr.dataset.k));
-    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') actions.set('strategy', tr.dataset.k); });
+    activateOnKey(tr, () => actions.set('strategy', tr.dataset.k));   // Enter 和空格都能选（A11）
   });
   return node;
 }
@@ -109,7 +122,8 @@ export async function render(root) {
   }
   const meta = await getJSON('/api/meta', { mock: 'u2-meta' });
   const market = meta.markets[q.get('market')] ? q.get('market') : meta.default_market;
-  const st = { strategy: store.get(KEY.strategy, 'blend2'), period: store.get(KEY.period, '1y'), ind: store.get(KEY.ind, 'all') };
+  const st = { strategy: store.get(KEY.strategy, 'blend2'), period: store.get(KEY.period, '1y'), ind: store.get(KEY.ind, 'all'), view: store.get(KEY.view, 'recent') };
+  if (!VIEWS.includes(st.view)) st.view = 'recent';
   if (!meta.strategies[st.strategy]) st.strategy = 'blend2';
   if (!PERIODS.includes(st.period)) st.period = '1y';
   if (!INDS.includes(st.ind)) st.ind = 'all';
@@ -120,10 +134,16 @@ export async function render(root) {
   const actions = {
     set(key, value) {
       store.set(KEY[key], value);
+      if (key === 'view') {                              // 只换可见范围：不请求、不重画，移动窗口并同步按钮状态
+        st.view = value;
+        root.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === value)));
+        kc?.showRange(value);
+        return;
+      }
       if (key !== 'ind') { again(); return; }
       st.ind = value;                                    // 只换指标：不重新请求，直接重画 K 线
       const box = root.querySelector('[data-kchart]');
-      if (box && data) kChart(box, data, value);
+      if (box && data) kc = kChart(box, data, value, st.view);
     },
     async watch(add) {
       const r = await postJSON(`/api/watchlist?market=${market}&action=${add ? 'add' : 'remove'}&code=${encodeURIComponent(code)}`);

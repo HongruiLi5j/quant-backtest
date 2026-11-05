@@ -25,11 +25,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src import market_clock  # noqa: E402
 from src.fundamental.store import FundamentalError, FundamentalStore, check_path_allowed, ingest_reports  # noqa: E402
 from src.fundamental import fetch_baostock as fb  # noqa: E402
 
 BJT = timezone(timedelta(hours=8))
-CLOSE_READY = (15, 30)
 A_SHARE = re.compile(r"^(60|68|00|30)[0-9]{4}$")
 DAILY_DIR = ROOT / "data" / "daily" / "cn_all"
 PROTECTED_DIRS = ("data/daily",)
@@ -83,7 +83,7 @@ def check_asof(asof, now):
     now_bj = now.astimezone(BJT) if now.tzinfo else now.replace(tzinfo=BJT)
     if asof > now_bj.date():
         raise CliError("asof %s 晚于今天(北京时间 %s)" % (asof, now_bj.date()))
-    if asof == now_bj.date() and (now_bj.hour, now_bj.minute) < CLOSE_READY:
+    if asof == now_bj.date() and not market_clock.is_close_ready(now_bj):
         raise CliError("asof 是今天且北京时间未到 15:30,当天 K 线是盘中数据,拒绝运行")
 
 

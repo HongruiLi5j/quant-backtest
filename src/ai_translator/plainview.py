@@ -2,6 +2,7 @@
 
 REJECT_MSG 是 ai_layer 里同名常量的只读复制（网站进程不能导入 ai_lib）；tests 里有一条和原件逐字比对的检查，防止两边慢慢跑偏。
 """
+import re
 
 # 字段 -> (中文, English)。顺序就是页面上的显示顺序。必须覆盖校验器里的每一个字段（测试里有检查）。
 LABELS = {
@@ -60,18 +61,62 @@ FLAG_TEXT = {
     "ai.flag.missing": ("你提到了「{idea}」,但配置里没有「{field}」这一项", 'You mentioned "{idea}", but the config has no "{field}"'),
 }
 
+# 前端还没有的提示键：文案先放在后端，等 dashboard/i18n.js 加上同名键后可并入 FLAG_TEXT。
+# 不能直接写进 FLAG_TEXT：现有测试要求 FLAG_TEXT 的每个键都和前端词典逐字一致。
+PENDING_FLAG_TEXT = {
+    "ai.flag.unused": ("模型给当前策略用不到的「{field}」填了值,已自动清除;请核对其余配置",
+                       'The model filled in "{field}", which this strategy does not use; it was removed. Please review the rest of the config'),
+}
+
+# 拒绝提示里允许显示的"字段名"：LABELS 里的叶子路径，加上校验器可能把错误报在整段上的顶层段名。
+# 白名单之外的路径（校验器自由文本、内部路径、模型自造的键名）一律不带给前端。
+SECTIONS = frozenset(path.split(".")[0] for path in LABELS)
+SAFE_FIELDS = frozenset(LABELS) | SECTIONS
+_RULE_CODE = re.compile(r"[A-Z][A-Z0-9_]{2,39}")
+MAX_REFUSAL_FIELDS = 3
+
 
 def refusal_text(code: str) -> tuple:
     return REJECT_MSG.get(code, REJECT_MSG["UNSUPPORTED_REQUEST"])
 
 
-def make_refusal(code: str, source: str, detail_zh: str = "", detail_en: str = "") -> dict:
-    """拒绝结构：优先用 REJECT_MSG 的中英文，再附一句具体定位。source: precheck / consistency / counterfactual / model / gate。"""
+def gate_fields(errors) -> tuple:
+    """从校验器的错误列表里取出可以给用户看的 (字段名列表, 规则名列表)。
+
+    只回传两样东西：白名单里的字段路径、形如 OUT_OF_RANGE 的大写规则码。
+    校验器的 message（自由文本）、不在白名单里的 path、非规则码格式的 code 都丢掉，
+    所以不会回显用户原文或内部路径。同一字段只留第一次出现；最多 MAX_REFUSAL_FIELDS 个。
+    规则名与字段名按位置一一对应，前端不改也能继续只用 fields。
+    """
+    fields, rules = [], []
+    for item in errors or []:
+        if not isinstance(item, dict):
+            continue
+        path, code = item.get("path"), item.get("code")
+        if path not in SAFE_FIELDS or path in fields:
+            continue
+        fields.append(path)
+        rules.append(code if isinstance(code, str) and _RULE_CODE.fullmatch(code) else "UNSUPPORTED_REQUEST")
+        if len(fields) == MAX_REFUSAL_FIELDS:
+            break
+    return fields, rules
+
+
+def make_refusal(code: str, source: str, detail_zh: str = "", detail_en: str = "",
+                 fields=None, rules=None) -> dict:
+    """拒绝结构：优先用 REJECT_MSG 的中英文，再附一句具体定位。source: precheck / consistency / counterfactual / model / gate。
+
+    fields / rules（可选，等长）：出错的字段名和命中的规则名，只有非空时才出现在结果里，旧调用方不受影响。
+    """
     if code not in REJECT_MSG:
         code = "UNSUPPORTED_REQUEST"
     zh, en = REJECT_MSG[code]
-    return {"code": code, "source": source,
-            "message_zh": f"{zh} {detail_zh}".strip(), "message_en": f"{en} {detail_en}".strip()}
+    out = {"code": code, "source": source,
+           "message_zh": f"{zh} {detail_zh}".strip(), "message_en": f"{en} {detail_en}".strip()}
+    if fields:
+        out["fields"] = list(fields)
+        out["rules"] = list(rules) if rules and len(rules) == len(fields) else [code] * len(fields)
+    return out
 
 
 def value_text(path: str, value) -> str:
@@ -107,6 +152,7 @@ def build_view(config: dict, sources: dict) -> list:
 
 
 def flag_message(flag: dict, lang: str = "zh") -> str:
-    zh, en = FLAG_TEXT.get(flag.get("message_key"), FLAG_TEXT["ai.flag.mismatch"])
+    key = flag.get("message_key")
+    zh, en = FLAG_TEXT.get(key) or PENDING_FLAG_TEXT.get(key) or FLAG_TEXT["ai.flag.mismatch"]
     tpl = zh if lang == "zh" else en
     return tpl.format(idea=flag.get("idea_says", ""), config=flag.get("config_has", ""), field=flag.get("field", ""))

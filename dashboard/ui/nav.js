@@ -13,7 +13,7 @@ import { el, svg } from './shared/dom.js';
 import { t } from './shared/i18n.js';
 
 /** 新页面已经做好的页面 id；不在这里的项点了会去旧页面 */
-export const BUILT = new Set(['today', 'signals', 'market', 'watch', 'backtest', 'holdings', 'monitor', 'research', 'settings', 'admin']);
+export const BUILT = new Set(['today', 'signals', 'market', 'watch', 'backtest', 'holdings', 'monitor', 'research', 'reports', 'system', 'settings', 'admin']);
 
 /** 导航顺序即快捷键：前 9 项对应 1–9 */
 export const NAV = [
@@ -27,7 +27,8 @@ export const NAV = [
   { id: 'usmonitor', key: 'ui.nav.usmonitor', href: 'monitor.html?market=us', classic: '/#/usmonitor' },
   { id: 'research', key: 'ui.nav.research', href: 'research.html', classic: '/#/cmp' },
   { id: 'settings', key: 'ui.nav.settings', href: 'settings.html', classic: '/#/today' },
-  // 报告、系统两页的新页面还没做，先不放进导航（点了只会回到今日）；做好后在这里加回两项
+  { id: 'reports', key: 'ui.nav.reports', href: 'reports.html', classic: '/#/today' },   // N22 报告页（只读）；旧界面没有对应页面
+  { id: 'system', key: 'ui.nav.system', href: 'system.html', classic: '/admin' },   // N21 系统页（只读）
   { id: 'admin', key: 'ui.nav.admin', href: 'admin.html', classic: '/admin' },   // 新后台页；/admin 旧页面保留作退路（设置页里有链接）
 ];
 

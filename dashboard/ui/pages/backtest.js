@@ -5,12 +5,15 @@
  *   - 个股页「在回测实验室调参数」会带 ?symbol=&strategy=&market= 过来
  *   - 语言切换会重画整页：表单值和上次结果存在模块变量里，不重新请求；按 R 才重新跑
  *   - 首次进入时的接口错误交给页面启动器（401/403 显示「登录已过期」）；之后点按钮的错误显示在按钮旁
+ *   - 输入校验（A09）：规则在 backtest-validate.js（照后端 app.py / registry.py 写）；这里只负责把结果画在输入框旁边、
+ *     有错时禁用「运行回测」。每次输入、换策略 / 品种、回测结束都会重新校验
  * ========================================================== */
 import { el } from '../shared/dom.js';
 import { lang, t } from '../shared/i18n.js';
 import { getJSON } from '../shared/api.js';
 import { analysisNodes } from './backtest-analysis.js';
 import { recentAndTrades, resultNodes } from './backtest-result.js';
+import { checkParam, validateAll } from './backtest-validate.js';
 
 const form = { strategy: '', symbol: '', start: '', cost: '', params: {} };
 let meta = null;
@@ -19,6 +22,8 @@ let last = null;          // 上一次回测结果
 let lastLang = null;
 let busy = false;
 let seeded = false;
+let uid = 0;              // 提示位的 id 计数（aria-describedby 要用）
+const dataEnds = {};      // `${market}:${symbol}` → 上次回测返回的最后一个数据日；校验「开始日早于最新数据日」用，还没跑过的品种不比较
 
 const mk = () => meta.markets[market];
 const stratLabel = (k) => meta.strategies[k]?.label ?? k;
@@ -30,10 +35,18 @@ function paramDefaults(key) {
   return Object.fromEntries((meta.strategies[key]?.params ?? []).map((p) => [p.key, Number(p.default)]));
 }
 
+/** 下拉里的「名称（代码）」。A02 词条还没合并进基础字典时 t() 返回键名，下拉里就是一排「a02.fmt.name_code」（G01 走查发现），
+ *  这时退成「名称 代码」，和其他页面股票名后面跟代码的写法一样；名称就是代码时只写一次 */
+function nameCode(name, code) {
+  const s = t('a02.fmt.name_code', { name, code });
+  if (s !== 'a02.fmt.name_code') return s;
+  return name && name !== code ? `${name} ${code}` : code;
+}
+
 /** 品种下拉：自选股 / ETF / 排名靠前的个股 / 其他（从个股页带过来的代码） */
 function symbolOptions(extra) {
   const m = mk();
-  const group = (label, entries) => (entries.length ? el('optgroup', { label }, ...entries.map(([k, v]) => el('option', { value: k }, `${v || k}（${k}）`))) : null);
+  const group = (label, entries) => (entries.length ? el('optgroup', { label }, ...entries.map(([k, v]) => el('option', { value: k }, nameCode(v || k, k)))) : null);
   const known = (k) => (m.stocks ?? {})[k] !== undefined || m.universe[k] !== undefined || (m.lab_stocks ?? {})[k] !== undefined;
   return [group(t('u2.bt.g_watch'), Object.entries(m.stocks ?? {})), group('ETF', Object.entries(m.universe)),
     group(t('u2.bt.g_top'), Object.entries(m.lab_stocks ?? {})),
@@ -51,8 +64,30 @@ function seedForm() {
   return Boolean(q.get('symbol') || q.get('strategy'));
 }
 
-function field(label, control) {
-  return el('label', { class: 'u2-field' }, el('span', { class: 'muted' }, label), control);
+/** 提示位：输入框正下方的一行小字，输入框用 aria-describedby 指向它（屏幕阅读器会读） */
+function msgSlot(input) {
+  const slot = el('span', { class: 'u2-field__msg', id: `u2-msg-${++uid}`, 'aria-live': 'polite' });
+  input.setAttribute('aria-describedby', slot.id);
+  return slot;
+}
+
+function field(label, control, slot = null) {
+  return el('label', { class: 'u2-field' }, el('span', { class: 'muted' }, label), control, slot);
+}
+
+/** 词条翻成文字；词条还没合并进基础字典时 t() 原样返回键名，这种情况不露键名（只剩红框），和 A03 / A07 一样 */
+function msgText(issue) {
+  const s = t(issue.key, issue.vars);
+  return s === issue.key ? '' : s;
+}
+
+/** 校验结果画到输入框旁边：红（错误，挡运行）> 黄（提醒，不挡）> 灰（说明） */
+function paint(f, res) {
+  const issue = res.error || res.warn || res.hint;
+  f.slot.textContent = issue ? msgText(issue) : '';
+  f.slot.className = `u2-field__msg is-${res.error ? 'err' : res.warn ? 'warn' : 'hint'}`;
+  f.input.classList.toggle('is-invalid', Boolean(res.error));
+  if (res.error) f.input.setAttribute('aria-invalid', 'true'); else f.input.removeAttribute('aria-invalid');
 }
 
 function buildControls(ui) {
@@ -68,29 +103,56 @@ function buildControls(ui) {
   const run = el('button', { class: 'btn btn--primary btn--sm', type: 'button' }, t('u2.bt.run'));
   const reset = el('button', { class: 'btn btn--sm', type: 'button' }, t('u2.bt.reset'));
   ui.run = run; ui.msg = el('span', { class: 'u2-err', role: 'alert' });
+  ui.block = el('span', { class: 'u2-err' });   // 「有 N 项输入要改」汇总，和接口错误 ui.msg 分开，互不覆盖
+  const fields = { symbol: { input: sym, slot: msgSlot(sym) }, start: { input: start, slot: msgSlot(start) }, cost: { input: cost, slot: msgSlot(cost) } };
+  let pfields = {};   // 当前策略的参数输入框：key → { input, slot }，换策略时重建
+
+  /** 读当前所有输入 → 校验 → 画提示 → 有错就禁用「运行回测」。返回错误个数（运行前再调一次，防止绕过按钮） */
+  ui.sync = () => {
+    const st = meta.strategies[form.strategy];
+    const raw = { symbol: form.symbol, start: start.value, cost: cost.value, params: {} };
+    const bad = { start: start.validity?.badInput, cost: cost.validity?.badInput, params: {} };
+    for (const [k, f] of Object.entries(pfields)) { raw.params[k] = f.input.value; bad.params[k] = f.input.validity?.badInput; }
+    const v = validateAll({ market, raw, bad, specs: st.params, known: names()[form.symbol] !== undefined || (mk().lab_stocks ?? {})[form.symbol] !== undefined,
+      dataEnd: dataEnds[`${market}:${form.symbol}`] ?? null, costDefault: defaultCost(form.symbol) });
+    paint(fields.symbol, v.symbol); paint(fields.start, v.start); paint(fields.cost, v.cost);
+    for (const [k, f] of Object.entries(pfields)) paint(f, v.params[k]);
+    ui.block.textContent = v.errors ? msgText({ key: 'a09.sum.blocked', vars: { n: v.errors } }) : '';
+    run.disabled = busy || v.errors > 0;
+    return v.errors;
+  };
 
   const drawParams = () => {
     const st = meta.strategies[form.strategy];
     desc.textContent = st.desc + (st.kind === 'multi' ? t('u2.bt.multi_note') : '');
+    pfields = {};
     params.replaceChildren(...(st.params.length ? st.params.map((p) => {
-      const input = el('input', { class: 'ws-input u2-narrow', type: 'number', min: p.min, max: p.max, step: p.step, dataset: { key: p.key },
+      const input = el('input', { class: 'ws-input u2-narrow', type: 'number', min: p.min, max: p.max, step: p.step, dataset: { key: p.key }, 'aria-label': p.label,
         value: Number(form.params[p.key] ?? p.default).toFixed(decimals(p.step)) });
-      input.addEventListener('input', () => { form.params[p.key] = Number(input.value); });
-      return el('label', { class: 'u2-field', title: p.help || null }, el('span', { class: 'muted' }, p.label + (p.help ? ' ⓘ' : '')), input);
+      const slot = msgSlot(input);
+      pfields[p.key] = { input, slot };
+      // 只把合格的值写进 form.params（以前清空输入框会变成 Number('') = 0 发给后端）；不合格时按钮是禁用的，不会发请求
+      input.addEventListener('input', () => { if (!checkParam(input.value, p, input.validity?.badInput)) form.params[p.key] = Number(input.value); ui.sync(); });
+      return el('label', { class: 'u2-field', title: p.help || null }, el('span', { class: 'muted' }, p.label + (p.help ? ' ⓘ' : '')), input, slot);
     }) : [el('span', { class: 'muted' }, t('u2.bt.no_params'))]));
+    ui.sync();
   };
   strat.addEventListener('change', () => { form.strategy = strat.value; form.params = paramDefaults(form.strategy); drawParams(); ui.run.click(); });
-  sym.addEventListener('change', () => { form.symbol = sym.value; form.cost = String(defaultCost(form.symbol)); cost.value = form.cost; ui.run.click(); });
-  start.addEventListener('change', () => { form.start = start.value; });
-  cost.addEventListener('input', () => { form.cost = cost.value; });
+  sym.addEventListener('change', () => { form.symbol = sym.value; form.cost = String(defaultCost(form.symbol)); cost.value = form.cost; ui.sync(); ui.run.click(); });
+  const onStart = () => { form.start = start.value; ui.sync(); };
+  start.addEventListener('input', onStart);
+  start.addEventListener('change', onStart);
+  cost.addEventListener('input', () => { form.cost = cost.value; ui.sync(); });
   reset.addEventListener('click', () => { form.params = paramDefaults(form.strategy); drawParams(); ui.run.click(); });
   params.addEventListener('keydown', (e) => { if (e.key === 'Enter') ui.run.click(); });
-  drawParams();
-  return el('section', { class: 'card' },
-    el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u2.bt.title')), el('span', { class: 'card__sub' }, t('u2.bt.sub'))),
-    el('div', { class: 'u2-form' }, field(t('u2.bt.strategy'), strat), field(t('u2.bt.symbol'), sym), field(t('u2.bt.start'), start), field(t('u2.bt.cost'), cost)),
+  const head = el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u2.bt.title')), el('span', { class: 'card__sub' }, t('u2.bt.sub')));
+  const card = el('section', { class: 'card' }, head,
+    el('div', { class: 'u2-form' }, field(t('u2.bt.strategy'), strat), field(t('u2.bt.symbol'), sym, fields.symbol.slot),
+      field(t('u2.bt.start'), start, fields.start.slot), field(t('u2.bt.cost'), cost, fields.cost.slot)),
     desc, params,
-    el('div', { class: 'u2-actions' }, run, reset, ui.msg));
+    el('div', { class: 'u2-actions' }, run, reset, ui.block, ui.msg));
+  drawParams();   // 里面会 sync()，所以放在 card 搭好之后
+  return card;
 }
 
 function showResult(ui, r) {
@@ -99,22 +161,30 @@ function showResult(ui, r) {
   ui.out.hidden = false;
 }
 
+/** 运行中的样子（G01）：按钮写「回测中…」，上一次的结果变淡并标 aria-busy，免得把旧结果当成新参数的结果；结束后恢复 */
+function setRunning(ui, on) {
+  ui.run.textContent = on ? (msgText({ key: 'g01.bt.running' }) || t('cmp.demo.running')) : t('u2.bt.run');   // G01 词条未合并时用已有的「运行中…」
+  if (on) ui.out.setAttribute('aria-busy', 'true'); else ui.out.removeAttribute('aria-busy');
+}
+
 /** 请求参数和旧页面完全一致：market / strategy / symbol / cost / start / params(JSON) */
 async function runBacktest(ui, strict) {
-  if (busy) return;
+  if (busy || ui.sync()) return;   // 输入有错：不发请求（按钮已禁用，这里防 Enter / 程序化 click 绕过）
   busy = true; ui.run.disabled = true; ui.msg.replaceChildren();
+  setRunning(ui, true);
   try {
     const q = new URLSearchParams({ market, strategy: form.strategy, symbol: form.symbol, cost: form.cost, start: form.start, params: JSON.stringify(form.params) });
     const r = await getJSON(`/api/backtest?${q}`, { mock: 'u2-backtest' });
     if (r.error) { ui.msg.textContent = r.error; ui.out.hidden = true; return; }
     last = r; lastLang = lang();
+    dataEnds[`${market}:${r.symbol}`] = r.end;   // 记下这只品种最新数据日，开始日期校验要用
     showResult(ui, r);
   } catch (err) {
     if (strict && err.auth) throw err;
     ui.out.hidden = true;
     ui.msg.replaceChildren(err.auth ? el('span', {}, t('ui.auth.expired'), ' ', el('a', { href: '/' }, t('ui.auth.home'))) : (err.message || t('ui.state.error')));
   } finally {
-    busy = false; ui.run.disabled = false;
+    busy = false; setRunning(ui, false); ui.sync();   // 恢复按钮：没有输入错误才启用；并用刚拿到的最新数据日重新校验开始日期
   }
 }
 

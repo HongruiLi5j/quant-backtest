@@ -105,7 +105,7 @@ function walk(node, segs, base, out) {
 /** 返回 { missing: [...], optional: [...], note } */
 export function check(spec, body) {
   const missing = new Set(); const optional = new Set();
-  if (body === null || typeof body !== 'object') return { missing: ['(不是对象)'], optional: [], note: '' };
+  if (body === null || typeof body !== 'object') return { missing: [t('a02.debug.not_object')], optional: [], note: '' };
   if (!Array.isArray(body) && skipNode(body)) return { missing: [], optional: [], note: body.empty === true ? 'empty' : 'error' };
   for (const raw of spec) {
     const opt = raw.endsWith('?');
@@ -132,9 +132,9 @@ function draw() {
   }
   const rows = [...results.entries()].map(([path, r]) => {
     const status = r.note ? t('ui.debug.biz')
-      : r.missing.length ? `${t('ui.debug.missing')}：${r.missing.join('、')}` : t('ui.debug.ok');
+      : r.missing.length ? `${t('ui.debug.missing')}${t('a02.sep.colon')}${r.missing.join(t('a02.sep.list'))}` : t('ui.debug.ok');
     return el('div', {}, el('code', {}, path), ' — ', status,
-      r.optional.length ? el('div', { style: { opacity: '0.7' } }, `${t('ui.debug.optional')}：${r.optional.join('、')}`) : null);
+      r.optional.length ? el('div', { style: { opacity: '0.7' } }, `${t('ui.debug.optional')}${t('a02.sep.colon')}${r.optional.join(t('a02.sep.list'))}`) : null);
   });
   footer.replaceChildren(el('strong', {}, t('ui.debug.title')),
     ...(rows.length ? rows : [el('div', {}, t('ui.debug.none'))]));

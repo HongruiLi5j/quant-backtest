@@ -6,9 +6,11 @@
  * 说明: 金额都是字符串，只在显示时转 Number；私人数据只放在本模块的变量里，不写任何浏览器存储
  * ========================================================== */
 
-import { el } from '../shared/dom.js';
+import { el, motionOK } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { getJSON, ApiError } from '../shared/api.js';
+import { closeOnEscape } from '../shared/a11y.js';
+import { stockPage } from '../shared/stock-link.js';
 import { num, ratio, tone, isNum, span, table, td, messageBox, errKey, post } from './u3-common.js';
 import { buildForm, historyCard } from './holdings-form.js';
 
@@ -54,10 +56,12 @@ function capitalTile(snap) {
       if (!r.ok) { save.disabled = false; st.msg.show(errKey(r.err, ['hold'])); return; }
       st.capitalEdit = false;
       await reload();
+      st.root.querySelector('#holdCapitalEdit')?.focus();   // 编辑格被换掉了，焦点回到「编辑」按钮（A11）
       st.msg.show('hold.capital_saved', 'ok');
     });
-    cancel.addEventListener('click', () => { st.capitalEdit = false; draw(); });
+    cancel.addEventListener('click', () => { st.capitalEdit = false; draw(); st.root.querySelector('#holdCapitalEdit')?.focus(); });
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
+    closeOnEscape(input, () => cancel.click());   // 输入框里按 Esc 等于点「取消」（A11）
     return el('div', { class: 'metric u3-capital' }, label, input, el('div', { class: 'u3-btn-row' }, save, cancel));
   }
   const edit = el('button', { class: 'btn btn--sm btn--ghost', type: 'button', id: 'holdCapitalEdit' }, t('hold.sum.edit'));
@@ -79,8 +83,14 @@ function summaryCard(snap) {
     el('p', { class: 'ws-note' }, t('hold.sum.capital_hint')),
   ];
   if (Number(s.missing_price_count) > 0) parts.push(el('p', { class: 'u3-warn' }, t('hold.sum.missing', { n: Number(s.missing_price_count) })));
+  // G01：录入表单在持仓表下面，1440×900 屏幕上要往下滚一屏才看到；汇总卡右上角放一个「录入成交」直接跳过去并把光标放进代码框
+  const jump = el('button', { class: 'btn btn--sm', type: 'button' }, t('hold.form.title'), el('span', { 'aria-hidden': 'true' }, ' ↓'));
+  jump.addEventListener('click', () => {
+    document.getElementById('holdEntry')?.scrollIntoView({ block: 'center', behavior: motionOK() ? 'smooth' : 'auto' });
+    document.getElementById('holdCode')?.focus({ preventScroll: true });
+  });
   return el('section', { class: 'card', 'aria-labelledby': 'hold-sum-t' },
-    el('div', { class: 'card__head' }, el('h2', { class: 'card__title', id: 'hold-sum-t' }, t('hold.sum.title'))), ...parts);
+    el('div', { class: 'card__head' }, el('h2', { class: 'card__title', id: 'hold-sum-t' }, t('hold.sum.title')), jump), ...parts);
 }
 
 function positionRow(p, snap) {
@@ -93,7 +103,7 @@ function positionRow(p, snap) {
     : span(t('hold.pos.noprice'), 'muted');
   const weight = el('span', { class: over ? 'u3-over' : null }, ratio(p.weight, 2), over ? el('small', { class: 'u3-block' }, t('hold.pos.over')) : null);
   return el('tr', { class: over ? 'is-over' : null },
-    td(el('a', { class: 'mono', href: `/#/stock/${encodeURIComponent(p.code)}` }, p.code)),
+    td(el('a', { class: 'mono', href: stockPage(p.code, 'cn') }, p.code)),   // 持仓只有 A 股（6 位代码）；G01 改去新个股页
     td(p.name || p.code),
     td(num(p.shares, 0), true), td(num(p.avg_cost, 3), true), td(price, true), td(pnl, true), td(weight, true),
     td(p.first_buy || '—', true, 'muted'), td(p.held_days ?? '—', true, 'muted'));
@@ -139,7 +149,7 @@ function draw() {
 
 async function fetchSnap() {
   const snap = await getJSON(`/api/holdings?trades_limit=200&include_voided=${st.includeVoided ? 1 : 0}`);
-  if (!snap || snap.ok !== true) throw new ApiError(200, 'holdings 返回异常', snap);
+  if (!snap || snap.ok !== true) throw new ApiError(200, t('a03.err.bad_reply', { api: 'holdings' }), snap);   // 文字会显示在错误卡片的「原因」里，跟随语言
   return snap;
 }
 

@@ -250,6 +250,10 @@
 
 .state__icon { width: 40px; height: 40px; color: var(--accent-text); }
 .state__title { font-size: var(--fs-lg); font-weight: 650; color: var(--text-primary); }
+.state__hint { max-width: 60ch; font-size: var(--fs-sm); color: var(--text-secondary); overflow-wrap: anywhere; }
+/* .btn 写了 display:inline-flex，会盖掉浏览器默认的 [hidden]{display:none}；
+   错误卡片靠 hidden 二选一显示「回到首页」/「重试」，这里补回去（A03） */
+.state [hidden] { display: none; }
 
 /* ================= 图表容器 + 玻璃提示卡 ================= */
 .chart {

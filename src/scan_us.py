@@ -19,13 +19,13 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from . import registry, scan, usdata
+from . import costs, registry, scan, usdata
 from .datasource import CACHE, load_cached
 from .portfolio import run_weights
 
 OUT = CACHE / "scan_us.parquet"
 META = CACHE / "scan_us_meta.json"
-COST = 0.0010
+COST = costs.US_STOCK_ONE_WAY   # 个股单边 10bp（数值在 src/costs.py）
 log = logging.getLogger(__name__)
 _CASH = _MCFG = _INFO = None
 

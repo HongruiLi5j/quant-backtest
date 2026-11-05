@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 
-from . import turnover
+from . import market_clock, turnover
 from .datasource import CACHE
 
 URL = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
@@ -103,7 +103,7 @@ def run(*, codes=None, validation_samples=False, max_seconds=900, cache=None,
         day = payload["data_date"]
         allowed = set(turnover.SAMPLES) if validation_samples else listed_codes(payload)
     current = (now or datetime.now(ZoneInfo("Asia/Shanghai"))).astimezone(ZoneInfo("Asia/Shanghai"))
-    if day > current.date().isoformat() or (day == current.date().isoformat() and (current.hour, current.minute) < (15, 30)):
+    if not market_clock.bar_usable(day, current):
         raise ValueError("清单日期尚未收盘，不能补取")
     selected = set(turnover.SAMPLES) if validation_samples and not codes else (set(codes) if codes else allowed)
     if selected - allowed:

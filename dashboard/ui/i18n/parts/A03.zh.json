@@ -1,0 +1,7 @@
+{
+ "a03.state.error_hint": "可能是网页服务没在运行、网络断开，或接口暂时出错。点「重试」或按 R 重新加载。",
+ "a03.state.error_reason": "原因：{msg}",
+ "a03.state.error_script": "页面脚本出错，详情见浏览器控制台。",
+ "a03.state.empty_hint": "这一页目前没有可显示的内容（不是出错）。数据更新后按 R 刷新。",
+ "a03.err.bad_reply": "{api} 接口返回的内容不对"
+}

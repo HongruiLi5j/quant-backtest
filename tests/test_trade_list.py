@@ -872,6 +872,12 @@ class Element {
   addEventListener(name, callback) { this.events[name] = callback; }
   querySelectorAll() { return []; }
   setAttribute() {}
+  // 和浏览器 Element.replaceChildren 一致：先清空原有子节点，再按参数顺序追加；非节点参数(字符串等)变成文本节点
+  replaceChildren(...nodes) {
+    this.childNodes = nodes.map(n => (n !== null && typeof n === 'object') ? n : {nodeType: 3, textContent: String(n)});
+    this.innerHTML = '';
+    this.textContent = this.childNodes.map(n => n.textContent ?? '').join('');
+  }
 }
 const elements = new Map();
 const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
@@ -973,7 +979,7 @@ vm.runInContext('S.meta = {strategies: input.strategies}; S.market = "cn";', con
         # 只编译 Handler 需要的方法，不导入 app.py；该模块顶层会读取令牌。
         tree = ast.parse((ROOT / 'app.py').read_text())
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Handler')
-        methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('do_GET', '_guard', '_authed', '_remote', '_maintenance_blocked')]
+        methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('do_GET', '_guard', '_authed', '_remote', '_maintenance_blocked', '_owner', '_local_or_owner')]
         safe_class = ast.ClassDef(name='SafeHandler', bases=[], keywords=[], body=methods, decorator_list=[])
         code = ast.fix_missing_locations(ast.Module(body=[safe_class], type_ignores=[]))
         namespace = {'urlparse': urlparse, 'parse_qs': parse_qs, 'SimpleCookie': SimpleCookie,
@@ -985,6 +991,9 @@ vm.runInContext('S.meta = {strategies: input.strategies}; S.market = "cn";', con
         handler.path = '/api/trade_list?strategy=rsi2'
         handler._share_gate = lambda u: False
         handler._member_user = lambda: None
+        handler._owner_cfg = lambda: None          # 真实方法会读 owner_access.json（主人通道配置）；这里按"没配主人通道"处理，不碰真实文件
+        handler._personal_mode = False
+        handler._personal_blocked = lambda: False  # 真实方法会读 personal_mode.json；这里按"个人模式关闭"（默认，不改变既有分派）处理
         replies = []
         handler._send = lambda status, *args: replies.append((status, None))
         handler._json = lambda body, status=200: replies.append((status, body))

@@ -1,4 +1,6 @@
 """Configuration for the two markets. Edit here to change the symbols."""
+from src.costs import (CN_ETF_ONE_WAY_BP, CN_STOCK_ONE_WAY_BP, US_ETF_ONE_WAY_BP,  # cost numbers live in src/costs.py
+                       US_STOCK_ONE_WAY_BP)
 
 MARKETS = {
     "us": {
@@ -21,8 +23,8 @@ MARKETS = {
             "TSLA": "Tesla",
         },
         "dual_momentum": {"risky": ("SPY", "EFA"), "safe": "IEF", "cash": "SHY"},
-        "cost_bp": 5,
-        "stock_cost_bp": 10,             # single stocks: bid-ask spread + slippage, larger than for ETFs
+        "cost_bp": US_ETF_ONE_WAY_BP,
+        "stock_cost_bp": US_STOCK_ONE_WAY_BP,   # single stocks: bid-ask spread + slippage, larger than for ETFs
         "notify": True,                  # show a Mac notification after each daily update
         "alert_strategies": ["blend2"],  # strategies whose signal changes trigger an alert
     },
@@ -39,10 +41,10 @@ MARKETS = {
             "518880": "黄金ETF", "511010": "国债ETF", "511880": "银华日利(货币)",
         },
         "dual_momentum": {"risky": ("510300", "510500"), "safe": "511010", "cash": "511880"},
-        "cost_bp": 5,                    # ETFs are exempt from stamp duty; commission + slippage estimated at 5bp one way
+        "cost_bp": CN_ETF_ONE_WAY_BP,    # ETFs are exempt from stamp duty; commission + slippage estimated at 5bp one way
         # watchlist: default list, can be edited later in the dashboard (saved in data/daily/watchlist_cn.json)
         "stocks": {"600531": "豫光金铅"},
-        "stock_cost_bp": 8,              # single stocks: commission about 2.5bp + sell-side stamp duty 5bp (about 4bp averaged per side) + slippage
+        "stock_cost_bp": CN_STOCK_ONE_WAY_BP,   # single stocks: commission about 2.5bp + sell-side stamp duty 5bp (about 4bp averaged per side) + slippage
         "all_market": True,              # backtest all Shanghai/Shenzhen stocks daily (run python backfill.py once first)
         "repair_minutes": 30,            # max minutes per day spent repairing missing history
         "repair_max_stocks": 500,        # max stocks repaired per run; larger gaps are resumed in batches

@@ -62,16 +62,41 @@ def strategy(df: pd.DataFrame) -> pd.Series:
 '''
 
 
+# 「我的策略」文件名里不允许出现的字符（白名单之外的）：只允许英文字母、数字、下划线、中文、减号。
+# 没有 . / \ 这些字符，就拼不出 ../ 或绝对路径。engines/custom_engine.py 运行策略时 import 的是同一条，
+# 新建、保存、运行三个入口口径一致。
+SLUG_BAD_CHARS = r"[^A-Za-z0-9_一-鿿-]"
+
+
 def _is_custom(key: str) -> bool:
     return key.startswith("custom_")
 
 
 def _slug(key: str) -> str:
-    return key[len("custom_"):]
+    slug = key[len("custom_"):]
+    if not slug or re.search(SLUG_BAD_CHARS, slug):   # 有白名单外的字符就直接拒绝，不偷偷替换成别的文件名
+        raise KeyError("文件名不合法")
+    return slug
+
+
+def _inside(p: Path, base: Path) -> Path:
+    """拼好路径后再核对一次：p 解析（展开 ..、跟随符号链接）后必须正好在 base 这一层目录里，否则拒绝。"""
+    if p.resolve().parent != base.resolve():
+        raise KeyError("文件路径不合法")
+    return p
 
 
 def _custom_path(slug: str) -> Path:
-    return CUSTOM_DIR / f"{slug}.py"
+    return _inside(CUSTOM_DIR / f"{slug}.py", CUSTOM_DIR)
+
+
+def _hist_dir(key: str) -> Path:
+    """key 对应的历史版本目录 data/daily/code_history/<key>/；key 不合法或目录跑到 HIST 外面就拒绝。"""
+    if _is_custom(key):
+        _custom_path(_slug(key))
+    elif key not in FILES:
+        raise KeyError("没有这个文件")
+    return _inside(HIST / key, HIST)
 
 
 def _custom_files() -> list[Path]:
@@ -99,7 +124,7 @@ def listing() -> list[dict]:
 
 def create(name: str) -> dict:
     """新建一个"我的策略"文件，返回它的 key，网页拿到后直接跳转过去。"""
-    slug = re.sub(r"[^A-Za-z0-9_一-鿿-]+", "_", (name or "").strip()).strip("_")[:40]
+    slug = re.sub(SLUG_BAD_CHARS + "+", "_", (name or "").strip()).strip("_")[:40]
     if not slug:
         slug = "策略" + time.strftime("%H%M%S")
     CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
@@ -126,7 +151,7 @@ def read(key: str) -> dict:
 
 
 def _backup(key: str, text: str, tag: str):
-    d = HIST / key
+    d = _hist_dir(key)
     d.mkdir(parents=True, exist_ok=True)
     orig = d / "original.py"
     if not orig.exists():                       # 第一次保存前，留一份"出厂版本"
@@ -168,9 +193,7 @@ def save(key: str, content: str) -> dict:
 
 
 def history(key: str) -> list[dict]:
-    if not (_is_custom(key) or key in FILES):
-        raise KeyError("没有这个文件")
-    d = HIST / key
+    d = _hist_dir(key)
     if not d.exists():
         return []
     out = []
@@ -182,9 +205,10 @@ def history(key: str) -> list[dict]:
 
 
 def version(key: str, v: str) -> str:
-    if not (_is_custom(key) or key in FILES) or not v.replace("-", "").replace("before", "").isalnum():
+    d = _hist_dir(key)
+    if not v.replace("-", "").replace("before", "").isalnum():
         raise KeyError("没有这个版本")
-    p = HIST / key / f"{v}.py"
-    if not p.exists() or p.parent != HIST / key:
+    p = _inside(d / f"{v}.py", d)
+    if not p.exists():
         raise KeyError("没有这个版本")
     return p.read_text(encoding="utf-8")

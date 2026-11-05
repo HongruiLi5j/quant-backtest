@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from . import costs
 from .strategy import Params
 
 
 @dataclass
 class Config:
     initial_equity: float = 100_000.0
-    commission_pct: float = 0.0005     # one-way commission 0.05%
+    commission_pct: float = costs.AMIBROKER_COMMISSION_PCT     # one-way commission 0.05%; must equal the AFL CommissionAmount
     stop_on_entry_bar: bool = False    # whether to check the stop on the entry bar (AmiBroker does not by default)
 
 

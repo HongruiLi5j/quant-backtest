@@ -1,0 +1,17 @@
+{
+ "a15.fee.placeholder": "Leave blank to auto-estimate from fee rates",
+ "a15.fee.placeholder_div": "Blank = 0 (dividends are not estimated)",
+ "a15.fee.hint_div": "Fees are not estimated for dividends: blank is recorded as 0. If your broker actually charged a fee, enter the real amount.",
+ "a15.price.hint": "Must be above 0, up to 3 decimal places.",
+ "a15.err.qty": "Quantity must be a positive whole number: not 0, negative, fractional or containing letters.",
+ "a15.err.qty_max": "Quantity is above the limit (100 million).",
+ "a15.err.price": "Price must be a number above 0 with at most 3 decimal places, no sign or letters.",
+ "a15.err.fee": "Fees must be a number of 0 or more with at most 2 decimal places; leave it blank if you do not want to enter it.",
+ "a15.err.fee_over": "Fees cannot exceed the trade amount (quantity × price).",
+ "a15.lot.generic": "Buys are in lots of 100 shares (100 units for ETFs); STAR Market stocks (starting with 688) need at least 200 shares.",
+ "a15.lot.buy": "Buys are in lots of 100 shares (100 units for ETFs): the quantity must be a multiple of 100.",
+ "a15.lot.star": "STAR Market stocks (starting with 688 / 689): buy at least 200 shares, then in steps of 1 share.",
+ "a15.lot.sell": "Sells have no lot rule; enter an odd-lot quantity exactly as traded.",
+ "a15.lot.warn_buy": "Note: the buy quantity is not a multiple of 100, so it may be rejected on submit.",
+ "a15.lot.warn_star": "Note: STAR Market stocks need at least 200 shares per buy, so this may be rejected on submit."
+}

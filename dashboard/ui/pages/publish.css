@@ -1,0 +1,27 @@
+/* ==========================================================
+ * 文件: ui/pages/publish.css —— 发布页（N23，三步走）专用样式；只用 tokens.css 里的变量
+ * ========================================================== */
+
+.pub { display: grid; gap: var(--space-4); }
+.pub-intro { max-width: 80ch; font-size: var(--fs-sm); }
+.pub-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-3); align-items: start; }
+.pub-step { display: grid; gap: var(--space-2); min-width: 0; font-size: var(--fs-sm); }
+.pub-step .btn { justify-self: start; }
+.pub-step--locked { opacity: 0.85; }
+.pub-step .card__title, .pub-list .card__title { display: flex; align-items: center; gap: 8px; }
+.pub-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-primary); color: var(--accent-contrast); font-size: var(--fs-xs); flex: none; }
+.pub-line { display: flex; align-items: center; gap: 8px; }
+.pub-lock { color: var(--text-secondary); }
+.pub-small { font-size: var(--fs-xs); }
+.pub-cmdbox { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.pub-cmd { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-sunken); font-size: var(--fs-xs); line-height: 1.5; overflow-wrap: anywhere; user-select: all; }
+.pub-raw { margin: 0; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); }
+.pub-list { display: grid; gap: var(--space-2); font-size: var(--fs-sm); min-width: 0; }
+.pub-list ul { margin: 0; padding-left: 1.2em; list-style: disc; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.pub-files { max-height: 260px; overflow: auto; font-size: var(--fs-xs); }
+.pub details summary { cursor: pointer; color: var(--accent-text); }
+
+.sys-dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+.sys-dot--ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.sys-dot--warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.sys-dot--bad { background: var(--red); box-shadow: 0 0 8px var(--red); }

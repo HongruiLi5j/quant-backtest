@@ -1,0 +1,39 @@
+/* ==========================================================
+ * 文件: ui/pages/system.css —— 系统页（N21）专用样式
+ * 只用 tokens.css 里的变量，不引外部资源
+ * ========================================================== */
+
+.sys { display: grid; gap: var(--space-4); }
+.sys-lights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.sys-light {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface);
+}
+.sys-light--warn { border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.sys-light--bad { border-color: color-mix(in srgb, var(--red) 55%, transparent); }
+.sys-light__k { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-secondary); }
+.sys-light__v { font-size: var(--fs-md, 1rem); font-weight: 600; overflow-wrap: anywhere; }
+.sys-light__f { font-size: var(--fs-xs); color: var(--text-secondary); font-family: var(--font-mono); }
+
+.sys-dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+.sys-dot--ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.sys-dot--warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.sys-dot--bad { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+.sys-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-3); align-items: start; }
+.sys-card { display: grid; gap: 6px; min-width: 0; font-size: var(--fs-sm); }
+.sys-card .card__title { margin-bottom: 4px; }
+.sys-card__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.sys-kv { display: flex; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.sys-kv > span:first-child { color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
+.sys-kv > span:last-child { text-align: right; white-space: nowrap; }
+.sys-t--ok { color: var(--green); }
+.sys-t--warn { color: var(--amber); }
+.sys-t--bad { color: var(--red); }
+.sys-log {
+  margin: 0; padding: var(--space-3); max-height: 320px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: 1.6;
+  color: var(--text-secondary); background: var(--bg-sunken); border-radius: var(--radius-sm);
+}
+.sys-small { font-size: var(--fs-xs); }

@@ -12,7 +12,7 @@ import math
 import re
 import time as clock_time
 from datetime import timedelta
-from datetime import date, datetime, time
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from config import MARKETS, TRADE_LIST_THRESHOLD, TRADE_LIST_LIMIT_TOLERANCE, TRADE_LIST_MIN_TARGET, TRADE_LIST_MIN_TURNOVER
-from . import allmarket, datasource, display_price, registry, scan, strategies, turnover
+from . import allmarket, datasource, display_price, market_clock, registry, scan, strategies, turnover
 from .indicators import adx, atr, cross, realized_vol, rsi, sma
 from .portfolio import run_weights
 
@@ -105,7 +105,7 @@ def check_release(progress, meta, release_day, now=None):
         raise PublishError("全市场更新未明确完成，拒绝发布")
     if progress.get("trade_day") != release_day or meta.get("data_date") != release_day:
         raise PublishError("进度日期、扫描元数据日期、待发布日期不一致，拒绝发布")
-    if day > current.date() or (day == current.date() and current.time() < time(15, 30)):
+    if not market_clock.bar_usable(day, current):
         raise PublishError("待发布日期尚未到北京时间 15:30，拒绝使用当天 K 线")
 
 
@@ -588,7 +588,7 @@ def needs_generation(day, *, cache=None, now=None):
 def ready_day(now=None):
     """最近已收盘交易日；与现有每日检查共用 A 股交易日历。"""
     current = _clock(now)
-    day = current.date() if current.time() >= time(15, 30) else current.date() - timedelta(days=1)
+    day = market_clock.last_usable_bar_date(current)
     try:
         return max(d for d in allmarket.trade_calendar() if d <= day).isoformat()
     except Exception:
@@ -610,6 +610,15 @@ def pending_day(market="cn", *, now=None):
     except (OSError, ValueError, TypeError, AttributeError):
         pass
     return None
+
+
+def current_day(market="cn", *, now=None, cache=None):
+    """全市场进度、扫描和清单都已是最近收盘交易日的结果时返回该日期；只读，不记自动尝试、不打日志。
+    每日任务用它跳过重复的全市场快照和回测：重跑扫描会刷新扫描时间戳，让已发布清单被判为过期。"""
+    if market != "cn":
+        return None
+    day = ready_day(now)
+    return None if _listing_outdated(day, cache=cache) else day
 
 
 def try_generate(market, day, *, automatic=False, cache=None, now=None, **kwargs):

@@ -8,6 +8,7 @@
  *   GET /api/admin/owner/sessions  → [{ id, device, ip, country, last_active, current }]
  * 已接入的开关：开放注册、维护模式（含预计恢复时间）、分区开关、退出单台登录。
  * 后端还没有的（会员升降、配额生效、队列、站点公告等，等 T017）：灰色，旁边写「需要后端改动」，不假装能用。
+ * 公开站访问（accessiblequant.com）：只放跳到 Cloudflare Web Analytics 的链接和开启步骤；本机不取数、不存数、不碰 Cloudflare 令牌。
  * ========================================================== */
 
 import { el } from '../shared/dom.js';
@@ -15,7 +16,7 @@ import { t } from '../shared/i18n.js';
 import { S, on, value, setDraft, toggle, row, card, note, table, kpi, fmtTime, fmtUptime } from './admin-lib.js';
 
 export const SECTIONS = ['today', 'signals', 'market', 'watch', 'backtest', 'holdings', 'monitor', 'research', 'settings'];
-export const VIEWS = ['overview', 'site', 'sections', 'members', 'share', 'compute', 'system', 'audit'];
+export const VIEWS = ['overview', 'site', 'sections', 'members', 'share', 'public', 'compute', 'system', 'audit'];
 const FEATURES = ['member_backtest', 'engines', 'translate'];
 const QUOTAS = ['free_backtest', 'pro_backtest', 'free_translate', 'pro_translate'];
 
@@ -109,6 +110,34 @@ function sessionsCard() {
   return card('sessions', 'adm.sess.title', [note('adm.sess.hint', true), body], { flush: true });
 }
 
+/* ---------- 公开站访问：数字在 Cloudflare Web Analytics 里看，这里只给入口和说明 ---------- */
+
+const CF_PAGES_PROJECT = 'accessiblequant';
+const PUBLIC_LINKS = [
+  ['adm.pub.open_wa', 'https://dash.cloudflare.com/?to=/:account/web-analytics', 'btn--primary'],
+  ['adm.pub.open_pages', `https://dash.cloudflare.com/?to=/:account/workers-and-pages/view/${CF_PAGES_PROJECT}`, 'btn--ghost'],
+  ['adm.pub.open_site', 'https://accessiblequant.com/', 'btn--ghost'],
+];
+
+/** 外链一律新标签页打开，并断开 opener、不带来源地址 */
+const extLink = ([key, href, tone]) => el('a', { class: `btn btn--sm ${tone}`, href, target: '_blank', rel: 'noopener noreferrer' }, t(key));
+const list = (tag, keys) => el(tag, { class: 'adm-pub-list' }, ...keys.map((k) => el('li', {}, t(k))));
+
+function publicVisits() {
+  const n = (prefix, count) => Array.from({ length: count }, (_, i) => `${prefix}${i + 1}`);
+  return [
+    card('public', 'adm.pub.title', [note('adm.pub.lead'),
+      el('div', { class: 'adm-pub-links' }, ...PUBLIC_LINKS.map(extLink)),
+      el('p', { class: 'adm-lead adm-lead--tight muted' }, t('adm.pub.ext'))]),
+    card('public-setup', 'adm.pub.setup.title', [list('ol', n('adm.pub.setup.', 4))]),
+    card('public-see', 'adm.pub.see.title', [
+      el('div', { class: 'adm-two' },
+        el('div', {}, el('h3', { class: 'adm-pub-sub' }, t('adm.pub.see.yes')), list('ul', n('adm.pub.see.y', 5))),
+        el('div', {}, el('h3', { class: 'adm-pub-sub' }, t('adm.pub.see.no')), list('ul', n('adm.pub.see.n', 3)))),
+      el('p', { class: 'adm-lead adm-lead--foot' }, t('adm.pub.caveat'))]),
+  ];
+}
+
 /* ---------- 各分区 ---------- */
 
 function overview() {
@@ -141,6 +170,7 @@ export function buildView(view) {
     case 'sections': return panel('sections', 'adm.view.sections', 'adm.sections.lead');
     case 'members': return panel('members', 'adm.view.members', 'adm.members.lead');
     case 'share': return panel('share', 'adm.view.share', 'adm.share.lead');
+    case 'public': return publicVisits();
     case 'compute': return panel('compute', 'adm.view.compute', 'adm.compute.lead');
     case 'system': return [...panel('system', 'adm.view.system', 'adm.system.lead'), sessionsCard()];
     case 'audit': return [card('audit', 'adm.view.audit', [note('adm.audit.lead', true), auditTable(S.audit || [])], { flush: true })];

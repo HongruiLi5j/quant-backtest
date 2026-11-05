@@ -5,7 +5,7 @@
 A 股只用多头部分：残差 Z-score 的"后 20 名"表示"避开"，不是做空（T+1、融券受限，不能真做空）。
 """
 import csv
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 import json
 import math
 import os
@@ -16,12 +16,13 @@ import re
 import numpy as np
 import pandas as pd
 
+from .. import market_clock
 from . import factors as fx
 from . import regime as rg
 from .core import BEIJING
 from .intraday import INTRADAY_DIR
 
-CLOSE_READY = time(15, 30)       # 北京时间 15:30 前，当天 K 线视为盘中半天数据，不能用
+CLOSE_READY = market_clock.CLOSE_READY       # 北京时间 15:30 前，当天 K 线视为盘中半天数据，不能用（规则见 src/market_clock.py；保留此名字给 scripts 引用）
 MAX_BARS = 320                   # 每只股票最多取最近多少根日线（够 252 日动量 + 余量）
 BASELINE_SIZE = 60               # 与监控名单上限一致
 LOCKED_SEGMENT_START = date(2026, 4, 1)  # 封存(锁定测试)段起点:仅供 run_factor_scan.py 等历史回测/因子筛选用途引用;EOD 当日复盘不受此限制
@@ -110,7 +111,7 @@ def load_panel(daily_data_dir, day, now=None, list_path=None):
     now = (now or datetime.now(BEIJING)).astimezone(BEIJING)
     if now.date() < ts.date():
         raise EodError('future_day')
-    drop_today = now.date() == ts.date() and now.time() < CLOSE_READY      # 盘中半天数据不能用
+    drop_today = now.date() == ts.date() and not market_clock.is_close_ready(now)      # 盘中半天数据不能用
     cols = ('Open', 'High', 'Low', 'Close', 'Volume')
     series = {c: {} for c in cols}
     root = Path(daily_data_dir)

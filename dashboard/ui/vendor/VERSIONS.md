@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|
 | lightweight-charts | 5.2.1 | `lightweight-charts.standalone.production.js` | https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js | 回测、持仓的 K 线 / 权益曲线（`<script defer src="../vendor/...">`，提供全局 `LightweightCharts`） | `e21cc5caa0226ef30bd8549c50b9ef926615f2a4ee6b4e486353477a55f598cf` |
 | marked | 12.0.2 | `marked.esm.js` | https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.esm.js | 报告页 markdown 渲染（`import('../vendor/marked.esm.js')`），输出必须再过 DOMPurify | `288515814e901ea6535521d9fb35a1329455d3d3973de8723db998536f979cf2` |
-| DOMPurify | 3.1.6 | `purify.es.mjs` | https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.es.mjs | 清洗 marked 输出 | `541c3817132bd3328ae1e585cbef5a9cb14a966276e0c4a0443d4bb3061c9f6d` |
+| DOMPurify | 3.1.6 | `purify.es.mjs`，`purify.es.js`（N22：同一文件的 .js 副本，服务器只放行 .js 后缀） | https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.es.mjs | 清洗 marked 输出 | `541c3817132bd3328ae1e585cbef5a9cb14a966276e0c4a0443d4bb3061c9f6d` |
 | qrcode-generator | 1.4.4 | `qrcode-generator.esm.js` | https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm（jsDelivr 打包成 ESM 的版本） | 分享二维码（目前没有页面用到，留备用） | `28752f5b02662b35c7c6bf31320831ad11392516fe776a42b3cc2347ab754d57` |
 
 说明：

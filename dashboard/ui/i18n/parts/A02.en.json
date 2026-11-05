@@ -1,0 +1,13 @@
+{
+ "a02.sep.colon": ": ",
+ "a02.sep.list": ", ",
+ "a02.sep.semi": "; ",
+ "a02.punct.end": ".",
+ "a02.fmt.name_code": "{name} ({code})",
+ "a02.fmt.pnl_pct": "{pnl} ({pct}%)",
+ "a02.err.timeout": "Request timed out",
+ "a02.err.network": "Can't reach the web server",
+ "a02.err.not_json": "The response is not JSON",
+ "a02.err.mock_missing": "mock-data/{name}.json not found",
+ "a02.debug.not_object": "(not an object)"
+}

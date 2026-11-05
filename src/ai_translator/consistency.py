@@ -94,10 +94,12 @@ def _flag(rule_id, level, path, idea_v, cfg_v, key, **extra):
 
 def _block_refusal(flag: dict, source: str) -> dict:
     label_zh, label_en = LABELS.get(flag["field"], (flag["field"],) * 2)
+    # 出错字段和命中的规则也随拒绝一起带给前端（字段来自 LABELS 里的固定路径，规则码来自 REJECT_CODES）
     return make_refusal(
         flag["code"], source,
         f"你的想法里「{label_zh}」写的是 {flag['idea_says']},这个取值不被允许。",
-        f"Your idea asks for {label_en} = {flag['idea_says']}, which is not allowed.")
+        f"Your idea asks for {label_en} = {flag['idea_says']}, which is not allowed.",
+        fields=[flag["field"]] if flag["field"] in LABELS else None, rules=[flag["code"]])
 
 
 def compare(idea: str, config: dict, oracle, ex: Extraction | None = None) -> dict:
@@ -152,7 +154,8 @@ def compare(idea: str, config: dict, oracle, ex: Extraction | None = None) -> di
                       "ai.flag.block", code="EMBARGO_VIOLATION")
             f["refusal"] = make_refusal("EMBARGO_VIOLATION", "consistency",
                                         f"你的想法里 embargo 是 {ef.value} 天,预测周期是 {h} 天,embargo 至少要 {h + 1} 天。",
-                                        f"Your idea has an embargo of {ef.value} days with a {h}-day horizon; the embargo must be at least {h + 1} days.")
+                                        f"Your idea has an embargo of {ef.value} days with a {h}-day horizon; the embargo must be at least {h + 1} days.",
+                                        fields=["signal.embargo"], rules=["EMBARGO_VIOLATION"])
             flags.append(f)
 
     # C-NUM / C-END（含 L3 反事实校验）

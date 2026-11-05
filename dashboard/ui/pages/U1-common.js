@@ -2,6 +2,8 @@
 import { el, fmt } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { isMock } from '../shared/api.js';
+import { stockPage } from '../shared/stock-link.js';
+import { tDefault } from '../shared/t-fallback.js';
 
 export const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -29,11 +31,16 @@ export function actBadge(action) {
   return el('span', { class: `badge ${tone}` }, tr('u1.act', action));
 }
 
-/** 同目录下另一个页面的地址；预览模式把 ?mock=1 带过去 */
-export const pageHref = (name) => (isMock() ? `${name}?mock=1` : name);
+/** 同目录下另一个页面的地址，可带查询参数（G01：今日页的动作格子直达信号页某个标签）；预览模式把 ?mock=1 带过去 */
+export function pageHref(name, params = {}) {
+  const q = new URLSearchParams(params);
+  if (isMock()) q.set('mock', '1');
+  const s = q.toString();
+  return s ? `${name}?${s}` : name;
+}
 
-/** 个股详情新界面没有，先去旧界面 */
-export const stockHref = (code) => `/#/stock/${encodeURIComponent(code)}`;
+/** 个股详情：新个股页 stock.html（G01，以前去旧界面 /#/stock/）。今日、信号两页的清单都是 A 股，默认 cn；今日页按当前市场传 */
+export const stockHref = (code, market = 'cn') => stockPage(code, market);
 
 /** 只有本机访问才读的接口（我的相关、模拟账户）用这个判断 */
 export const isLocalHost = () => ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(window.location.hostname);
@@ -48,7 +55,7 @@ export function softError(err) {
   if (err?.auth) {
     return el('div', { class: 'card u1-note is-warn', role: 'alert' }, t('ui.auth.expired'), ' ', el('a', { href: '/' }, t('ui.auth.home')));
   }
-  return noteCard(`${t('u1.section_unavailable')}${err?.message ? `：${err.message}` : ''}`, 'is-warn');
+  return noteCard(`${t('u1.section_unavailable')}${err?.message ? `${tDefault('a02.sep.colon')}${err.message}` : ''}`, 'is-warn');
 }
 
 /** 卡片标题行 */

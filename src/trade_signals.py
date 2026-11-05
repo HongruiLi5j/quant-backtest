@@ -1,6 +1,7 @@
 """上线后的清单信号单独记账；不写入或回放原 signals_history。"""
 from __future__ import annotations
 
+import copy
 import fcntl
 import json
 from datetime import datetime, time, timedelta
@@ -11,7 +12,7 @@ import pandas as pd
 
 from config import MARKETS
 from .datasource import CACHE
-from . import turnover
+from . import market_clock, resultcache, turnover
 
 BASE_COLUMNS = ["market", "signal_date", "code", "name", "strategy", "action", "next", "recorded_at"]
 COLUMNS = BASE_COLUMNS + ["source", "now", "close", "reason", "snapshot_json"]
@@ -35,7 +36,7 @@ def recording_window(day, base):
         while next_day.weekday() >= 5:
             next_day += timedelta(days=1)
     zone = ZoneInfo("Asia/Shanghai")
-    return (datetime.combine(release, time(15, 30), zone),
+    return (market_clock.close_ready_at(release),
             datetime.combine(next_day, time(9, 30), zone))
 
 
@@ -98,8 +99,31 @@ def record_publication(payload, *, cache=None, now=None):
     return len(combined) - len(old)
 
 
+_EVAL_MEMO = resultcache.Memo(maxsize=8, ttl=600)    # B07：每次请求要读约 2000 个 parquet（约 1.6 秒），输入没变就别重算
+
+
+_stamp = resultcache.file_stamp
+
+
+def _price_stamps(codes):
+    """这些代码对应的行情文件指纹。tracking._prices 会读 ETF 的 csv 或全市场 parquet，
+    这里两个候选文件都盖章，只会多失效、不会漏失效。"""
+    from . import allmarket, datasource
+    return tuple((c, _stamp(datasource.cache_path("cn", c)), _stamp(allmarket.path(c))) for c in sorted(codes))
+
+
+def _clock_state():
+    """行情读取时会按北京时间 15:30 丢掉当天的半天 K 线（allmarket._drop_unfinished），
+    所以「今天的日期」和「是否已过 15:30」也是输入；缓存跨过 15:30 必须失效。"""
+    from . import allmarket
+    return market_clock.clock_state(allmarket._now_bj())
+
+
 def evaluate(strategy="blend2", *, cache=None, prices_loader=None):
-    """只读上线后的独立信号；不调用 build_replay，不混入旧跟踪样本。"""
+    """只读上线后的独立信号；不调用 build_replay，不混入旧跟踪样本。
+
+    B07：默认读行情（prices_loader 为空）时，结果按「信号表指纹 + 各行情文件指纹 + 15:30 状态」缓存，
+    输入完全没变就直接返回上次的结果；传入自定义 prices_loader（测试用）时不缓存。"""
     from . import tracking
     base = Path(cache) if cache is not None else CACHE
     path = base / "trade_signals_history.parquet"
@@ -112,6 +136,20 @@ def evaluate(strategy="blend2", *, cache=None, prices_loader=None):
         return empty
     loader = prices_loader or tracking._prices
     cfg = MARKETS["cn"]
+    memo_key = None
+    if prices_loader is None:
+        memo_key = (str(path), _stamp(path), strategy, id(loader), _clock_state(),
+                    _price_stamps(set(hist.code) | {cfg["main"]}))
+        hit = _EVAL_MEMO.get(memo_key)
+        if hit is not None:
+            return copy.deepcopy(hit)
+    result = _evaluate_rows(strategy, hist, loader, cfg, tracking)
+    if memo_key is not None:
+        _EVAL_MEMO.put(memo_key, copy.deepcopy(result), keepalive=loader)
+    return result
+
+
+def _evaluate_rows(strategy, hist, loader, cfg, tracking):
     bench = loader("cn", cfg["main"], cfg)
     cached, rows = {}, []
     for signal in hist.itertuples():

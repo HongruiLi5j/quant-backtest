@@ -13,6 +13,7 @@ import os
 import random
 import sys
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -20,10 +21,14 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from config import ENABLED, MARKETS
-from src import allmarket, daily_report, datasource, notify, scan, tracking, trade_list, turnover_backfill
+from src import allmarket, daily_report, daily_status, datasource, notify, scan, tracking, trade_list, turnover_backfill
 
 ROOT = Path(__file__).resolve().parent
 LOG = ROOT / "logs" / "daily.log"
+# 日志按大小轮转：daily.log 写满 5MB 就改名为 daily.log.1（旧的依次顺延到 .5，最老的丢弃），
+# 所以这个日志最多占 6 × 5MB = 30MB，不会无限增长。
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
 
 
 def setup_logging():
@@ -32,7 +37,8 @@ def setup_logging():
         def formatTime(self, record, datefmt=None):
             return datetime.fromtimestamp(record.created, timezone.utc).isoformat(timespec="seconds")
     formatter = UtcFormatter("%(asctime)s %(levelname)s %(message)s")
-    file_handler = logging.FileHandler(LOG, encoding="utf-8")
+    file_handler = RotatingFileHandler(LOG, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT,
+                                       encoding="utf-8")
     stream_handler = logging.StreamHandler(sys.stdout)
     file_handler.setFormatter(formatter)
     stream_handler.setFormatter(formatter)
@@ -49,6 +55,7 @@ def _backfill_trade_turnover(market, day, offline):
         turnover_backfill.automatic_once(day)
     except Exception:
         logging.exception("成交额自动补取不可用，继续生成清单")
+        daily_status.note(market, "成交额自动补取不可用")
 
 
 def _step(n: int, total: int, name: str):
@@ -65,6 +72,7 @@ def _simtrade(market):
         simtrade.main()
     except Exception:
         logging.exception("模拟盘更新失败，不影响每日任务")
+        daily_status.note(market, "模拟盘更新失败")
 
 
 def _ledger(market):
@@ -76,6 +84,7 @@ def _ledger(market):
         signal_ledger.main()
     except Exception:
         logging.exception("信号核对账本更新失败，不影响每日任务")
+        daily_status.note(market, "信号核对账本更新失败")
 
 
 def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
@@ -91,8 +100,14 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
         _ledger(market)
         _simtrade(market)
         return existing
+    # 全市场数据、扫描、清单都已是最近交易日的结果，只是主 ETF 等日线还没更新（新浪常到晚上 8–9 点才有当天数据）：
+    # 自动任务只重新下载指数/基金/自选股并汇总，不重复全市场快照和回测。否则每 15 分钟重扫一次会刷新扫描时间戳，
+    # 已发布清单被判为过期，用完每天 3 次自动发布后反复打印「今日买卖暂不自动重试」。手动运行不受影响。
+    listed_day = trade_list.current_day(market) if (auto and cfg.get("all_market")) else None
+    if listed_day:
+        logging.info("全市场数据、回测和今日买卖清单已是 %s 的最新结果，本次只更新指数/基金/自选股和汇总", listed_day)
     logging.info("开始更新 %s 市场数据", cfg["name"])
-    total = 6 if (market == "cn" and cfg.get("all_market")) else 2
+    total = 6 if (market == "cn" and cfg.get("all_market") and not listed_day) else 2
     _step(1, total, "行情下载（指数、基金、自选股）")
     errors = {}
     if not offline:
@@ -126,7 +141,7 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
                 errors[code] = err
                 logging.info("%s %s %s: %s", market, code, wl.get(code, ""),
                              f"失败 {err}" if err else f"{len(df)} 行，最新 {df.index[-1].date() if len(df) else '-'}")
-    if market == "cn" and cfg.get("all_market"):   # 沪深全市场
+    if market == "cn" and cfg.get("all_market") and not listed_day:   # 沪深全市场
         try:
             _step(2, total, "全市场数据更新（快照、补缺口）")
             if not offline:
@@ -148,7 +163,11 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
                 _simtrade(market)
         except Exception as e:
             logging.exception("全市场部分失败：%s", e)
+            daily_status.note(market, f"全市场部分失败：{daily_status.format_error(e)}")
     _step(total, total, "汇总、记录信号、发提醒")
+    failed_symbols = [s for s, err in errors.items() if err]
+    if failed_symbols:
+        daily_status.note(market, f"{len(failed_symbols)} 个品种行情更新失败：{'、'.join(failed_symbols[:5])}")
     prices = datasource.load_market(market, cfg)
     if cfg["main"] not in prices:
         raise RuntimeError(f"{cfg['name']} 主品种 {cfg['main']} 没有数据，先联网运行一次")
@@ -160,6 +179,7 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
         signals_and_alerts(market, cfg, prices, summary, send=not offline)
     except Exception as e:
         logging.exception("信号记录/提醒失败：%s", e)
+        daily_status.note(market, f"信号记录/提醒失败：{daily_status.format_error(e)}")
     return summary
 
 
@@ -294,6 +314,9 @@ def main():
 
         def _timeout(*_):
             logging.error("自动任务运行超过 3 小时，可能卡住了，强制退出（下次定时任务会重试）")
+            run = daily_status.current_run()
+            if run is not None:   # os._exit 不会执行任何收尾，所以退出前先把"这次超时失败"记进状态文件
+                run.abort("自动任务运行超过 3 小时被强制退出", notify_fn=notify.send)
             os._exit(2)
         signal.signal(signal.SIGALRM, _timeout)
         signal.alarm(3 * 3600)
@@ -305,13 +328,21 @@ def main():
             logging.info("自动模式：需要更新 %s，但现在没联网，等下次检查", markets)
             return
         logging.info("自动模式：本次更新 %s", markets)
+    if not markets:
+        sys.exit(0)   # 手动指定了空市场列表：没有要跑的，也不记状态（行为与原来一致：不跑、退出码 0）
     ok = True
+    # 只有真的要跑才记状态：自动模式下"都是最新的/没联网"的静默退出每 15 分钟一次，不应该覆盖"上次运行结果"
+    run = daily_status.DailyRun(markets, auto=a.auto, offline=a.offline,
+                                labels={m: MARKETS[m]["name"] for m in markets}).start()
     for m in markets:
         try:
             run_market(m, a.offline, auto=a.auto)
+            run.market_ok(m)
         except Exception as e:
             ok = False
             logging.exception("%s 失败：%s", m, e)
+            run.market_error(m, e)
+    run.finish(notify_fn=notify.send)   # 写 logs/daily_status.json；连续失败 ≥2 次且原因今天没提醒过则发 Mac 通知
     if markets:   # 数据更新过，顺便重新生成离线版单文件（失败只记日志，不影响每日更新）
         try:
             import subprocess

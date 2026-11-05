@@ -1,0 +1,17 @@
+/* ==========================================================
+ * 文件: ui/pages/reports.css —— 报告页（N22）专用样式；布局用 workspace.css 里已有的 .ws-reports / .ws-tree / .ws-doc / .ws-md
+ * ========================================================== */
+
+.rep-search { padding: 12px 12px 0; }
+.rep-search .ws-input { width: 100%; }
+.rep-item__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-path { overflow-wrap: anywhere; }
+.rep-warn { border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: var(--text-primary); padding: 10px 14px; margin-bottom: var(--space-4); font-size: var(--fs-sm); }
+.ws-doc { min-width: 0; }
+.ws-md { overflow-wrap: anywhere; }
+.ws-md table { display: block; max-width: 100%; overflow-x: auto; }
+.ws-md pre { overflow-x: auto; padding: var(--space-3); margin-bottom: var(--space-4); background: var(--bg-sunken); border-radius: var(--radius-sm); }
+.ws-md h3 { font-size: var(--fs-sm); font-weight: 650; margin: var(--space-5) 0 var(--space-2); }
+@media (max-width: 720px) { .ws-doc { padding: 18px 16px; } }
+.ws-tree__list { padding-left: 0; margin: 0; }
+@media (max-width: 900px) { .ws-reports__side .ws-tree { max-height: 40vh; overflow: auto; } }

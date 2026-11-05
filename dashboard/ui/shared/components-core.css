@@ -334,6 +334,6 @@
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--accent-contrast);
-  background: linear-gradient(135deg, var(--accent-glow), var(--accent-2));
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-2));
   box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 3px var(--border-strong);
 }

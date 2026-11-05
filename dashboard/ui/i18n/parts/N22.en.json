@@ -1,0 +1,13 @@
+{
+ "rep.head": "{n} reports · latest {d}",
+ "rep.search": "Search titles or paths",
+ "rep.filter": "Filter by type",
+ "rep.kind.all": "All", "rep.kind.replay": "Replay", "rep.kind.factor": "Factor", "rep.kind.signal": "Signal",
+ "rep.kind.quality": "Data quality", "rep.kind.weekly": "Weekly", "rep.kind.eod": "End of day", "rep.kind.progress": "Progress", "rep.kind.other": "Other",
+ "rep.loose": "Standalone files",
+ "rep.nomatch": "No reports match",
+ "rep.pick": "Pick a report on the left",
+ "rep.none": "No reports in the reports folder yet",
+ "rep.gone": "This report is gone (moved or deleted). Refresh the list.",
+ "rep.truncated": "This report is large; only the first {v} is shown. Open the original file on the Mac for the rest."
+}

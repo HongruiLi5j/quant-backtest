@@ -24,11 +24,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src import market_clock  # noqa: E402
 from src.fundamental import factors as F  # noqa: E402
 from src.fundamental.ranker import RankConfig, RankResult, build_ranking  # noqa: E402
 
 BJT = timezone(timedelta(hours=8))
-CLOSE_READY = (15, 30)
 PROTECTED_DIRS = ("data/daily",)
 
 DISCLAIMER = (
@@ -96,7 +96,7 @@ def check_close_ready(as_of: pd.Timestamp, now: datetime):
     now_bj = now.astimezone(BJT) if now.tzinfo else now.replace(tzinfo=BJT)
     if as_of.date() > now_bj.date():
         raise CliError("排名日 %s 晚于今天(北京时间 %s),拒绝运行" % (as_of.date(), now_bj.date()))
-    if as_of.date() == now_bj.date() and (now_bj.hour, now_bj.minute) < CLOSE_READY:
+    if as_of.date() == now_bj.date() and not market_clock.is_close_ready(now_bj):
         raise CliError("排名日是今天且北京时间未到 15:30,当天 K 线是盘中数据,拒绝运行")
 
 

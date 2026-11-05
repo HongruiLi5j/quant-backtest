@@ -1,10 +1,11 @@
 """只读已发布的 v4 今日买卖 JSON；不导入生成器，不重算、不锁定。"""
-from datetime import date, datetime, time
+from datetime import date, datetime
 import json
 import os
 from pathlib import Path
 import stat
 
+from .. import market_clock
 from .core import BEIJING, valid_symbol
 
 SIGNAL_FILE = Path(__file__).resolve().parents[2] / 'data' / 'daily' / 'trade_list_cn.json'
@@ -37,8 +38,7 @@ def read_signals(codes=(), *, now=None):
         generated = datetime.fromisoformat(payload['generated_at'])
         current = now or datetime.now(BEIJING)
         if (generated.tzinfo is None or current.tzinfo is None
-                or generated.astimezone(BEIJING).date() < day
-                or (generated.astimezone(BEIJING).date() == day and generated.astimezone(BEIJING).time() < time(15, 30))
+                or not market_clock.bar_usable(day, generated)      # 生成时刻早于 day 当天北京时间 15:30，说明用了盘中数据
                 or generated > current or day > current.astimezone(BEIJING).date()):
             return empty
         rows = []

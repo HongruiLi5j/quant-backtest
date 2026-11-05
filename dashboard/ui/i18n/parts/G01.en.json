@@ -1,0 +1,8 @@
+{
+ "g01.bt.running": "Running backtest…",
+ "g01.w.added": "Added {code}. Refreshing the table (a stock added for the first time needs its data downloaded first, so it may take a moment).",
+ "g01.w.removed": "Removed {n} from the watchlist.",
+ "g01.w.restored": "Added {n} back to the watchlist.",
+ "g01.w.undo": "Undo",
+ "g01.w.undo_aria": "Undo: add {n} back to the watchlist"
+}

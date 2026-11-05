@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace
 from typing import Iterable, Mapping, Optional, Sequence
 
+from .. import costs as rates    # 费率常量的单一来源(src/costs.py);本模块也叫 costs,所以起别名避免混淆
+
 __all__ = [
     "CostParams", "Trade", "FillResult", "CostResult",
     "lot_round", "trade_fees", "apply_costs", "stress_table",
@@ -38,12 +40,12 @@ BLOCK_NO_POSITION = "无可卖持仓"
 @dataclass(frozen=True)
 class CostParams:
     """成本与约束参数。费率默认值需所有者核对当前费率,不是事实。"""
-    commission_rate: float = 0.00025      # 佣金率(双边);来源 simtrade.FEE["stock"],未核对
-    min_commission: float = 5.0           # 最低佣金(元/笔);来源同上,未核对
-    transfer_rate: float = 0.00001        # 过户费率(双边);来源同上,未核对
-    stamp_rate: float = 0.0005            # 印花税率(仅卖出);来源同上,未核对
-    slippage_bps: float = 5.0             # 基础滑点(基点,1bp=0.01%);占位假设,非实测
-    limit_extra_slippage_bps: float = 20.0  # 标记 near_limit 的成交额外加大的滑点;占位假设
+    commission_rate: float = rates.COMMISSION_RATE      # 佣金率(双边);来源 src/costs.py(原复制自 simtrade.FEE["stock"]),未核对
+    min_commission: float = rates.MIN_COMMISSION        # 最低佣金(元/笔);来源同上,未核对
+    transfer_rate: float = rates.TRANSFER_RATE          # 过户费率(双边);来源同上,未核对
+    stamp_rate: float = rates.STAMP_DUTY_RATE           # 印花税率(仅卖出,现行 2023-08-28 起的税率,不分日期);来源同上,未核对
+    slippage_bps: float = rates.SLIPPAGE_BPS            # 基础滑点(基点,1bp=0.01%);占位假设,非实测
+    limit_extra_slippage_bps: float = rates.LIMIT_EXTRA_SLIPPAGE_BPS  # 标记 near_limit 的成交额外加大的滑点;占位假设
     lot: int = 100                        # 整手股数
     enforce_t1: bool = True
     enforce_limits: bool = True

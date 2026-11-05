@@ -1,0 +1,6 @@
+{ "reports": [
+  { "path": "T008_跨市场结论总结.md", "title": "T008 跨市场因子验证:A 股与美股的共同结论", "kind": "other", "group": "", "date": "2026-10-25", "size": 4440, "mtime": 1793000000 },
+  { "path": "overnight_2026-10-24/replay_500/report.md", "title": "T008 逐日回放报告(S1-S5)", "kind": "replay", "group": "overnight_2026-10-24", "date": "2026-10-24", "size": 3008, "mtime": 1792900000 },
+  { "path": "overnight_2026-10-24/weekly/2026-W42.md", "title": "纸面实盘周报 2026-W42(示例)", "kind": "weekly", "group": "overnight_2026-10-24", "date": "2026-10-24", "size": 2100, "mtime": 1792899000 },
+  { "path": "overnight_20261023/factor_3m/report.md", "title": "因子报告(示例)", "kind": "factor", "group": "overnight_20261023", "date": "2026-10-23", "size": 5200, "mtime": 1792800000 }
+ ], "total": 4, "truncated": false }

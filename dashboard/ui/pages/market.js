@@ -3,14 +3,22 @@
  * 接口: GET /api/meta、GET /api/scan、POST /api/watchlist（加自选）
  * 内容: 策略在全市场有没有用（汇总表，点一行切换策略）+ 逐只结果（筛选、13 列排序、分页、导出 CSV、＋自选）
  * 状态: 筛选条件放在模块变量 S 里，语言切换 / R 刷新重绘时保留
+ * 网址(A08): 排序 / 筛选同步到 location.search（replaceState，不产生历史记录），打开页面时还原。参数前缀 mk_：
+ *   m=市场 t=策略 q=搜索词 b=板块 i=行业 g=信号 s=排序列 o=方向(a升 d降) p=页码(从 1 数)；等于默认值的不写（市场总是写）
  * ========================================================== */
 
 import { el } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { activateOnKey, setAriaLabel } from '../shared/a11y.js';
 import { getJSON, postJSON } from '../shared/api.js';
-import { dataMarket, marketSwitch, fmt, pct, isNum, capFmt, pill, strategySelect, field, sortTh, showError, downloadCSV, debounce, toneClass } from './u4-util.js';
+import { stockPage } from '../shared/stock-link.js';
+import { pickMarket, marketSwitch, fmt, pct, isNum, capFmt, pill, strategySelect, field, sortTh, showError, downloadCSV, debounce, toneClass } from './u4-util.js';
+import { pickState, hasState, writeState, nonDefault, dirToUrl, dirFromUrl } from '../shared/url-state.js';
 
-const S = { strategy: 'blend2', q: '', board: '', industry: '', signal: '', sort: 'sharpe', dir: 'desc', page: 0 };
+const DEFAULT = { strategy: 'blend2', sort: 'sharpe', dir: 'desc' };
+const S = { strategy: DEFAULT.strategy, q: '', board: '', industry: '', signal: '', sort: DEFAULT.sort, dir: DEFAULT.dir, page: 0 };
+const NS = 'mk';          // 网址参数前缀
+let restored = false;     // 网址只在第一次渲染时读一次；之后以 S 为准（S 每次改动都写回网址）
 let meta = null;
 let market = 'cn';
 let watched = new Set();
@@ -22,6 +30,40 @@ const COLS = [['code', 'u4.c.stock'], ['d1', 'u4.c.d1'], ['next', 'u4.c.next'], 
   ['sharpe_is', 'u4.c.is'], ['sharpe_oos', 'u4.c.oos'], ['y1', 'u4.c.y1'], ['win', 'u4.c.win'], ['b_cagr', 'u4.c.b_cagr'], ['b_sharpe', 'u4.c.b_sharpe'], ['b_maxdd', 'u4.c.b_maxdd']];
 const RAW_SORT = ['code', 'd1', 'm1', 'y1', 'mcap'];
 const SIGNALS = [['', 'u4.sig.all'], ['买入', 'u4.sig.buy'], ['卖出', 'u4.sig.sell'], ['持仓', 'u4.sig.hold'], ['空仓', 'u4.sig.flat'], ['有效', 'u4.sig.good'], ['退市', 'u4.sig.delisted']];
+
+const SORT_KEYS = [...new Set([...COLS.map(([k]) => k), ...RAW_SORT, 'mcap'])];   // mk_s 允许的排序列（服务端 SCAN_SORT 之内）
+
+/** 网址 → 状态。网址是不可信输入：策略 / 信号 / 排序列对照白名单，页码必须是正整数，搜索词截到服务端的 20 字，不合法的丢掉用默认值。
+ *  板块 / 行业要等接口返回才知道有哪些，放到 load() 里校验 */
+export function stateFromUrl(u, meta) {
+  const out = {};
+  const strategies = [...Object.entries(meta?.strategies ?? {}).filter(([, v]) => v.kind === 'single').map(([k]) => k).filter((k) => k !== 'buy_hold'), 'raw'];
+  if (strategies.includes(u.t)) out.strategy = u.t;
+  if (typeof u.q === 'string') out.q = u.q.slice(0, 20);
+  if (typeof u.b === 'string') out.board = u.b.slice(0, 40);
+  if (typeof u.i === 'string') out.industry = u.i.slice(0, 40);
+  if (SIGNALS.some(([v]) => v === u.g)) out.signal = u.g;
+  if (SORT_KEYS.includes(u.s)) out.sort = u.s;
+  if (dirFromUrl(u.o)) out.dir = dirFromUrl(u.o);
+  if (/^[1-9]\d{0,5}$/.test(u.p ?? '')) out.page = Number(u.p) - 1;
+  return out;
+}
+
+/** 状态 → 网址参数（只含和默认不同的；排序列和方向成对写） */
+export function stateToUrl(s, mkt) {
+  const sortChanged = s.sort !== DEFAULT.sort || s.dir !== DEFAULT.dir;
+  return { m: mkt, t: nonDefault(s.strategy, DEFAULT.strategy), q: s.q, b: s.board, i: s.industry, g: s.signal,
+    s: sortChanged ? s.sort : '', o: sortChanged ? dirToUrl(s.dir === 'asc') : '', p: s.page > 0 ? s.page + 1 : '' };
+}
+
+let track = false;        // 用户动过控件、或网址本来就带 mk_ 参数之后才写回网址：光打开页面不改地址栏
+const syncUrl = (mkt = market) => writeState(NS, stateToUrl(S, mkt));
+/** 控件改了 S 之后统一走这里：先写网址（接口失败刷新也不丢），再取数 */
+function go() {
+  track = true;
+  syncUrl();
+  load().catch((e) => showError(ui.msg, e));
+}
 
 function query(extra = {}) {
   return new URLSearchParams({ market, strategy: S.strategy, q: S.q, board: S.board, industry: S.industry, signal: S.signal, sort: S.sort, dir: S.dir, page: S.page, ...extra });
@@ -52,9 +94,9 @@ function drawSummary(m) {
       el('td', { class: 'num' }, isNum(v.top_pick_oos) ? [fmt(v.top_pick_oos, 2), ' ', el('span', { class: 'muted' }, `vs ${fmt(v.all_oos, 2)}`)] : '—'),
       m.delisted ? el('td', { class: 'num' }, fmt(v.with_delisted, 0, '%')) : null,
       el('td', { class: 'num' }, String(v.buy)), el('td', { class: 'num' }, String(v.sell)), el('td', { class: 'num' }, fmt(v.holding_pct, 0, '%')));
-    const pick = () => { S.strategy = k; S.page = 0; ui.strategy.value = k; load().catch((e) => showError(ui.msg, e)); };
+    const pick = () => { S.strategy = k; S.page = 0; ui.strategy.value = k; go(); };
     tr.addEventListener('click', pick);
-    tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') pick(); });
+    activateOnKey(tr, pick);   // Enter 和空格都能选（A11）
     return tr;
   });
   ui.summary.replaceChildren(el('thead', {}, el('tr', {}, ...head.map((k, i) => el('th', { scope: 'col', class: i ? 'num' : null }, t(k))))), el('tbody', {}, ...rows));
@@ -69,14 +111,14 @@ function drawSummary(m) {
 
 /* ---------- 逐只结果表 ---------- */
 function stockCell(x) {
-  return el('td', {}, el('a', { href: `/#/stock/${encodeURIComponent(x.code)}` }, x.name),
+  return el('td', {}, el('a', { href: stockPage(x.code, market) }, x.name),
     el('span', { class: 'u4-code' }, x.code), el('span', { class: 'badge u4-tag' }, x.board),
     x.industry ? el('span', { class: 'u4-sub' }, x.industry) : null);
 }
 
 function watchCell(x) {
   if (watched.has(x.code)) return el('td', {}, el('span', { class: 'u4-link u4-link--gray' }, t('u4.w.added')));
-  const b = el('button', { class: 'u4-link', type: 'button' }, t('u4.w.add'));
+  const b = setAriaLabel(el('button', { class: 'u4-link', type: 'button' }, t('u4.w.add')), 'a11y.watch_add', { n: x.name });   // 每行都叫「添加」，读屏要带上是哪只
   b.addEventListener('click', (e) => { e.stopPropagation(); addToWatch(x.code); });
   return el('td', {}, b);
 }
@@ -109,7 +151,7 @@ function drawRows() {
       el('td', { class: 'num' }, fmt(x.b_cagr, 1, '%')), el('td', { class: 'num' }, fmt(x.b_sharpe)), el('td', { class: 'num' }, fmt(x.b_maxdd, 1, '%')),
     ];
     const tr = el('tr', { class: `u4-click ${watched.has(x.code) ? 'u4-pin' : ''}` }, ...cells, watchCell(x));
-    tr.addEventListener('click', (e) => { if (!e.target.closest('a,button')) window.location.href = `/#/stock/${encodeURIComponent(x.code)}`; });
+    tr.addEventListener('click', (e) => { if (!e.target.closest('a,button')) window.location.href = stockPage(x.code, market); });   // G01：去新个股页
     return tr;
   });
   ui.table.replaceChildren(thead, el('tbody', {}, ...body));
@@ -117,7 +159,7 @@ function drawRows() {
     const k = b.dataset.k;
     S.dir = S.sort === k && S.dir === 'desc' ? 'asc' : 'desc';
     S.sort = k; S.page = 0;
-    load().catch((e) => showError(ui.msg, e));
+    go();
   }));
 }
 
@@ -126,10 +168,22 @@ function fillSelect(sel, items, value) {
   sel.value = items.includes(value) ? value : '';
 }
 
-/** 拉一次 /api/scan 并刷新页面上的各块；出错时往上抛 */
-async function load() {
+/** 拉一次 /api/scan 并刷新页面上的各块；出错时往上抛。fixed=true 表示已经按服务端实际情况纠正过一次，不再重试 */
+async function load(fixed = false) {
   const r = await getJSON(`/api/scan?${query()}`, { mock: 'market-scan' });
   ui.msg.hidden = true;
+  if (!r.empty && !fixed) {
+    // 网址里的板块 / 行业不存在、或页码超出总页数时（链接过期、手改网址），丢掉不合法的值重取一次，免得下拉框显示「全部」而表是空的
+    const pages = Math.max(1, Math.ceil(r.total / r.size));
+    const badBoard = S.board && Array.isArray(r.boards) && !r.boards.includes(S.board);
+    const badInd = S.industry && Array.isArray(r.industries) && !r.industries.includes(S.industry);
+    if (badBoard || badInd || r.page >= pages) {
+      if (badBoard) S.board = '';
+      if (badInd) S.industry = '';
+      S.page = r.page >= pages ? pages - 1 : S.page;
+      return load(true);
+    }
+  }
   if (r.empty) {
     ui.body.hidden = true;
     const cmd = market === 'us' ? '.venv/bin/python -m src.scan_us' : 'caffeinate -i .venv/bin/python backfill.py';
@@ -154,6 +208,7 @@ async function load() {
   ui.prev.disabled = r.page <= 0;
   ui.next.disabled = r.page + 1 >= pages;
   drawRows();
+  if (track) syncUrl();   // drawRows 可能把原本数据模式下不支持的排序列改掉，网址跟着对齐
 }
 
 async function exportCsv() {
@@ -170,9 +225,11 @@ async function exportCsv() {
 
 export async function render(root) {
   meta = await getJSON('/api/meta', { mock: 'meta-u4' });
-  market = dataMarket(meta);
+  const u = pickState(NS);
+  market = pickMarket(meta, u.m);
+  if (!restored) { restored = true; track = hasState(NS); Object.assign(S, stateFromUrl(u, meta)); }
   watched = new Set(Object.keys(meta.markets[market]?.stocks ?? {}));
-  const again = () => load().catch((e) => showError(ui.msg, e));
+  const again = go;
   const sel = (items, key, onChange) => {
     const s = el('select', { class: 'ws-select', 'aria-label': t(key) }, ...items);
     s.addEventListener('change', () => onChange(s.value));
@@ -193,8 +250,7 @@ export async function render(root) {
     board: sel([el('option', { value: '' }, t('u4.f.all'))], 'u4.f.board', (v) => { S.board = v; S.page = 0; again(); }),
     industry: sel([el('option', { value: '' }, t('u4.f.all'))], 'u4.f.industry', (v) => { S.industry = v; S.page = 0; again(); }),
   };
-  ui.strategy = strategySelect(meta, S.strategy, { raw: true, onChange: (v) => { S.strategy = v; S.page = 0; again(); } });
-  const signal = sel(SIGNALS.map(([v, k]) => el('option', { value: v }, t(k))), 'u4.f.signal', (v) => { S.signal = v; S.page = 0; again(); });
+  ui.strategy = strategySelect(meta, S.strategy, { raw: true, onChange: (v) => { S.strategy = v; S.page = 0; again(); } });  const signal = sel(SIGNALS.map(([v, k]) => el('option', { value: v }, t(k))), 'u4.f.signal', (v) => { S.signal = v; S.page = 0; again(); });
   signal.value = S.signal;
   const search = el('input', { class: 'ws-input', type: 'search', placeholder: t('u4.f.search_ph'), 'aria-label': t('u4.f.search'), value: S.q });
   search.addEventListener('input', debounce(() => { S.q = search.value; S.page = 0; again(); }, 300));
@@ -213,7 +269,7 @@ export async function render(root) {
       el('div', { class: 'table-wrap' }, ui.table),
       el('div', { class: 'u4-pager' }, ui.count, ui.prev, ui.pageNo, ui.next)));
   root.replaceChildren(
-    el('div', { class: 'u4-bar', style: { padding: '0 0 var(--space-3)', border: '0' } }, marketSwitch(meta, market, () => { S.page = 0; S.board = ''; S.industry = ''; window.dispatchEvent(new CustomEvent('langchange')); })),
+    el('div', { class: 'u4-bar', style: { padding: '0 0 var(--space-3)', border: '0' } }, marketSwitch(meta, market, (k) => { S.page = 0; S.board = ''; S.industry = ''; track = true; syncUrl(k); window.dispatchEvent(new CustomEvent('langchange')); })),
     ui.msg, ui.empty, ui.body);
   await load();
 }

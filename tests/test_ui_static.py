@@ -96,7 +96,8 @@ class UiStaticTests(unittest.TestCase):
 
     def start(self, ui_dir):
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), build_class(ui_dir))
-        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        # poll_interval 默认 0.5 秒，shutdown() 会白等；改 10 毫秒，只缩短关闭延迟
+        threading.Thread(target=self.srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(self.srv.server_close)
         self.addCleanup(self.srv.shutdown)
 

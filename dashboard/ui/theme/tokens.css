@@ -29,19 +29,19 @@
   --accent-glow: #9f7bff;
   --accent-text: #b3a8ff;           /* 强调色文字，对比度 9.3:1 */
   --accent-contrast: #ffffff;       /* 强调色底上的文字 */
-  --accent-2: #5b8cff;              /* 渐变终点：紫 → 蓝 */
+  --accent-2: #2b6aff;              /* 渐变终点：紫 → 蓝；原 #5b8cff 与白字仅 3.16:1，压暗到 4.6:1（A05） */
 
   /* —— 文字 —— */
   --text-primary: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.72);  /* 原 0.6 在玻璃卡上 < 7:1，提到 0.72 */
   --text-dim: rgba(255, 255, 255, 0.4);         /* 只用于禁用态与装饰，不承载信息 */
 
-  /* —— 涨跌与语义色（文字级，均 ≥ 7:1） —— */
+  /* —— 涨跌与语义色（文字级，实测均 ≥ 4.5:1 WCAG AA；逐组合由 tests/test_ui_contrast.py 守住） —— */
   --red: #ff8a8a;
   --green: #4ade80;
   --amber: #fbbf24;
   --red-fill: #f87171;
-  --green-fill: #22c55e;
+  --green-fill: #21bd5a;            /* 原 #22c55e：热力图最深格里的白字仅 4.28:1，略压暗到 4.58:1（A05） */
 
   /* —— 图表 —— */
   --chart-1: #9f7bff;
@@ -111,7 +111,7 @@
   --accent-2: #2f5fe0;
   --text-primary: #14102e;
   --text-secondary: #4a4566;
-  --text-dim: rgba(20, 16, 46, 0.45);
+  --text-dim: rgba(20, 16, 46, 0.47);
   --red: #a11a12;
   --green: #0e5c2c;
   --amber: #8a5300;
@@ -119,7 +119,7 @@
   --green-fill: #16a34a;
   --chart-1: #6b4bff;
   --chart-2: #2f6bff;
-  --chart-bench: rgba(20, 16, 46, 0.4);
+  --chart-bench: rgba(20, 16, 46, 0.47);
   --chart-dd: #c2410c;
   --chart-grid: rgba(20, 16, 46, 0.06);
   --chart-text: rgba(20, 16, 46, 0.6);
@@ -150,7 +150,7 @@
     --accent-2: #2f5fe0;
     --text-primary: #14102e;
     --text-secondary: #4a4566;
-    --text-dim: rgba(20, 16, 46, 0.45);
+    --text-dim: rgba(20, 16, 46, 0.47);
     --red: #a11a12;
     --green: #0e5c2c;
     --amber: #8a5300;
@@ -158,7 +158,7 @@
     --green-fill: #16a34a;
     --chart-1: #6b4bff;
     --chart-2: #2f6bff;
-    --chart-bench: rgba(20, 16, 46, 0.4);
+    --chart-bench: rgba(20, 16, 46, 0.47);
     --chart-dd: #c2410c;
     --chart-grid: rgba(20, 16, 46, 0.06);
     --chart-text: rgba(20, 16, 46, 0.6);

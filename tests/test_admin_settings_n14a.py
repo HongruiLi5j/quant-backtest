@@ -34,6 +34,7 @@ def db(tmp_path, monkeypatch):
     members.set_db(tmp_path / "m.db")
     monkeypatch.setattr(admin, "AUDIT", tmp_path / "audit.jsonl")
     monkeypatch.setattr(admin_settings, "_last_good", None)
+    monkeypatch.setattr(admin, "_last_blocked", 0.0)      # 外网 404 会触发 admin.audit_blocked 改这个全局限流时间；结束后还原，不留给后面的测试
     members._hits.clear()
     yield tmp_path
     members.set_db(old)
@@ -81,7 +82,7 @@ def server(db):
             (self._admin_post if u.path.startswith("/api/admin/") else self._member_post)(u)
 
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Test)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()   # 默认 0.5 秒会让 shutdown() 白等
     Test.local = True
     yield srv, Test
     srv.shutdown()

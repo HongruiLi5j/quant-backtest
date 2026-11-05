@@ -8,6 +8,7 @@
 
 import { el, store, fmt, toneClass } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { tDefault } from '../shared/t-fallback.js';
 
 export const MARKET_KEY = 'qb-data-market';
 export { fmt, toneClass };
@@ -21,6 +22,11 @@ export function dataMarket(meta) {
 }
 
 export function setDataMarket(m) { store.set(MARKET_KEY, m); }
+
+/** 网址里带了市场（A08：mk_m / wl_m）且在 meta.markets 里就用网址的，否则退回本机保存的；不改写本机保存的值 */
+export function pickMarket(meta, fromUrl) {
+  return fromUrl && Object.hasOwn(meta?.markets ?? {}, fromUrl) ? fromUrl : dataMarket(meta);
+}
 
 /** A 股 / 美股切换按钮；点了先存再回调 */
 export function marketSwitch(meta, current, onChange) {
@@ -84,7 +90,7 @@ export function showError(box, err) {
   box.hidden = false;
   box.replaceChildren(err?.auth
     ? el('span', {}, t('ui.auth.expired'), ' ', el('a', { href: '/' }, t('ui.auth.home')))
-    : el('span', {}, `${t('ui.state.error')}${err?.message ? `：${err.message}` : ''}`));
+    : el('span', {}, `${t('ui.state.error')}${err?.message ? `${tDefault('a02.sep.colon')}${err.message}` : ''}`));
 }
 
 /** 下载 CSV（带 BOM，Excel 打开不乱码）。header: [[字段或函数, 列名], ...] */

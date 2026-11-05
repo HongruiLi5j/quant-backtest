@@ -5,12 +5,13 @@ import fcntl
 import logging
 import math
 import re
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from . import market_clock
 from .datasource import CACHE
 
 OUT = CACHE / "turnover_cn.parquet"
@@ -89,7 +90,7 @@ def save(rows, path=None):
 def capture_snapshot(raw, source, now=None, *, path=None):
     """只使用调用方已有快照；无网络请求，盘中不保存成交额。"""
     now = (now or datetime.now(ZoneInfo("Asia/Shanghai"))).astimezone(ZoneInfo("Asia/Shanghai"))
-    if now.time() < time(15, 30):
+    if not market_clock.is_close_ready(now):
         return 0
     base = Path(path).parent if path is not None else OUT.parent
     if now.date() not in cached_calendar(base):

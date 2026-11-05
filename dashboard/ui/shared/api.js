@@ -14,6 +14,8 @@
  *   旧的 mockup 版 api-config.js 的 USE_MOCK 不再使用。
  * ========================================================== */
 
+import { t } from './i18n.js';   // 错误提示会显示在页面上（卡片、toast），跟随当前语言
+
 const TIMEOUT_MS = 60000;
 const MOCK_BASE = new URL('../mock-data/', import.meta.url);
 
@@ -47,7 +49,7 @@ async function readMock(name, fallback) {
   const res = await fetch(new URL(`${name}.json`, MOCK_BASE), { cache: 'no-store' });
   if (res.ok) return res.json();
   if (fallback !== undefined) return fallback;
-  throw new ApiError(res.status, `mock-data/${name}.json 不存在`);
+  throw new ApiError(res.status, t('a02.err.mock_missing', { name }));
 }
 
 /** ?debug=1 时把 GET 返回交给字段核对（debug-fields.js 才会被加载，平时不影响） */
@@ -74,7 +76,7 @@ async function request(path, init, opts) {
       headers: { 'X-Requested-With': 'dashboard', ...(init.headers || {}) },
     });
   } catch (err) {
-    throw new ApiError(0, err.name === 'AbortError' ? '请求超时' : '连不上网页服务');
+    throw new ApiError(0, t(err.name === 'AbortError' ? 'a02.err.timeout' : 'a02.err.network'));
   } finally {
     clearTimeout(timer);
   }
@@ -84,7 +86,7 @@ async function request(path, init, opts) {
     const text = body && (body.message || body.error);
     throw new ApiError(res.status, typeof text === 'string' ? text : `HTTP ${res.status}`, body);
   }
-  if (body === null) throw new ApiError(res.status, '返回内容不是 JSON');
+  if (body === null) throw new ApiError(res.status, t('a02.err.not_json'));
   return debugRecord(path, init, body);
 }
 

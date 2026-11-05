@@ -10,6 +10,7 @@
 
 import { el, svg } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { restoreFocusOnClose } from '../shared/a11y.js';
 
 /** 页面状态；redraw 由 admin.js 在启动时挂上 */
 export const S = {
@@ -109,7 +110,9 @@ export function confirmDialog({ title, lines, ok }) {
       if (act) { answer = act === 'ok'; dlg.close(); } else if (e.target === dlg) dlg.close();
     });
     dlg.addEventListener('close', () => { dlg.remove(); resolve(answer); });
+    const rememberOpener = restoreFocusOnClose(dlg);   // 关闭后焦点回到「保存」按钮（A11）；showModal 默认把焦点放在第一个按钮「取消」，是安全的默认
     document.body.append(dlg);
+    rememberOpener();
     dlg.showModal();
   });
 }

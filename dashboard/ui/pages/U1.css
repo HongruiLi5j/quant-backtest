@@ -27,7 +27,7 @@
 .u1-banner { font-size: var(--fs-xs); }
 .u1-fold > summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; }
 .u1-fold[open] > summary { margin-bottom: var(--space-3); }
-.u1-fold__body { display: grid; gap: var(--space-3); }
+.u1-fold__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 .u1-sig-table td { white-space: nowrap; }
 .u1-sig-table td.u1-reason-cell { white-space: normal; min-width: 220px; max-width: 360px; }
 .u1-reason-cell summary { cursor: pointer; font-size: var(--fs-xs); color: var(--text-secondary); }
@@ -50,12 +50,54 @@
   .u1-mobile-only { display: inline-flex; }
   .u1-controls .ws-input, .u1-controls .ws-select { flex: 1 1 140px; }
 }
-.u1-personal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 .ws-head { flex-wrap: wrap; }
-.ws-main, .ws-main > *, .ws-grid > *, .u1-personal > * { min-width: 0; }
+.ws-main, .ws-main > *, .ws-grid > *, .u1-brief > * { min-width: 0; }
 .u1-controls select, .u1-controls input { max-width: 100%; min-width: 0; }
-@media (max-width: 1100px) { .u1-personal { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .ws-grid--kpi { grid-template-columns: 1fr 1fr; } .u1-riskline { gap: var(--space-3); } }
 .u1-fold, .u1-fold__body, .u1-fold .stack { min-width: 0; max-width: 100%; }
 .u1-fold .table-wrap { overflow-x: auto; max-width: 100%; }
 .ws-main .stack > * { min-width: 0; }
+/* A07：今日页数据日期醒目行 + 过期提示条 */
+.u1-datewrap { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.u1-datewrap:empty { display: none; }
+.u1-datebar { font-size: var(--fs-lg, 18px); font-weight: 700; color: var(--text-primary); overflow-wrap: anywhere; }
+.u1-datebar:empty { display: none; }
+.u1-datebanner p + p { margin-top: var(--space-2); }
+.u1-datebanner { overflow-wrap: anywhere; }
+/* G01：今日动作的格子是链接（直达信号页对应标签）；信号页标签上的条数 */
+a.u1-count-link { color: inherit; text-decoration: none; }
+a.u1-count-link:hover, a.u1-count-link:focus-visible { border-color: var(--accent-glow); }
+a.u1-count-link .metric__label::after { content: " →"; color: var(--accent-text); }
+.u1-tab-count { margin-left: 2px; font-size: var(--fs-xs); opacity: .75; }
+/* G03：首屏速览——今日动作 / 持仓变化 / 需要注意。宽屏三列，平板两列（今日动作占满一行），手机一列 */
+.u1-brief { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+.u1-brief--3 { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 1279px) { .u1-brief--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .u1-brief--3 > :first-child { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .u1-brief, .u1-brief--3 { grid-template-columns: minmax(0, 1fr); } }
+.u1-actions__src { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.u1-actions .u1-counts { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-2); margin-bottom: var(--space-3); }
+.u1-actions .metric { padding: var(--space-2) var(--space-3); justify-content: space-between; }
+.u1-actions .metric__value { font-size: var(--fs-xl); }
+.u1-actions .ws-note + .ws-note { margin-top: var(--space-2); }
+.u1-pos__label { font-size: var(--fs-xs); margin-bottom: var(--space-2); }
+.u1-pos__move { display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3); }
+.u1-pos__cell { display: grid; gap: 2px; }
+.u1-pos__move .num { font-size: var(--fs-2xl); font-weight: 700; line-height: 1.15; }
+.u1-pos__move span.num { color: var(--text-secondary); }
+.u1-pos__arrow { font-size: var(--fs-xl); line-height: 1.3; color: var(--text-secondary); }
+.u1-pos__move .badge { align-self: center; }
+.u1-pos .progress, .u1-main .progress { display: block; }   /* span 默认是行内元素，高度不生效，进度条原来显示不出来 */
+.u1-pos__paper { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+.u1-pos__sub { margin: 0; }
+.u1-pos__list { list-style: none; display: grid; gap: var(--space-2); font-size: var(--fs-sm); }
+.u1-pos__list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); }
+.u1-pos__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u1-risk--on { border-color: var(--amber); }
+.u1-risk__list li { padding-left: var(--space-3); border-left: 2px solid var(--amber); overflow-wrap: anywhere; }
+.u1-risk .ws-note { margin-top: var(--space-3); }
+.u1-details { margin-bottom: var(--space-3); }
+@media (max-width: 600px) {
+  .u1-actions .u1-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .u1-pos__move .num { font-size: var(--fs-xl); }
+  .ws-head [data-i18n="ws.head.hint"] { display: none; }   /* 「R 刷新 · ? 快捷键」手机上用不到，省出首屏的一行 */
+}

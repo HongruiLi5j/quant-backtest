@@ -60,7 +60,7 @@ def server(db):
             self._send(200, b"real page", "text/plain")
 
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Test)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()   # 默认 0.5 秒会让 shutdown() 白等
     yield srv, Test
     srv.shutdown()
     srv.server_close()

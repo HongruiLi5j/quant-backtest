@@ -39,6 +39,7 @@ def db(tmp_path, monkeypatch):
     members.set_db(tmp_path / "m.db")
     monkeypatch.setattr(admin, "AUDIT", tmp_path / "audit.jsonl")
     monkeypatch.setattr(admin_settings, "_last_good", None)
+    monkeypatch.setattr(admin, "_last_blocked", 0.0)      # blocked_remote 是 60 秒全局限流；别的测试刚记过一条会让本测试的那条被吞掉
     members._hits.clear()
     yield tmp_path
     members.set_db(old)
@@ -87,7 +88,7 @@ def make_server(mode):
             self._admin_post(urlparse(self.path))
 
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Test)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()   # 默认 0.5 秒会让 shutdown() 白等
     return srv
 
 

@@ -1,0 +1,16 @@
+{
+ "a09.err.required": "Required, cannot be empty",
+ "a09.err.not_number": "Enter a number",
+ "a09.err.range": "Must be between {min} and {max}",
+ "a09.err.integer": "Enter a whole number",
+ "a09.err.date_bad": "Pick a valid date",
+ "a09.err.start_late": "Must be before the latest data date {end}",
+ "a09.err.symbol_required": "Choose a symbol",
+ "a09.err.symbol_cn": "A-share codes are 6 digits starting with 60 / 68 / 00 / 30",
+ "a09.err.symbol_us": "US tickers start with a letter and may contain letters, digits, dots and hyphens, up to 10 characters",
+ "a09.warn.short": "Only about {n} days: too few samples, so annual return and Sharpe are unreliable",
+ "a09.warn.fast_slow": "Fast {fast} is not smaller than slow {slow}; the crossover is meaningless",
+ "a09.hint.end": "The backtest runs to the latest data date {end}; there is no separate end date",
+ "a09.hint.cost_blank": "Leave blank to use the default {v} bp",
+ "a09.sum.blocked": "{n} input(s) need fixing before you can run"
+}

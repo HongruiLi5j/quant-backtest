@@ -1,0 +1,23 @@
+{
+ "now": 1793336400,
+ "server": { "pid": 12345, "started": 1793036400, "uptime": 300000, "python": "3.11.9", "managed": true },
+ "launchd": [
+  { "label": "com.quantdaily.update", "available": true, "loaded": true, "pid": null, "last_exit": 0 },
+  { "label": "com.quantdaily.server", "available": true, "loaded": true, "pid": 12345, "last_exit": 0 }
+ ],
+ "daily_running": false,
+ "markets": {
+  "cn": { "name": "A股", "data_date": "2026-10-29", "generated_at": "2026-10-29T15:42:03", "age_days": 1, "signals_mtime": 1793260923, "scan_mtime": 1793260923,
+          "all": { "cached": 5222, "listed": 5222, "scanned": 5200, "progress": {}, "scan_generated": "2026-10-29T15:41:00" } },
+  "us": { "name": "美股", "data_date": "2026-10-24", "generated_at": "2026-10-25T06:10:00", "age_days": 5, "signals_mtime": 1792850000, "scan_mtime": null }
+ },
+ "disk": { "data": 6871947673, "logs": 52428800, "export": 10485760, "free": 195421011968,
+           "top": [ { "name": "data/daily/cn_all", "bytes": 5368709120 }, { "name": "data/daily/share", "bytes": 1048576 } ] },
+ "tasks": { "rebacktest_cn": { "label": "重新回测 A 股（不联网）", "running": false, "started": null, "returncode": null, "tail": [] } },
+ "gap": { "running": false, "done": 0, "total": 0, "started": null, "error": null, "result": null },
+ "token": { "main_rotated": 1792000000, "admin_rotated": 1792000000, "failed_logins_10min": 0, "session_hours": 12 },
+ "refresh": { "running": false },
+ "share": { "running": false, "password_set": false },
+ "scan": {},
+ "pending": []
+}

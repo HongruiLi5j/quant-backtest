@@ -1,0 +1,37 @@
+{
+ "status": "ok",
+ "build_id": "20261027T012755Z-1b5f4456",
+ "manifest_sha256": "1b5f44568432adac58e61d1895053864f0984b7dc917978a147bbb443e7564f6",
+ "built_at": "2026-10-27T01:27:55Z",
+ "ok": true,
+ "release_ready": false,
+ "files": 105,
+ "errors": [],
+ "blockers": [
+  "字典 en 的联系邮箱还是占位值或格式不对：待填（所有者尚未提供联系邮箱）",
+  "字典 zh 的联系邮箱还是占位值或格式不对：待填（所有者尚未提供联系邮箱）"
+ ],
+ "warnings": [
+  "源码里出现第三方域名：api.fontshare.com（15 个文件；示例）",
+  "源码里出现第三方域名：cdn.fontshare.com（15 个文件；示例）"
+ ],
+ "diff": {
+  "baseline": false,
+  "added": [
+   "index.html",
+   "quant-ai-dark/landing.html",
+   "shared/tokens.css"
+  ],
+  "changed": [],
+  "removed": [],
+  "n_added": 105,
+  "n_changed": 0,
+  "n_removed": 0
+ },
+ "published": null,
+ "is_published": false,
+ "commands": {
+  "preview": "cd ~/Documents/Projects/quant-backtest/build/20261027T012755Z-1b5f4456/site && (python3 -m http.server 8790 --bind 127.0.0.1 >/dev/null 2>&1 &) && sleep 1 && open http://127.0.0.1:8790/quant-ai-dark/landing.html",
+  "preview_stop": "lsof -ti tcp:8790 -sTCP:LISTEN | xargs kill"
+ }
+}

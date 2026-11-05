@@ -22,6 +22,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from . import costs as cost_const
+
 
 @dataclass
 class PortResult:
@@ -53,7 +55,7 @@ def apply_band(target: pd.DataFrame, band: float) -> pd.DataFrame:
 
 
 def run_weights(prices: dict[str, pd.DataFrame], target: pd.DataFrame | pd.Series,
-                cost: float = 0.0005, band: float = 0.0,
+                cost: float = cost_const.ENGINE_DEFAULT_ONE_WAY, band: float = 0.0,
                 cash_ret: pd.Series | None = None,
                 limits: dict[str, float] | None = None) -> PortResult:
     """cash_ret：没投出去的那部分钱每天的收益（例如短期国债 ETF 的日收益）。
