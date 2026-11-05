@@ -788,6 +788,17 @@ class ReleaseGateTests(Base):
                 self.assertTrue(rep["ok"])
                 self.assertFalse(rep["release_ready"], v)
 
+    def test_github_contact_counts_as_contact(self):
+        # 所有者 2026-11-05：不放邮箱时用 GitHub 仓库 / Issues 地址
+        for v in ("https://github.com/HongruiLi5j/quant-backtest/issues", "https://github.com/a/b"):
+            with self.subTest(v=v):
+                rep = self.rebuild_with_zh(self.new_env(), **{"contact.email": v})
+                self.assertNotIn("contact", "\n".join(rep["blockers"]).lower(), v)
+        for v in ("http://github.com/a/b", "https://github.com/a", "https://github.com.evil.io/a/b", "https://github.com/a/b/issues/../x"):
+            with self.subTest(v=v):
+                rep = self.rebuild_with_zh(self.new_env(), **{"contact.email": v})
+                self.assertFalse(rep["release_ready"], v)
+
     def test_unresolved_data_claim_blocks_release(self):
         rep = self.rebuild_with_zh(**{"pub.derived": "Data sources: SINA · Tencent"})
         self.assertTrue(rep["ok"])

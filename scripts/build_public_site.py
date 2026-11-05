@@ -59,6 +59,8 @@ COMPLIANCE_WORDS = ("低风险", "高收益", "稳赚", "保证收益", "必涨"
 # 口径待改（所有者 2026-10-24 确定"现在全是合成演示数据"）：出现就是"发布阻断项"
 COPY_BLOCK = ("Data sources: SINA", "derived results exported overnight", "夜间导出的衍生结果")
 CONTACT_PLACEHOLDER = re.compile(r"example\.(invalid|com|org)|\.invalid\b|placeholder|待填|TODO", re.I)
+# 所有者 2026-11-05：不公开邮箱时，联系方式也可以是 GitHub 仓库（或它的 Issues 页）地址
+CONTACT_GITHUB = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/issues)?/?$")
 # 公开数据/字典里不许出现 "/api/" 形式的路径（不区分大小写，含 /api/123、/api?x、结尾的 /api，也含键名和第三方文档里的 /api/ 链接——最保守地一律拒绝）。
 # 在【解析后的 JSON 字符串】上检查，所以 \/api\/ 和 \u002fapi\u002f 这类转义写法也绕不过。构建时会先删掉 mock 的 _meta.schema、覆盖三条词条，之后仍出现就是错误
 INTERNAL_API = re.compile(r"/api(?:/|$|[?#])", re.I)
@@ -661,7 +663,7 @@ def apply_transforms(site: Path, al: dict) -> list[str]:
         for k, v in list(j.items()):
             if k in drop_keys or k.startswith(drop_pre):
                 del j[k]
-            elif isinstance(v, str):
+            elif isinstance(v, str) and k != "contact.email":       # 联系方式可能是 GitHub 仓库地址，不能把仓库名换成品牌名
                 j[k] = v.replace("Quant Backtest", BRAND).replace("quant-backtest", BRAND)
         for k, v in extra.items():
             if k in j or k == "t7.auth.lead":
@@ -974,8 +976,10 @@ def check_site(site: Path, al: dict) -> dict:
         c = d.get("contact.email")
         if c is None:
             blockers.append(f"字典 {lang} 没有联系邮箱词条 contact.email（公开页必需）")
+        elif CONTACT_GITHUB.match(str(c)):
+            pass                                            # GitHub 仓库 / Issues 地址：合格的联系方式
         elif CONTACT_PLACEHOLDER.search(str(c)) or "@" not in str(c):
-            blockers.append(f"字典 {lang} 的联系邮箱还是占位值或格式不对：{c}")
+            blockers.append(f"字典 {lang} 的联系方式还是占位值或格式不对（要邮箱或 https://github.com/用户/仓库[/issues]）：{c}")
 
     for h, n in external_hosts(site).items():
         warnings.append(f"源码里出现第三方域名：{h}（{n} 个文件；不等于一定会请求，实际请求要看浏览器网络记录）")
