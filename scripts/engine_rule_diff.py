@@ -374,7 +374,7 @@ def warmup_stress(seeds: int, n: int) -> dict:
 def edge_cases() -> dict:
     import backtrader as bt
     out = {}
-    # 1. 波动率为 0（价格不动 25 根）：自研 vol_scale = target/0 = inf 被夹到 1.0；bt / rq 写的是 <=0 → 0.0
+    # 1. 波动率为 0（价格不动 25 根）：自研 vol_scale 修复前 target/0 = inf 被夹到 1.0（D99 修复后为 0.0，见 tests/test_engine_rules.py）；bt / rq 写的是 <=0 → 0.0
     rng = np.random.default_rng(0)
     c = np.r_[40 + np.cumsum(rng.normal(0, 0.3, 60)), np.full(25, 0.0)]
     c[60:] = c[59]

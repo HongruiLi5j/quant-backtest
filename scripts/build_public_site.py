@@ -30,6 +30,7 @@ import tempfile
 import time
 import unicodedata
 from datetime import datetime, timezone
+import html as _html
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 
@@ -71,13 +72,17 @@ ZH = {
     "state.error.body": "数据暂时没加载出来，刷新页面重试即可。",
     "s6.state.error_body": "数据暂时没加载出来，刷新页面重试即可。",
     "t5.preview_hint": "", "idx.lead": "",
-    "land.cta.signup": "查看方案", "lock.signup": "暂未开放注册", "plan.cta.signup": "暂未开放注册",
+    "land.cta.signup": "看方法论", "lock.signup": "注册暂未开放 · 先看方法论 →", "plan.cta.signup": "暂未开放注册",
     "auth.signup": "注册（暂未开放）", "auth.submit_up": "暂未开放注册",
-    "lock.request": "暂未开放", "plan.cta.request": "暂未开放",
+    "lock.request": "暂未开放 · 先看方法论 →", "plan.cta.request": "暂未开放",
     "t7.link.auth": "登录", "idx.page.auth": "登录", "gate.signup": "目前暂未开放注册",
     "auth.demo": "演示：目前暂未开放注册和登录，表单不会发送。",
     "t7.auth.lead": "目前暂未开放注册，这一页只是演示。将来只需要用户名和密码，不收邮箱、不接第三方登录。",
     "plan.lead": "目前暂未开放注册，下面是将来的三档权益预览。Pro 测试期免费，由所有者手动开通。",
+    "backtest.params.note": "这是这份示例报告用的参数。公开站只读，改参数、重新运行要在本机运行。",   # D27（PUB-7A）
+    # PUB-14（D97 所有者已采纳）：导航「方案」栏 → 方法论
+    "t7.cat.plans": "方法论", "pub.nav.plans": "方法论", "land.nav.plans": "方法论",
+    "land.s9.compare": "看方法论 →", "auth.see_plans": "先看方法论 →",
     # 以下三条原文写着具体的内部接口路径（/api/...），公开站不需要，改成泛称
     "cmp.topnav.p.identity": "后端返回的身份信息；决定哪些项渲染",
     "market.wl.added_toast": "演示：{c} 没有真的加入；真实版本由后端判断配额。",
@@ -88,13 +93,16 @@ EN = {
     "landing.badge": "Live demo · Sample data · No broker access",
     "landing.footer.note": "Demo site · sample data · not investment advice · by Hongrui Li",
     "t5.preview_hint": "", "idx.lead": "",
-    "land.cta.signup": "See plans", "lock.signup": "Sign-ups closed", "plan.cta.signup": "Sign-ups closed",
+    "land.cta.signup": "Read the method", "lock.signup": "Sign-ups closed · read the method →", "plan.cta.signup": "Sign-ups closed",
     "auth.signup": "Sign up (closed)", "auth.submit_up": "Sign-ups closed",
-    "lock.request": "Not open yet", "plan.cta.request": "Not open yet",
+    "lock.request": "Not open yet · read the method →", "plan.cta.request": "Not open yet",
     "t7.link.auth": "Sign in", "idx.page.auth": "Sign in", "gate.signup": "Registration is closed for now",
     "auth.demo": "Demo: sign-up and sign-in are closed for now; nothing is sent.",
     "t7.auth.lead": "Registration is closed for now; this page is a demo. Later it will only need a username and password — no email, no third-party login.",
     "plan.lead": "Registration is closed for now. Below is a preview of the three planned tiers. Pro will be free during beta and turned on by the owner.",
+    "backtest.params.note": "These are the parameters of this example report. The public site is read-only; changing them and re-running needs a local install.",
+    "t7.cat.plans": "Method", "pub.nav.plans": "Methodology", "land.nav.plans": "Methodology",
+    "land.s9.compare": "Read the method →", "auth.see_plans": "Read the method →",
     "cmp.topnav.p.identity": "The identity returned by the backend; decides which items render",
     "market.wl.added_toast": "Demo: {c} was not really added. In the real version the server enforces the quota.",
     "translator.unknown": "The demo understands only the example phrasings; the real version calls the translation service.",
@@ -209,6 +217,13 @@ def load_allowlist(path: Path) -> dict:
         v = al["i18n"].get(lst, [])
         if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
             raise BuildError(f"白名单 i18n.{lst} 必须是字符串列表")
+    ex = al.get("excluded_pages", [])
+    if not isinstance(ex, list) or not all(isinstance(x, str) for x in ex):
+        raise BuildError("白名单 excluded_pages 必须是字符串列表")
+    for rel in ex:
+        validate_rel(rel, "excluded_pages")
+        if rel in al["src_files"]:
+            raise BuildError(f"excluded_pages 和 src_files 同时列了 {rel}")
     if not isinstance(al["required_keys"], list):
         raise BuildError("白名单 required_keys 必须是列表")
     return al
@@ -222,8 +237,10 @@ def plan_files(al: dict) -> list[tuple[str, str, str]]:
 
 
 def needs_pin(rel: str) -> bool:
-    """字典、mock 数据、SVG：文本内容可变且最容易混进内部东西，必须有钉死的哈希。"""
-    return (rel.startswith("shared/i18n-") and rel.endswith(".json")) or rel.startswith("mock-data/") or rel.endswith(".svg")
+    """字典、mock 数据、SVG：文本内容可变且最容易混进内部东西，必须有钉死的哈希。
+    自带的第三方库（shared/vendor/，D25）也钉死：库文件被悄悄改动时构建失败（revtech 第 2 轮）。"""
+    return ((rel.startswith("shared/i18n-") and rel.endswith(".json")) or rel.startswith("mock-data/") or rel.endswith(".svg")
+            or (rel.startswith("shared/vendor/") and Path(rel).suffix not in BINARY_SUFFIX))   # 字体等二进制已在 binary_sha256 钉死
 
 
 # ---------------------------------------------------------------- 引用分析
@@ -381,6 +398,9 @@ def discover(src: Path, al: dict) -> dict:
     seen_rel = {str(p.relative_to(src_r)) for p in seen}
     for lang in ("zh", "en"):           # i18n.js 按 `i18n-${lang}.json` 动态拼接加载，静态分析看不到，按约定算进闭包
         seen_rel.add(f"shared/i18n-{lang}.json")
+    # 白名单里的 excluded_pages：有意不进公开构建的页面（源码页面还链接它们，导出时由 apply_transforms 改写链接），
+    # 见 D27 PUB-10B / PUB-14（D97 所有者已采纳）。构建后的渲染链接检查（overnight/tools/public_linkcheck.py）保证没有死链。
+    seen_rel -= set(al.get("excluded_pages", []))
     return {"in_closure_not_in_allowlist": sorted(seen_rel - set(al["src_files"])),
             "in_allowlist_not_in_closure": sorted(set(al["src_files"]) - seen_rel),
             "unresolved_hard_refs": {k: sorted(v) for k, v in sorted(miss_hard.items())},
@@ -461,6 +481,104 @@ def strip_mock_schema(site: Path) -> int:
     return n
 
 
+def inject_social(site: Path) -> int:
+    """D78（R4-public-1 F1-A）：每个公开页面加分享预览标签（微信 / Slack / 推特 / 领英贴链接时显示标题、摘要和预览图）。
+    标题和摘要直接复用页面自己的 <title> 和 meta description（已是转义过的 HTML 属性值，不再二次转义）。
+    预览图 assets/og-card.jpg 由 overnight/mockups/public_r3/og_card.html 渲染：只有合成数据标注和研究结论数字，
+    没有真实股票名、没有所有者姓名。
+    canonical 和绝对地址的 og:image / og:url 需要正式域名（所有者还没给）：设置环境变量 PUBLIC_BASE_URL
+    （例如 https://example.org）后才输出；没设置时 og:image 用相对路径，部分平台可能不显示图片。"""
+    base = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    # revtech 安全复核：只接受 https:// 开头、不含引号尖括号空白的地址；不合格就当没设置（不输出 canonical / 绝对地址）
+    if base and not re.fullmatch(r"https://[^\s\"'<>]+", base):
+        print(f"PUBLIC_BASE_URL 不是合法的 https 地址，忽略：{base!r}", file=sys.stderr)
+        base = ""
+    esc = lambda v: _html.escape(_html.unescape(v), quote=True)   # 先还原再转义：已转义的不会变成 &amp;amp;
+    try:                                               # D82：og:title 用中文标题词条 title.<page>（公开站以中文访客为主）
+        zh = json.loads((site / "shared" / "i18n-zh.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        zh = {}
+    n = 0
+    for p in sorted(site.rglob("*.html")):
+        rel = p.relative_to(site).as_posix()
+        if rel == "index.html":
+            continue                                   # 根目录 index.html 只做跳转
+        s = p.read_text(encoding="utf-8")
+        if 'property="og:title"' in s:
+            continue
+        t = re.search(r"<title>(.*?)</title>", s, re.S)
+        d = re.search(r'<meta name="description" content="([^"]*)"', s)
+        m = re.search(r'\n(\s*)<meta name="description"[^>]*>', s)
+        if not (t and d and m):
+            continue
+        ind = m.group(1)
+        pg = re.search(r'<body[^>]*data-page="([^"]+)"', s)
+        og_title = zh.get(f"title.{pg.group(1)}") if pg else None
+        og_title = esc(og_title if og_title else t.group(1).strip())
+        img = (f"{base}/assets/og-card.jpg" if base else "../" * (len(p.relative_to(site).parts) - 1) + "assets/og-card.jpg")
+        tags = [f'<meta property="og:type" content="website">',
+                f'<meta property="og:site_name" content="{BRAND}">',
+                f'<meta property="og:title" content="{og_title}">',
+                f'<meta property="og:description" content="{esc(d.group(1))}">',
+                f'<meta property="og:image" content="{esc(img)}">',
+                '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">',
+                '<meta name="twitter:card" content="summary_large_image">']
+        if base:
+            tags += [f'<meta property="og:url" content="{esc(base + "/" + rel)}">', f'<link rel="canonical" href="{esc(base + "/" + rel)}">']
+        s = s[:m.end()] + "".join(f"\n{ind}{x}" for x in tags) + s[m.end():]
+        p.write_text(s, encoding="utf-8")
+        n += 1
+    return n
+
+
+# 页面 → 首屏要读的 mock 数据（与 shared/page-*.js 里 loadMock / fetch 的名字一致）
+PAGE_DATA = {"today": ["pub-today"], "signals": ["pub-signals", "pub-strategies"], "market": ["pub-market"],
+             "strategies": ["pub-strategies"], "backtest": ["backtest"], "member": ["community"], "method": ["pub-method"]}
+STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^'";]*?\sfrom\s+)?['"](\.{1,2}/[^'"]+\.js)['"]""", re.M)
+
+
+def _module_closure(entry: Path, site: Path) -> list[Path]:
+    """从 entry 出发沿静态 import 找到的全部本站模块（动态 import 不跟）。"""
+    seen, todo = [], [entry]
+    while todo:
+        f = todo.pop()
+        if f in seen or not f.is_file():
+            continue
+        seen.append(f)
+        for rel in STATIC_IMPORT.findall(f.read_text(encoding="utf-8")):
+            todo.append((f.parent / rel).resolve())
+    return seen
+
+
+def inject_preload(site: Path) -> int:
+    """D92（PUB-20A）：数据页在 <head> 里预告要用的文件，让浏览器并行下载，而不是"脚本 → 字典 → 数据"一个接一个。
+    - modulepreload：public.js 和本页渲染器 shared/page-<page>.js 的静态 import 闭包；
+    - preload as=fetch（带 crossorigin，和 fetch() 的默认凭据模式一致，否则浏览器不复用）：中文字典、me.json、本页数据。
+    只改导出结果，源码不动；地址都相对页面，和脚本里 new URL(..., import.meta.url) 算出来的一致。"""
+    n = 0
+    site_r = site.resolve()
+    for p in sorted(site.rglob("*.html")):
+        s = p.read_text(encoding="utf-8")
+        m = re.search(r'<script type="module" src="([^"]*public\.js)"></script>', s)
+        pg = re.search(r'<body[^>]*data-page="([^"]+)"', s)
+        if not (m and pg) or 'rel="modulepreload"' in s:
+            continue
+        here = p.parent.resolve()
+        public = (here / m.group(1)).resolve()
+        mods = _module_closure(public, site_r)
+        page_js = public.parent.parent / "shared" / f"page-{pg.group(1)}.js"
+        mods += [x for x in _module_closure(page_js.resolve(), site_r) if x not in mods]
+        rel = lambda f: os.path.relpath(f, here).replace(os.sep, "/")
+        fetches = [public.parent.parent / "shared" / "i18n-zh.json", public.parent.parent / "mock-data" / "me.json"]
+        fetches += [public.parent.parent / "mock-data" / f"{d}.json" for d in PAGE_DATA.get(pg.group(1), [])]
+        tags = [f'<link rel="modulepreload" href="{rel(f)}">' for f in mods if f.is_file()]
+        tags += [f'<link rel="preload" href="{rel(f)}" as="fetch" crossorigin>' for f in fetches if f.is_file()]
+        s = s.replace("</head>", "  <!-- D92 预加载：让字典、数据、模块并行下载 -->\n  " + "\n  ".join(tags) + "\n</head>", 1)
+        p.write_text(s, encoding="utf-8")
+        n += 1
+    return n
+
+
 def apply_transforms(site: Path, al: dict) -> list[str]:
     """把旧脚本里的改写搬过来（品牌名、注册文案、导航裁剪、字典覆盖），并剔除字典里的内部键。
     返回告警列表（某个改写一次都没命中 = 源文件变了，需要人看一下）。"""
@@ -477,7 +595,7 @@ def apply_transforms(site: Path, al: dict) -> list[str]:
         s = s.replace("本机 · 127.0.0.1 · 未连接券商", ZH["story.hero.badge"])
         s = s.replace("可能是本机服务没启动，或数据文件缺失。数据不会丢，重试即可。", ZH["state.error.body"])
         s = s.replace('href="auth.html#signup" data-magnetic data-hero-primary data-i18n="land.cta.signup">Sign up</a>',
-                      'href="pricing.html" data-magnetic data-hero-primary data-i18n="land.cta.signup">See plans</a>')
+                      'href="pricing.html" data-magnetic data-hero-primary data-i18n="land.cta.signup">Read the method</a>')   # PUB-14（D97）：文字改为看方法论，链接在下面统一改
         p.write_text(s, encoding="utf-8")
     for p in sorted(site.rglob("*.js")):
         _sub(p, [("'Quant Backtest'", f"'{BRAND}'")])
@@ -486,12 +604,43 @@ def apply_transforms(site: Path, al: dict) -> list[str]:
     for name, pairs, regex in (
         ("site-nav.js", [(r"\n    \{ key: 't7\.col\.mockups', items: \[\n.*?\n    \] \},", "")], True),
         ("command-palette.js", [(r"\n  \{ key: 'nav\.(holdings|monitor|us_monitor)'[^\n]*", "")], True),
+        # D27（PUB-6B）：注册没开放，锁块按钮不再绕到注册页/方案页（死循环），改去方法论页
+        ("locked-block.js", [("href: opt.href ?? 'pricing.html#pro' }, t('lock.request'))",
+                              "href: opt.href ?? '../METHOD.html' }, t('lock.request'))"),
+                             ("href: opt.href ?? 'auth.html#signup' }, t('lock.signup'))",
+                              "href: opt.href ?? '../METHOD.html' }, t('lock.signup'))")], False),
+        # D27（PUB-10B）：注册没开放时，只对 Free 开放的 4 个页面（engines/validation/replay/translator）不进公开构建；
+        # 指向它们的链接一起去掉（方法论页「看验证报告 / 三引擎对比」两个按钮、落地页「打开 AI 翻译器」）
+        ("page-method.js", [("""prose('method.lookahead.p1', 'method.lookahead.p2', 'method.lookahead.p3'),
+    el('div', { class: 'pub-tools' },
+      el('a', { class: 'btn btn--sm', href: `${Q}validation.html` }, t('method.see_validation')),
+      el('a', { class: 'btn btn--sm btn--ghost', href: `${Q}engines.html` }, t('method.see_engines'))));""",
+                              """prose('method.lookahead.p1', 'method.lookahead.p2', 'method.lookahead.p3'));""")], False),
+        ("landing-sections.js", [("""    el('p', { class: 'lx__note' }, t('land.s7.quota')),
+    el('a', { class: 'lx__link', href: 'translator.html' }, t('land.s7.try'))];""",
+                                  """    el('p', { class: 'lx__note' }, t('land.s7.quota'))];""")], False),
         ("landing-sections.js", [("return { href: 'auth.html#signup', key: 'land.cta.signup' };",
                                   "return { href: 'pricing.html', key: 'land.cta.signup' };")], False),
     ):
         n = _sub(sh / name, pairs, regex)
         if n == 0:
             warns.append(f"改写没有命中：shared/{name}（源文件可能变了）")
+    # ---- PUB-14（合规提示；D97 所有者已采纳，原为 OWNER 预览 a58c5bf）：公开站不放「会员方案」页 ----
+    # 荐股软件规则：推荐证券/择时的软件「直接或者间接获取经济利益」属于证券投资咨询；方案页与信号页并列风险最大
+    # （overnight/research/public.md §1.7）。导航里「方案」一栏改成「方法论」，所有指向 pricing.html 的链接改去方法论页。
+    for p in sorted(site.rglob("*.html")):
+        rel = p.relative_to(site)
+        if rel.parts[0] == "quant-ai-dark":
+            _sub(p, [('href="pricing.html"', 'href="../METHOD.html"'), ('aria-label="展开「方案」菜单"', 'aria-label="展开「方法论」菜单"')])
+        elif rel.name == "METHOD.html":
+            _sub(p, [('href="quant-ai-dark/pricing.html"', 'href="METHOD.html"'), ('aria-label="展开「方案」菜单"', 'aria-label="展开「方法论」菜单"')])
+    for name in ("site-nav.js", "landing-sections.js", "page-auth.js"):
+        if _sub(sh / name, [("'pricing.html'", "'../METHOD.html'")]) == 0:
+            warns.append(f"PUB-14 改写没有命中：shared/{name}")
+    if inject_preload(site) == 0:
+        warns.append("预加载提示一个页面都没加上（源文件可能变了）")
+    if inject_social(site) == 0:
+        warns.append("分享预览标签一个页面都没加上（源文件可能变了）")
     css = sh / "site-nav.css"
     if css.is_file():
         s = css.read_text(encoding="utf-8")
@@ -562,6 +711,165 @@ def pin_report(site: Path) -> dict[str, str]:
             if needs_pin(rel):
                 out[rel] = sha256_file(p)
     return out
+
+
+# ---------------------------------------------------------------- 策略百科只收代码里真有的策略（D54）
+def registry_strategy_ids(root: Path = ROOT) -> set[str] | None:
+    """不 import（避免拉起整个回测依赖），用 ast 读 src/registry.py 里 STRATEGIES = {...} 的键。没有这个文件返回 None。"""
+    import ast
+    p = root / "src" / "registry.py"
+    if not p.is_file():
+        return None
+    for node in ast.parse(p.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "STRATEGIES" for t in node.targets) \
+                and isinstance(node.value, ast.Dict):
+            return {k.value for k in node.value.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    return None
+
+
+def encyclopedia_errors(site: Path, root: Path = ROOT) -> list[str]:
+    sp = site / "mock-data" / "pub-strategies.json"
+    ids = registry_strategy_ids(root)
+    if not sp.is_file() or ids is None:
+        return []
+    try:
+        d = json.loads(sp.read_text(encoding="utf-8"))
+    except ValueError:
+        return ["策略百科：pub-strategies.json 不是合法 JSON"]
+    err = [f"策略百科：{x.get('id')} 在 src/registry.py 的 STRATEGIES 里不存在（公开站只收代码里真有的策略）"
+           for x in d.get("list", []) if x.get("id") not in ids]
+    # D77：名字也必须和 registry 一致（scripts/public_demo_snapshot.py 负责同步）
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from public_demo_snapshot import registry_labels
+        labels = registry_labels()
+    except Exception:
+        labels = {}
+    for x in d.get("list", []):
+        want = labels.get(x.get("id"))
+        if want and (x.get("name"), x.get("name_en")) != (want["name"], want["name_en"]):
+            err.append(f"策略百科：{x.get('id')} 的名字和 src/registry.py 不一致（运行 scripts/public_demo_snapshot.py 同步）")
+    if d.get("count_total") != len(d.get("list", [])):
+        err.append(f"策略百科：count_total={d.get('count_total')} 与实际条目数 {len(d.get('list', []))} 不符")
+    return err
+
+
+# ---------------------------------------------------------------- 演示数据一致性（D26）
+NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def demo_consistency_errors(site: Path) -> list[str]:
+    """今日 / 全市场 / 信号三份演示数据必须互相一致（它们由 scripts/public_demo_snapshot.py 一次生成）。
+    手改了其中一份、或者以后换了数据来源，这里会让构建失败，而不是让页面互相矛盾。"""
+    md = site / "mock-data"
+    names = ("pub-today", "pub-market", "pub-signals")
+    present = [n for n in names if (md / f"{n}.json").is_file()]
+    if not present:
+        return []                                   # 这次导出不含这三页的数据（例如测试夹具），没有可比的
+    if len(present) != len(names):
+        return [f"演示数据一致性：三份数据只导出了 {present}，必须一起导出"]
+    try:
+        today = json.loads((md / "pub-today.json").read_text(encoding="utf-8"))
+        market = json.loads((md / "pub-market.json").read_text(encoding="utf-8"))
+        sig = json.loads((md / "pub-signals.json").read_text(encoding="utf-8"))
+        sp = md / "pub-strategies.json"
+        strat_ids = {x["id"] for x in json.loads(sp.read_text(encoding="utf-8"))["list"]} if sp.is_file() else None
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        return [f"演示数据一致性：读不了 pub-today/market/signals/strategies（{type(e).__name__}）"]
+    err: list[str] = []
+    E = err.append
+    t, y = today.get("today", {}), today.get("yesterday", {})
+    days = sig.get("days", [])
+    if len(days) != 2:
+        return ["演示数据一致性：pub-signals.json 应该正好有 2 天"]
+    if not (t.get("date") == market.get("date") == days[0].get("date")):
+        E(f"演示数据一致性：最新日期不一致 today={t.get('date')} market={market.get('date')} signals={days[0].get('date')}")
+    if y.get("date") != days[1].get("date"):
+        E(f"演示数据一致性：上一交易日日期不一致 yesterday={y.get('date')} signals={days[1].get('date')}")
+    if t.get("market") != market.get("summary"):
+        E("演示数据一致性：今日页的涨跌家数/成交额/站上 20 日线 与 全市场页 summary 不同")
+    prev = market.get("previous")                      # D51：全市场页给游客看的上一交易日
+    if prev is not None:
+        if prev.get("date") != y.get("date") or prev.get("summary") != y.get("market"):
+            E("演示数据一致性：全市场页 previous 与今日页 yesterday 的日期/汇总不同")
+        psec = {x["name"]: x["chg_pct"] for x in prev.get("sectors", [])}
+        for name, _en, chg in y.get("sectors_top", []) + y.get("sectors_bottom", []):
+            if psec.get(name) != chg:
+                E(f"演示数据一致性：上一交易日行业 {name} 今日页 {chg}% ≠ 全市场页 {psec.get(name)}%")
+    if t.get("signals") != days[0].get("signals") or y.get("signals") != days[1].get("signals"):
+        E("演示数据一致性：今日页的信号列表与信号页不同")
+    sec = {s["name"]: s["chg_pct"] for s in market.get("sectors", [])}
+    ranked = sorted(sec.items(), key=lambda kv: kv[1])
+    for name, _en, chg in t.get("sectors_top", []) + t.get("sectors_bottom", []):
+        if sec.get(name) != chg:
+            E(f"演示数据一致性：行业 {name} 今日页 {chg}% ≠ 全市场页 {sec.get(name)}%")
+    if [x[0] for x in t.get("sectors_top", [])] != [k for k, _ in ranked[::-1][:3]] or \
+       [x[0] for x in t.get("sectors_bottom", [])] != [k for k, _ in ranked[:3]]:
+        E("演示数据一致性：今日页的领涨/领跌行业不是全市场页涨跌幅的前 3 / 后 3")
+    for d in (t, y):
+        m = d.get("market", {})
+        if m.get("up", 0) + m.get("down", 0) and d.get("regime", {}).get("breadth") != round(m["up"] / (m["up"] + m["down"]), 2):
+            E(f"演示数据一致性：{d.get('date')} 宽度 ≠ 上涨 ÷（上涨 + 下跌）")
+    seen: dict[str, tuple] = {}
+    stocks = [("rows", r) for r in market.get("rows", [])] + [("watchlist", r) for v in market.get("watchlist", {}).values() for r in v] + \
+             [("signals", s) for s in t.get("signals", [])]
+    for where, r in stocks:
+        code, name = str(r.get("code", "")), str(r.get("name", ""))
+        if not code.startswith("99") or "示例" not in name or not str(r.get("name_en", "")).startswith("Demo"):
+            E(f"演示数据一致性：{where} 里出现不像虚构的股票 {code} {name}（必须 99 开头、名字带「示例」）")
+        key = (name, r.get("close"), r.get("chg_pct"))
+        if code in seen and seen[code] != key:
+            E(f"演示数据一致性：{code} 在不同表里的名字/收盘/涨跌幅不同 {seen[code]} vs {key}")
+        seen.setdefault(code, key)
+    for d in days:
+        for s in d.get("signals", []):
+            if strat_ids is not None and s.get("strategy") not in strat_ids:
+                E(f"演示数据一致性：信号用了策略百科里没有的策略 {s.get('strategy')}")
+            if sorted(NUM_RE.findall(str(s.get("trigger", "")))) != sorted(NUM_RE.findall(str(s.get("trigger_en", "")))):
+                E(f"演示数据一致性：{d['date']} {s.get('code')} 触发说明中英文数字不同")
+    # D52：落地页「收盘后的市场」预览 = 游客看到的上一交易日（同一份合成市场）
+    lp = md / "exports-landing.json"
+    if lp.is_file():
+        try:
+            lm = json.loads(lp.read_text(encoding="utf-8")).get("market", {})
+        except ValueError:
+            lm = {}
+        ym = y.get("market", {})
+        if (lm.get("up"), lm.get("down"), lm.get("flat"), lm.get("regime"), lm.get("yesterday")) != \
+           (ym.get("up"), ym.get("down"), ym.get("flat"), y.get("regime", {}).get("state"), y.get("date")):
+            E("演示数据一致性：落地页市场预览的涨跌家数/市场状态/日期与今日页（上一交易日）不同")
+        ysec = {x[0]: x[2] for x in y.get("sectors_top", []) + y.get("sectors_bottom", [])}
+        for name, _en, chg in lm.get("sectors", []):
+            if ysec.get(name) != chg:
+                E(f"演示数据一致性：落地页行业 {name} {chg}% ≠ 今日页（上一交易日）{ysec.get(name)}%")
+        ysig = {(x["code"], x["strategy"], x["action"]) for x in y.get("signals", [])}
+        for x in lm.get("signals", []):
+            if (x.get("code"), x.get("strategy"), x.get("action")) not in ysig:
+                E(f"演示数据一致性：落地页信号 {x.get('code')} 不在上一交易日的信号列表里")
+    # D52：所有公开 mock 数据里的 6 位股票代码都必须是虚构的（99 开头）
+    for f in sorted(md.glob("*.json")):
+        try:
+            obj = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        stack = [obj]
+        while stack:
+            o = stack.pop()
+            if isinstance(o, dict):
+                for k in ("code", "symbol"):
+                    v = o.get(k)
+                    if isinstance(v, str) and re.fullmatch(r"\d{6}", v) and not v.startswith("99"):
+                        E(f"演示数据一致性：{f.name} 里出现真实格式的代码 {k}={v}（公开演示只用 99 开头的虚构代码）")
+                stack.extend(o.values())
+            elif isinstance(o, list):
+                stack.extend(o)
+    by_code = {}
+    for s in t.get("signals", []):
+        by_code.setdefault(s["code"], set()).add((s["action"], s["strategy"]))
+    for r in market.get("rows", []):
+        if r.get("signal") and (r["signal"], r.get("strategy")) not in by_code.get(r["code"], set()):
+            E(f"演示数据一致性：筛选表 {r['code']} 的信号在信号列表里找不到")
+    return sorted(set(err))
 
 
 def check_site(site: Path, al: dict) -> dict:
@@ -678,6 +986,8 @@ def check_site(site: Path, al: dict) -> dict:
         errors.append(f"引用不到文件：{f} -> {sorted(refs)}")
     for f, refs in sorted(miss_link.items()):
         warnings.append(f"页面链接指向未导出的页面：{f} -> {sorted(refs)}")
+    errors.extend(demo_consistency_errors(site))
+    errors.extend(encyclopedia_errors(site))
     return {"errors": errors, "warnings": warnings, "blockers": sorted(set(blockers)), "stats": {"files": len(files)}}
 
 
