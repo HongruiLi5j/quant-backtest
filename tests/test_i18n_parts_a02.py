@@ -7,6 +7,7 @@
 4. （有 node 时）模拟早上合并后的字典，api.js 的网络错误提示、括号格式在英文下是英文
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -16,9 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
-ZH = json.loads((PARTS / "A02.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A02.en.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
+ZH = parts_compat.part("A02", "zh")
+EN = parts_compat.part("A02", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 # 另一个线程负责的页面，本任务不扫
@@ -33,6 +35,8 @@ ALLOWED = {
     "'holdings 返回异常'", "'monitor 返回异常'", "'api 只接受以 / 开头的相对路径'", "`i18n ${lang} 加载失败`",
     "'debug-fields 加载失败'", "'页面渲染失败'", "'字典加载失败，按页面里写的中文显示'",
     "'中文'", "'## 局限'", "'A股'",
+    # 下面三个是和后端数据比较用的值，不是界面文字：信号账本的 verdict「积累中」（D40），通知标题前缀（D09，A 股专属提醒）
+    "'积累中'", "'今日买卖'", "'盯盘到价提醒'",
 }
 
 
@@ -113,14 +117,11 @@ class A02DictTests(unittest.TestCase):
         for k, v in EN.items():
             self.assertIsNone(CJK.search(v), f"{k}: {v}")
 
-    def test_no_collision_with_base_or_other_parts(self):
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(ZH) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if p.name.startswith("A02."):
-                    continue
-                self.assertFalse(set(ZH) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+            self.assertEqual(parts_compat.missing_in_base("A02", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set()
@@ -160,8 +161,7 @@ globalThis.fetch = async (url) => {
   if (s.startsWith('file:') && s.endsWith('.json')) {          // 字典：基础 + A02 part（模拟早上合并）
     const lang = s.endsWith('/en.json') ? 'en' : 'zh';
     const base = JSON.parse(fs.readFileSync(new URL(s), 'utf8'));
-    const part = JSON.parse(fs.readFileSync(`${ui}/i18n/parts/A02.${lang}.json`, 'utf8'));
-    return { ok: true, json: async () => ({ ...base, ...part }) };
+    return { ok: true, json: async () => base };   // A02 部件早已合并进基础字典并退役
   }
   if (mode === 'abort') { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
   if (mode === 'down') throw new TypeError('fetch failed');

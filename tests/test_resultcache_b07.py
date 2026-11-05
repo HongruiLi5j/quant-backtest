@@ -250,9 +250,14 @@ class TestAppMemo(unittest.TestCase):
 
         class FakeRegistry:
             STRATEGIES = {"blend2": {}, "trend_ens": {}}
+            PERIODS = {"all": (None, None), "is": ("2013-01-01", "2019-12-31"), "recent": ("2020-01-01", "2026-03-31")}   # D43
 
             @staticmethod
-            def run(name, prices, symbol, params, mcfg, cost_bp=None, start=None, market=None, detail=False):
+            def period_bounds(period):
+                return FakeRegistry.PERIODS.get(period or "all", FakeRegistry.PERIODS["all"])
+
+            @staticmethod
+            def run(name, prices, symbol, params, mcfg, cost_bp=None, start=None, market=None, detail=False, end=None):
                 outer.run_calls.append((name, symbol, json.dumps(params, sort_keys=True), cost_bp, start))
                 return {"n": len(outer.run_calls)}
 

@@ -33,6 +33,7 @@ const makeSeries = (kind) => ({
   kind,
   setData(arr) { log.setData.push([kind, arr.length]); },
   applyOptions() {}, createPriceLine() {},
+  priceScale: () => ({ applyOptions() {} }),   // D07：仓位/成交量/RSI/KDJ 窗格会调 series.priceScale().applyOptions(...)
 });
 const makeChart = () => ({
   addSeries: (kind) => { log.kinds.push(kind); return makeSeries(kind); },

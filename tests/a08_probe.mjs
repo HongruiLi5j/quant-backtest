@@ -286,7 +286,8 @@ hist.replaceState = function (_s, _t, url) { this.replaced++; const u = new URL(
   const sg = await fresh('pages/signals.js');
   const root = new FEl('div');
   await sg.render(root); await wait(60);
-  const pressed = () => byTag(root, 'button').filter((b) => b.attrs.role === 'tab' && b.attrs['aria-pressed'] === 'true').map((b) => b.dataset.tab);
+  // axe 修复（c66fc65）后 role=tab 只用 aria-selected 表示当前标签（tab 上不允许 aria-pressed）
+  const pressed = () => byTag(root, 'button').filter((b) => b.attrs.role === 'tab' && b.attrs['aria-selected'] === 'true').map((b) => b.dataset.tab);
   const searchBox = () => byTag(root, 'input').find((i) => i.attrs.type === 'search');
   out.signals_restore = { list: lastCall('/api/trade_list'), pressed: pressed(), search: searchBox()?.attrs.value, sortTh: activeSortTh(root)?.attrs['aria-sort'], replaced: hist.replaced };
   const tabBtn = (k) => byTag(root, 'button').find((b) => b.dataset.tab === k);

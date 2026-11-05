@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import logging
 import random
 import time
 from datetime import datetime, timedelta
@@ -68,11 +69,12 @@ def _fetch_sina(sym: str, start: str) -> pd.DataFrame:
     return raw[raw.index >= pd.Timestamp(start)] if not raw.empty else raw
 
 
-def _sina_fallback(old: pd.DataFrame, sym: str) -> pd.DataFrame | None:
+def _sina_fallback(old: pd.DataFrame, sym: str, raw: pd.DataFrame | None = None) -> pd.DataFrame | None:
     """用新浪的不复权数据补上最近几天，并按重叠日的比例换算成后复权价。
     后复权价 = 原始价 × 复权因子，两次分红之间因子不变，所以按最后一个重叠日的比例缩放即可。
     下次东方财富能连上时，重叠部分对不上会自动整段重下，误差会被纠正。"""
-    raw = _fetch_sina_raw(sym)
+    if raw is None:                          # D57：调用方已经取过就直接用，不再请求一次
+        raw = _fetch_sina_raw(sym)
     common = old.index.intersection(raw.index)
     if raw.empty or not len(common):
         return None
@@ -144,11 +146,18 @@ def update(market: str, sym: str, cfg: dict, retries: int = 3) -> tuple[pd.DataF
     new = pd.DataFrame(columns=COLS)
     for attempt in range(retries):
         try:
-            new = fetch(sym, start)
+            if cfg["source"] == "sina" and not old.empty:
+                # D57：原来先 fetch（= 取新浪原始日线再按 start 截取）判断非空，再在 _sina_fallback 里把同一份原始日线又取一次，
+                # 每个 ETF 每轮请求新浪两次。现在只取一次，两处共用；截取和判断与 _fetch_sina 完全相同，结果不变。
+                raw = _fetch_sina_raw(sym)
+                new = raw[raw.index >= pd.Timestamp(start)] if not raw.empty else raw
+            else:
+                raw = None
+                new = fetch(sym, start)
             if new.empty:
                 raise RuntimeError("数据源返回空行情")
             if cfg["source"] == "sina" and not old.empty:
-                extra = _sina_fallback(old, sym)
+                extra = _sina_fallback(old, sym, raw=raw)
                 if extra is None:
                     raise RuntimeError("没有重叠日期，无法对齐新浪原始价格")
                 new = pd.concat([old.iloc[-10:], extra])
@@ -206,12 +215,44 @@ def update(market: str, sym: str, cfg: dict, retries: int = 3) -> tuple[pd.DataF
     return merged, None, fallback
 
 
+def stock_price_path(market: str, sym: str) -> Path | None:
+    """D98：A 股自选个股优先读的全市场文件（data/daily/cn_all/<代码>.parquet）；不是 A 股个股或文件不存在返回 None。
+
+    原因：自选股的 csv（东方财富后复权）用"加法"复权（把现金分红加回去），早年的百分比涨跌被放大，
+    600531 有 64 天单日涨跌超过 10%（主板不可能）。全市场文件是新浪/腾讯按比例复权的，个股页一直读它。"""
+    if market != "cn" or not is_valid_stock(sym):
+        return None
+    from .allmarket import path as _all_path
+    p = _all_path(sym)
+    return p if p.exists() else None
+
+
+def load_stock_prices(market: str, sym: str) -> pd.DataFrame:
+    """D98：读自选个股的行情。全市场文件存在、而且最后一天不早于 csv 时用它（去掉盘中半根 K 线），否则用 csv。
+    每日任务第 2 步先更新全市场文件、最后一步才算信号，所以正常情况下读的是全市场文件；
+    全市场更新失败、它比 csv 旧时退回 csv，保证不拿旧数据算今天的信号。ETF 和美股不受影响。"""
+    csv = load_cached(market, sym)
+    p = stock_price_path(market, sym)
+    if p is None:
+        return csv
+    from .allmarket import _drop_unfinished, mask_bad_rows
+    try:
+        full = _drop_unfinished(mask_bad_rows(pd.read_parquet(p)))       # D99：复权价 ≤ 0 的行置 NaN
+    except Exception:
+        return csv
+    if full.empty or set(COLS) - set(full.columns):
+        return csv
+    if not csv.empty and full.index[-1] < csv.index[-1]:
+        return csv
+    return full[COLS].astype(float)
+
+
 def load_market(market: str, cfg: dict, with_stocks: bool = True) -> dict[str, pd.DataFrame]:
-    """只读缓存，不联网（网页服务用这个，保证打开网页很快）。"""
+    """只读缓存，不联网（网页服务用这个，保证打开网页很快）。自选个股走 load_stock_prices（D98）。"""
     out = {}
     syms = list(cfg["universe"]) + (list(load_watchlist(market)) if with_stocks else [])
     for s in syms:
-        df = load_cached(market, s)
+        df = load_cached(market, s) if s in cfg["universe"] else load_stock_prices(market, s)
         if not df.empty:
             out[s] = df
     return out
@@ -225,13 +266,11 @@ def is_valid_stock(code: str) -> bool:
     return bool(STOCK_RE.match(code or ""))
 
 
-def limit_pct(code: str, name: str = "") -> float:
-    """涨跌停幅度：科创板/创业板 20%，ST 5%，其余主板 10%。"""
-    if "ST" in name.upper():
-        return 0.05
-    if code.startswith(("688", "689", "300", "301")):
-        return 0.20
-    return 0.10
+def limit_pct(code: str, name: str = "", date=None) -> float:
+    """涨跌停幅度：统一委托 src/limits.py（按日期的规则表：主板 ST 2026-07-06 起 10%、创业板/科创板 ST 按板块 20%、北交所 30%）。
+    date=None 取最新规则。回测仍按「今天的名称 + 最新规则」给整段历史一个幅度（近似，见 limits.limit_series）。"""
+    from .limits import limit_pct as _lp
+    return _lp(code, name, date)
 
 
 def _watch_path(market: str) -> Path:
@@ -310,7 +349,8 @@ def update_stock(market: str, sym: str, cfg: dict, try_em: bool = True) -> tuple
     start = cfg["start"] if old.empty else (old.index[-1] - timedelta(days=15)).strftime("%Y-%m-%d")
     from .allmarket import _fetch_tencent
     sources = [("sina", _fetch_stock_sina), ("tencent", _fetch_tencent)]
-    new, err, used = None, None, None
+    new, used = None, None
+    errs = {}                      # 每个源最后一次的失败原因（D56：两个源都失败时都要写出来）
     for name, fn in sources:
         for attempt in range(2):
             try:
@@ -320,15 +360,20 @@ def update_stock(market: str, sym: str, cfg: dict, try_em: bool = True) -> tuple
                 used = name
                 break
             except Exception as e:
-                err = f"{name} {type(e).__name__}: {str(e)[:100]}"
+                errs[name] = f"{name} {type(e).__name__}: {str(e)[:100]}"
                 if attempt < 1:
                     time.sleep(2 + random.uniform(0, 1))
         if used:
             break
-    if new is None:
-        return old, err, None
+    if used is None:
+        # D56 情况 1：两个源都没给出任何行（空或报错）→ 失败。原来判断的是 new is None，
+        # 而一个源返回空表时 new 是空 DataFrame，错误分支被跳过，返回旧数据且 err=None（静默过期）
+        return old, "；".join(errs.values()) or "数据源返回空行情", None
     new = drop_incomplete_bar(new, cfg["tz"], cfg["close_ready"])
     if new.empty:
+        # D56 情况 2：有返回，但去掉盘中半天 K 线后没有新日期（15:30 前、休市日）→ 不是失败，只记一行
+        if not old.empty:
+            logging.info("%s %s：%s 暂无新的完整日线，沿用本地数据（最新 %s）", market, sym, used, old.index[-1].date())
         return old, (None if not old.empty else "数据源没有这只股票的数据（代码错了或已退市？）"), used
     if not old.empty:
         common = old.index.intersection(new.index)
@@ -339,4 +384,26 @@ def update_stock(market: str, sym: str, cfg: dict, try_em: bool = True) -> tuple
     merged = pd.concat([old[~old.index.isin(new.index)], new]).sort_index()[COLS].astype(float)
     p = cache_path(market, sym)
     _save_cache_csv(merged, p)
+    _note_stale(market, sym, used, merged, has_new=old.empty or new.index[-1] > old.index[-1])   # D56 情况 2/3：只提示，不算失败
     return merged, None, used
+
+
+def _note_stale(market: str, sym: str, source: str, df: pd.DataFrame, has_new: bool, now=None):
+    """D56：取数成功但数据还不是最新时记一行提示，不当作失败（下一轮自动任务会补），不影响 daily_status 的失败计数。
+    - 最后一根早于「应有的最新交易日」（新浪常到晚上 8–9 点才有当天日线）→「还没有 X 的日线」
+    - 没有新日期、但也不落后（15:30 前、休市日）→「暂无新的完整日线」
+    交易日历用和每日任务相同的 allmarket.trade_calendar()（每日任务开头 needs_update 已经读过/缓存过）；出错就不判断落后。"""
+    if df.empty:
+        return
+    last = df.index[-1].date()
+    expected = None
+    if market == "cn":
+        try:
+            from . import allmarket, market_clock
+            expected = market_clock.last_usable_bar_date(now, allmarket.trade_calendar())
+        except Exception:
+            expected = None
+    if expected is not None and last < expected:
+        logging.info("%s %s：%s 还没有 %s 的日线（本地最新 %s），下一轮自动任务再补", market, sym, source, expected, last)
+    elif not has_new:
+        logging.info("%s %s：%s 暂无新的完整日线，沿用本地数据（最新 %s）", market, sym, source, last)

@@ -75,8 +75,17 @@ def test_indicators_agree():
     print(f"✓ 指标一致性：{len(res)} 组指标（SMA/ATR/ADX/RSI/前N日极值/波动率）第 260 根之后相对差都在上界内")
 
 
+def test_zero_volatility_position_agrees():
+    """D99：25 根收盘价全相同（长期停牌填充）时，三个引擎的波动率目标仓位都必须是 0（空仓）。
+    修复前自研 target/0=inf 被夹成 1.0（满仓），与 bt / RQAlpha 的 0.0 不一致。"""
+    z = E.edge_cases()["zero_vol"]
+    assert z["src"] == z["rq"] == z["bt"] == 0.0, f"零波动率仓位三引擎不一致：{z}"
+    print(f"✓ D99 零波动率：自研 / RQAlpha / backtrader 仓位都为 0.0（{z['n_flat_bars']} 根平价）")
+
+
 if __name__ == "__main__":
     test_param_defaults_consistent()
     test_default_signals_agree()
     test_indicators_agree()
+    test_zero_volatility_position_agrees()
     print("全部通过")

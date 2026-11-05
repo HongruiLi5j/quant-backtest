@@ -119,6 +119,26 @@ def _clock_state():
     return market_clock.clock_state(allmarket._now_bj())
 
 
+_HIST_MEMO = {}     # D23：(路径, 文件指纹, 策略) -> (筛好的信号表, 代码集合)；最多留 8 份
+
+
+def _read_hist(path, strategy):
+    """读信号表并筛出本策略的清单信号。按文件指纹缓存（文件一变指纹就变，见 resultcache.file_stamp）。
+    D23：原来每次请求都先读整张 parquet（约 1.4 万行、约 32ms）再去查结果缓存；命中缓存时这一步是白读。
+    返回的表只读，调用方不要修改。"""
+    key = (str(path), _stamp(path), strategy)
+    hit = _HIST_MEMO.get(key)
+    if hit is not None:
+        return hit
+    hist = pd.read_parquet(path)
+    hist = hist[(hist.market == "cn") & (hist.strategy == strategy) & (hist.source == "trade_list")]
+    out = (hist, frozenset(hist.code))
+    if len(_HIST_MEMO) >= 8:
+        _HIST_MEMO.clear()
+    _HIST_MEMO[key] = out
+    return out
+
+
 def evaluate(strategy="blend2", *, cache=None, prices_loader=None):
     """只读上线后的独立信号；不调用 build_replay，不混入旧跟踪样本。
 
@@ -130,16 +150,16 @@ def evaluate(strategy="blend2", *, cache=None, prices_loader=None):
     empty = {"empty": True, "strategy": strategy, "note": NOTE, "groups": []}
     if not path.exists():
         return empty
-    hist = pd.read_parquet(path)
-    hist = hist[(hist.market == "cn") & (hist.strategy == strategy) & (hist.source == "trade_list")]
+    hist, codes = _read_hist(path, strategy)
     if hist.empty:
         return empty
     loader = prices_loader or tracking._prices
     cfg = MARKETS["cn"]
     memo_key = None
     if prices_loader is None:
+        from . import signal_ledger
         memo_key = (str(path), _stamp(path), strategy, id(loader), _clock_state(),
-                    _price_stamps(set(hist.code) | {cfg["main"]}))
+                    _price_stamps(codes | {cfg["main"]}), _stamp(signal_ledger.DB))     # D16：等权基准读账本
         hit = _EVAL_MEMO.get(memo_key)
         if hit is not None:
             return copy.deepcopy(hit)
@@ -149,8 +169,28 @@ def evaluate(strategy="blend2", *, cache=None, prices_loader=None):
     return result
 
 
-def _evaluate_rows(strategy, hist, loader, cfg, tracking):
+def _ledger_baseline(db=None):
+    """D16：从信号核对账本只读取「当天全市场个股等权平均」和随机基线，让这张表和信号核对用同一个基准。
+    返回 ({(day, h): 平均收益}, {(day, h): (跑赢占比, 跑输占比)})；账本不存在或读失败就返回两个空字典（表里显示“数据不足”）。"""
+    from . import signal_ledger as L
+    p = Path(db) if db is not None else L.DB
+    if not p.exists():
+        return {}, {}
+    try:
+        import sqlite3
+        c = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=5)
+        c.row_factory = sqlite3.Row
+        try:
+            return L.baseline(c), L.random_share(c)
+        finally:
+            c.close()
+    except Exception:
+        return {}, {}
+
+
+def _evaluate_rows(strategy, hist, loader, cfg, tracking, ledger_db=None):
     bench = loader("cn", cfg["main"], cfg)
+    ew, rnd = _ledger_baseline(ledger_db)
     cached, rows = {}, []
     for signal in hist.itertuples():
         if signal.code not in cached:
@@ -158,7 +198,7 @@ def _evaluate_rows(strategy, hist, loader, cfg, tracking):
         frame = cached[signal.code]
         if frame is None or frame.empty:
             continue
-        row = {"action": signal.action}
+        row = {"action": signal.action, "day": str(signal.signal_date)[:10]}
         for horizon in tracking.HORIZONS:
             ret, done, _ = tracking._fwd(frame, signal.signal_date, horizon)
             benchmark, benchmark_done, _ = tracking._fwd(bench, signal.signal_date, horizon) if bench is not None else (None, False, None)
@@ -175,7 +215,17 @@ def _evaluate_rows(strategy, hist, loader, cfg, tracking):
             group[f"avg{horizon}"] = sum(value[0] for value in completed) / len(completed) * 100 if completed else None
             group[f"bench_n{horizon}"] = len(comparable)
             group[f"beat{horizon}"] = sum(value[0] > value[2] for value in comparable) / len(comparable) * 100 if comparable else None
+            # D16：和信号核对同一个基准（全市场个股等权平均），卖出/减仓按方向翻转；附随机挑股的基线。单位 %。
+            buy = action in ("买入", "加仓")
+            ew_rows = [(row[horizon][0], ew[(row["day"], horizon)], rnd[(row["day"], horizon)][0 if buy else 1])
+                       for row in selected if row[horizon][1] and row[horizon][0] is not None and (row["day"], horizon) in ew]
+            group[f"ew_n{horizon}"] = len(ew_rows)
+            group[f"ew_dir{horizon}"] = (sum((r > m) if buy else (r < m) for r, m, _ in ew_rows) / len(ew_rows) * 100) if ew_rows else None
+            group[f"ew_random{horizon}"] = (sum(x for _, _, x in ew_rows) / len(ew_rows) * 100) if ew_rows else None
+            group[f"ew_edge{horizon}"] = (group[f"ew_dir{horizon}"] - group[f"ew_random{horizon}"]) if ew_rows else None
         groups.append(group)
     return {"empty": False, "strategy": strategy, "note": NOTE, "groups": groups,
+            "ew_benchmark": "全市场个股等权平均（与信号核对同一基准）；ew_dir=方向正确率，ew_random=随机挑股的同口径基线，ew_edge=两者之差（百分点）",
+            "beat_benchmark": f"{cfg['main']}（沪深300ETF，大盘股）",
             "since": hist.signal_date.min(), "recorded_signals": len(hist),
             "latest_price_date": str(bench.index[-1].date()) if bench is not None and not bench.empty else None}

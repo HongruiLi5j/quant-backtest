@@ -93,7 +93,14 @@ class TestF01Landing(unittest.TestCase):
     def test_allowlist_closure_unchanged(self):
         rep = B.discover(MOCK, B.load_allowlist(B.ALLOWLIST_DEFAULT))
         self.assertEqual(rep["in_closure_not_in_allowlist"], [])
-        self.assertEqual(rep["in_allowlist_not_in_closure"], [])
+        # 白名单里有、但静态分析看不到引用的文件只能是这两类（D24/D25 自带的第三方文件）：
+        #   - 许可证原文（随文件一起发布，本来就不会被页面引用）；
+        #   - 只通过 importmap / 动态 import(变量) 加载的库：three.js 及其 addons（landing.html 的 importmap）、
+        #     qrcode-generator（share-modal.js 的 import(QR_LIB)）。
+        dynamic = {"shared/vendor/qrcode-generator/qrcode-generator.esm.js", "shared/vendor/three/three.module.min.js"}
+        ok = lambda rel: (rel.startswith("shared/vendor/") and rel.rsplit("/", 1)[-1] in ("LICENSE.txt", "FFL.txt")) \
+            or rel in dynamic or rel.startswith("shared/vendor/three/addons/")
+        self.assertEqual([r for r in rep["in_allowlist_not_in_closure"] if not ok(r)], [])
         self.assertEqual(rep["unresolved_hard_refs"], {})
 
     def test_sections_js_safe_dom_and_synthetic_label(self):

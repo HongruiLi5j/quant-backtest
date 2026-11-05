@@ -21,7 +21,10 @@ def vol_scale(close: pd.Series, target_vol: float | None, vol_len: int = 20,
     position = min(max_lev, target annualized vol / realized annualized vol over the past vol_len days)"""
     if target_vol is None:
         return pd.Series(1.0, index=close.index)
-    return (target_vol / realized_vol(close, vol_len)).clip(upper=max_lev)
+    rv = realized_vol(close, vol_len)
+    # D99（旧补丁 02 的 c）：已实现波动率恰为 0（如长期停牌按前收盘填充）时 target/0=inf 会被夹成满仓；
+    # 与 backtrader / RQAlpha（vol<=0 → 0）一致改为空仓。rv 为 NaN（预热期）时仍是 NaN，不变。
+    return (target_vol / rv.where(rv > 0)).clip(upper=max_lev).where(rv != 0, 0.0)
 
 
 # ---------------------------------------------------------------- 1. Trend + volatility target
@@ -36,18 +39,22 @@ def trend_vol_target(df: pd.DataFrame, sma_len: int = 200, buffer: float = 0.01,
 
     buffer: a hysteresis band. Price must be 1% above the average to enter and 1% below to exit, which reduces whipsaws around the average.
     """
-    c = df["Close"].to_numpy()
-    m = sma(df["Close"], sma_len).to_numpy()
-    state = np.zeros(len(c))
+    # 性能（R3-perf-1 P3）：逐日循环改用 Python 浮点（tolist），规则和比较完全不变，结果逐位相同；
+    # 原来每一步都取 numpy 标量，单只 3500 天约 1.3ms，现在约十分之一
+    c = df["Close"].to_numpy(dtype=float).tolist()
+    m = sma(df["Close"], sma_len).to_numpy(dtype=float).tolist()
+    up, down = 1 + buffer, 1 - buffer
+    flags = [0.0] * len(c)
     on = False
-    for t in range(len(c)):
-        if np.isnan(m[t]):
+    for t, (ct, mt) in enumerate(zip(c, m)):
+        if mt != mt:          # NaN（均线还没有足够数据）
             continue
-        if not on and c[t] > m[t] * (1 + buffer):
+        if not on and ct > mt * up:
             on = True
-        elif on and c[t] < m[t] * (1 - buffer):
+        elif on and ct < mt * down:
             on = False
-        state[t] = on
+        flags[t] = 1.0 if on else 0.0
+    state = np.array(flags)
     w = pd.Series(state, index=df.index) * vol_scale(df["Close"], target_vol, vol_len, max_lev)
     return w.fillna(0.0).rename("trend_vol")
 
@@ -76,23 +83,26 @@ def donchian_breakout(df: pd.DataFrame, entry_len: int = 55, exit_len: int = 20,
     A simplified version of the classic Turtle trading rules (Faith, "Way of the Turtle").
     The chandelier exit moves up as price rises, which locks in profits.
     """
-    c = df["Close"].to_numpy()
-    hi = df["High"].rolling(entry_len).max().shift(1).to_numpy()   # excludes today
-    lo = df["Low"].rolling(exit_len).min().shift(1).to_numpy()
-    a = atr(df, atr_len).to_numpy()
-    state = np.zeros(len(c))
+    # 性能（R3-perf-1 P3）：逐日循环用 Python 浮点（tolist），规则和比较不变，结果逐位相同
+    c = df["Close"].to_numpy(dtype=float).tolist()
+    hi = df["High"].rolling(entry_len).max().shift(1).to_numpy(dtype=float).tolist()   # excludes today
+    lo = df["Low"].rolling(exit_len).min().shift(1).to_numpy(dtype=float).tolist()
+    a = atr(df, atr_len).to_numpy(dtype=float).tolist()
+    flags = [0.0] * len(c)
     on, peak = False, 0.0
     for t in range(len(c)):
-        if np.isnan(hi[t]) or np.isnan(a[t]):
+        ct, ht, at = c[t], hi[t], a[t]
+        if ht != ht or at != at:          # NaN：通道或 ATR 数据还不够
             continue
         if not on:
-            if c[t] > hi[t]:
-                on, peak = True, c[t]
+            if ct > ht:
+                on, peak = True, ct
         else:
-            peak = max(peak, c[t])
-            if c[t] < lo[t] or c[t] < peak - atr_mult * a[t]:
+            peak = max(peak, ct)
+            if ct < lo[t] or ct < peak - atr_mult * at:
                 on = False
-        state[t] = on
+        flags[t] = 1.0 if on else 0.0
+    state = np.array(flags)
     w = pd.Series(state, index=df.index) * vol_scale(df["Close"], target_vol, vol_len)
     return w.fillna(0.0).rename("donchian")
 
@@ -117,23 +127,26 @@ def rsi2_reversion(df: pd.DataFrame, trend_len: int = 200, rsi_len: int = 2,
     Traits: high win rate, short holding periods, in cash most of the time; very low correlation with trend strategies, so it works well in a blend.
     Risk: there is no price stop, so a sustained crash (e.g. March 2020) can cause large losses -> the holding cap max_hold limits this.
     """
-    c = df["Close"].to_numpy()
-    trend = sma(df["Close"], trend_len).to_numpy()
-    r = rsi(df["Close"], rsi_len).to_numpy()
-    ex = sma(df["Close"], exit_ma).to_numpy()
-    state = np.zeros(len(c))
+    # 性能（R3-perf-1 P3）：逐日循环用 Python 浮点（tolist），规则和比较不变，结果逐位相同
+    c = df["Close"].to_numpy(dtype=float).tolist()
+    trend = sma(df["Close"], trend_len).to_numpy(dtype=float).tolist()
+    r = rsi(df["Close"], rsi_len).to_numpy(dtype=float).tolist()
+    ex = sma(df["Close"], exit_ma).to_numpy(dtype=float).tolist()
+    flags = [0.0] * len(c)
     on, held = False, 0
     for t in range(len(c)):
-        if np.isnan(trend[t]) or np.isnan(r[t]):
+        tt, rt = trend[t], r[t]
+        if tt != tt or rt != rt:          # NaN：均线或 RSI 数据还不够
             continue
         if not on:
-            if c[t] > trend[t] and r[t] < entry_th:
+            if c[t] > tt and rt < entry_th:
                 on, held = True, 0
         else:
             held += 1
             if c[t] > ex[t] or held >= max_hold:
                 on = False
-        state[t] = on
+        flags[t] = 1.0 if on else 0.0
+    state = np.array(flags)
     return pd.Series(state, index=df.index, name="rsi2")
 
 

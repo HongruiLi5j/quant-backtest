@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import export_factor_view as X  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402
 
 UI = ROOT / "dashboard" / "ui"
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
@@ -106,8 +108,9 @@ class FrontendStaticTests(unittest.TestCase):
         for k in used:
             self.assertIn(k, self.ZH, k)
             self.assertIn(k, self.EN, k)
-        parts_zh = json.loads((UI / "i18n" / "parts" / "N24.zh.json").read_text(encoding="utf-8"))
-        parts_en = json.loads((UI / "i18n" / "parts" / "N24.en.json").read_text(encoding="utf-8"))
+        # N24 部件已退役：键名单来自快照 tests/fixtures/i18n_parts_keys.json，值取基础字典（D29 有意改过其中几条措辞）
+        parts_zh = parts_compat.part("N24", "zh")
+        parts_en = parts_compat.part("N24", "en")
         self.assertEqual(set(parts_zh), set(parts_en))
         for k in parts_zh:
             self.assertEqual(self.ZH[k], parts_zh[k])

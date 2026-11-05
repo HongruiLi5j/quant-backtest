@@ -19,7 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MOCK = ROOT / "dashboard" / "mockups"
-PARTS = ROOT / "dashboard" / "ui" / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_public_site as B  # noqa: E402  只用它的红线词、合规词常量，不构建
 
@@ -33,6 +34,8 @@ ALLOWED_NUMBERS = {
     "0.95": "DSR ≥ 0.95 的门槛（C04）",
     "1": "1 个百分点（合成演示规则）/ 1 个检验（C08）/ 第 1 节 / T+1",
     "1.16": "515 次纯噪声最大夏普约 1.16（C04）",
+    "1.1": "515 次纯噪声最大夏普约 1.1–1.2（C04；revquant 复核 6–7 年样本为 1.09–1.18）",
+    "1.2": "同上（1.1–1.2 的上界）",
     "2": "第 2 节 / 12.6、4.5 等小数的一部分",
     "3": "2026 年 3 月",
     "03": "2026-03-31",
@@ -85,8 +88,9 @@ class F02CopyTest(unittest.TestCase):
     def setUpClass(cls):
         cls.zh = load(MOCK / "shared" / "i18n-zh.json")
         cls.en = load(MOCK / "shared" / "i18n-en.json")
-        cls.pzh = load(PARTS / "F02.zh.json")
-        cls.pen = load(PARTS / "F02.en.json")
+        # F02 部件原是公开站字典的镜像，已退役：键名单来自快照，值直接从公开站字典取（缺键会报 KeyError）
+        cls.pzh = parts_compat.part("F02", "zh", source=cls.zh)
+        cls.pen = parts_compat.part("F02", "en", source=cls.en)
 
     def test_dict_keys_match(self):
         self.assertEqual(set(self.zh), set(self.en))

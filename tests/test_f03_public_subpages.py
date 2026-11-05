@@ -20,7 +20,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MOCK = ROOT / "dashboard" / "mockups"
-PARTS = ROOT / "dashboard" / "ui" / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_public_site as B  # noqa: E402  只用它的红线词、合规词常量，不构建
 
@@ -60,8 +61,9 @@ class F03SubpagesTest(unittest.TestCase):
     def setUpClass(cls):
         cls.zh = load(MOCK / "shared" / "i18n-zh.json")
         cls.en = load(MOCK / "shared" / "i18n-en.json")
-        cls.pzh = load(PARTS / "F03.zh.json")
-        cls.pen = load(PARTS / "F03.en.json")
+        # F03 部件原是公开站字典的镜像，已退役：键名单来自快照，值直接从公开站字典取（缺键会报 KeyError）
+        cls.pzh = parts_compat.part("F03", "zh", source=cls.zh)
+        cls.pen = parts_compat.part("F03", "en", source=cls.en)
         cls.code = "\n".join(read(f) for f in JS_FILES + HTML_FILES)
 
     def test_dict_and_parts_keys_match(self):

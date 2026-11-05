@@ -57,6 +57,9 @@ globalThis.CustomEvent = class { constructor(type) { this.type = type; } };
 /* ---------- 假接口：/api/meta 返回测试传入的 meta（来自真实 registry）；/api/backtest 记录参数并返回固定的最新数据日 ---------- */
 const DATA_END = '2026-10-23';
 const calls = [];
+// i18n 部件已退役（parts/ 移到 _to_delete/，词条全部在基础字典里）：「合并前」= 基础字典去掉该任务的键（键名单见 tests/fixtures/i18n_parts_keys.json）
+const PART_KEYS = JSON.parse(fs.readFileSync(new URL('./fixtures/i18n_parts_keys.json', import.meta.url), 'utf8'));
+const without = (d, keys) => Object.fromEntries(Object.entries(d).filter(([k]) => !keys.includes(k)));
 let withMerge = merge === '1';
 globalThis.fetch = async (path) => {
   const s = String(path);
@@ -64,8 +67,7 @@ globalThis.fetch = async (path) => {
   if (s.startsWith('file:')) {   // i18n 字典
     const lang = s.endsWith('/en.json') ? 'en' : 'zh';
     const base = JSON.parse(fs.readFileSync(new URL(s), 'utf8'));
-    const part = withMerge ? JSON.parse(fs.readFileSync(`${ui}/i18n/parts/A09.${lang}.json`, 'utf8')) : {};
-    return ok({ ...base, ...part });
+    return ok(withMerge ? base : without(base, PART_KEYS.A09));
   }
   const [p, qs = ''] = s.split('?');
   if (p === '/api/meta') return ok(META);

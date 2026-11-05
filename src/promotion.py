@@ -16,8 +16,15 @@
      第一步要求 p ≤ 0.05/25 = 0.002，即最多只有 1 个对照比它高。
   5. 晋升门槛（缺一不可）：≥12 个完整交易周、≥500 条已走满 5 日的信号、连续 4 个周检查点都通过 Holm、
      相对现任（现任已不通过检验，或周配对平均多 0.3% 且 t≥2）、现任满 12 周任期。
-局限：对照假设每天独立抽样，没有保留“同一只股票连续多天被持有”带来的相关性，所以零分布仍可能偏窄；
-      对照是在全市场里均匀抽股票，真实策略如果偏好某类股票（小盘、高波动），它的得分波动本来就和均匀抽样不同。
+D100 起 p 值改用「区块抽样」对照（block_weekly）：随机持仓抽到一只股票后连续持有 L 个信号日，L 从该策略自己
+      “同一只股票、同一方向连续出信号的天数”里有放回地抽。原因见 docs/research_findings.md C02：每天独立抽样的对照
+      在策略连续持仓时只有真实波动的 50%~61%，没本事的策略在 α=5% 下有 16%~19% 被判显著；区块对照把它拉回约 4%。
+      算法与 scripts/promotion_block_null.py 的 block_null 逐位相同（tests/test_promotion_block_d100.py 核对）。
+      每天独立抽样的 null_draws 照旧写入，只作对照显示（p_iid）。
+局限：对照是在全市场里均匀抽股票，真实策略如果偏好某类股票（小盘、高波动），它的得分波动本来就和均匀抽样不同；
+      同一天信号之间的相关（行业、市值偏好）两种对照都没模拟；区块对照每次从头重算（不存表），账本越长越慢
+      （沙盒账本 12 个信号日约 1.5 秒）；K=1000 时 Holm 第一步（p ≤ 0.002）最多只容 1 个对照不低于它，p 的分辨率很粗
+      （旧补丁 08 用 K=5000，但按天存的零分布一年约 375MB，这里没采用）。
 纯函数 + sqlite；numpy 只在这里用。
 """
 from __future__ import annotations
@@ -41,6 +48,7 @@ MIN_TENURE_DAYS = 84        # 12 周
 BEAT_GAIN = 0.003           # 相对现任：每条信号平均多 0.3%（约两倍来回费用）
 BEAT_T = 2.0
 NOISE_PCT = (2.5, 97.5)
+NULL_METHOD = "block"       # D100：晋升 p 值用的对照；"iid" = 旧的每天独立抽样（null_draws）
 
 
 def is_control(name) -> bool:
@@ -123,6 +131,219 @@ def ensure_null(c, k: int = NULL_K) -> int:
     return written
 
 
+# ------------------------------------------------------------ 区块抽样对照（D100）
+def run_lengths(daily) -> np.ndarray:
+    """每段「同一代码连续出现的天数」（按给定的日序列计连续），与 scripts/promotion_block_null.run_lengths 相同。"""
+    out, cur = [], {}
+    for s in daily:
+        s = set(np.asarray(s).tolist())
+        out += [v for cd, v in cur.items() if cd not in s]
+        cur = {cd: cur.get(cd, 0) + 1 for cd in s}
+    out += list(cur.values())
+    return np.array(out, dtype=int)
+
+
+def block_side(ex, ok_all, sig, lengths, k, rng):
+    """一个方向的区块抽样，与 scripts/promotion_block_null._block_side 同一算法、同样的随机数消耗顺序。
+    ex/ok_all：每个信号日的 (U,) 超额收益 / 能否被抽到；sig：每天的信号（代码下标）。
+    返回 ((T,k) 抽到的超额之和, (T,k) 其中 ex>0 的个数, (T,k) 其中 ex<0 的个数)；买入命中用前者，卖出命中用后者。"""
+    T = len(sig)
+    out = np.zeros((T, k))
+    pos = np.zeros((T, k), dtype="<i4")
+    neg = np.zeros((T, k), dtype="<i4")
+    codes = np.zeros((k, 0), dtype=int)
+    rem = np.zeros((k, 0), dtype=int)                                  # 含当天在内还剩几天
+    for t in range(T):
+        n = len(sig[t])
+        if n == 0:                                                     # 当天这个方向没有信号：所有块中断
+            codes = rem = np.zeros((k, 0), dtype=int)
+            continue
+        ok = ok_all[t]
+        pool = np.flatnonzero(ok)
+        new_c = pool[rng.integers(0, len(pool), (k, n))]               # 先全部按新开块准备好
+        new_r = rng.choice(lengths, size=(k, n))
+        if codes.shape[1]:
+            alive = (rem > 1) & ok[codes]                               # 寿命没到、且今天还能被抽到
+            keys = np.where(alive, rng.random(alive.shape), 2.0)       # 活块排前面、彼此随机；多于 n 个时随机留 n 个
+            order = np.argsort(keys, axis=1, kind="stable")[:, :n]
+            m = order.shape[1]
+            ka = np.take_along_axis(alive, order, 1)
+            new_c[:, :m] = np.where(ka, np.take_along_axis(codes, order, 1), new_c[:, :m])
+            new_r[:, :m] = np.where(ka, np.take_along_axis(rem, order, 1) - 1, new_r[:, :m])
+        codes, rem = new_c, new_r
+        e = ex[t][codes]
+        out[t] = e.sum(1)
+        pos[t] = (e > 0).sum(1)
+        neg[t] = (e < 0).sum(1)
+    return out, pos, neg
+
+
+SECTOR_MIN_POOL = 10                    # D109 方案 B：同行业可抽的股票少于这个数就退回全市场池
+SECTOR_FALLBACKS = [0]                 # 计数：退回全市场池的次数（报告里要写）
+
+
+def block_side_sector(ex, ok_all, sig, lengths, k, rng, industry=None, min_pool: int = SECTOR_MIN_POOL):
+    """D109 方案 B：同 block_side，但新开块的股票从「信号所在行业」里抽（行业孪生）。
+    industry：(U,) 整数数组，行业编号，-1 = 未知（未知行业的信号用全市场池）；None = 不分行业，直接调用 block_side（逐位相同）。
+    做法：当天 n 条信号的行业随机打乱后分给 n 个槽位；每个槽位的新块从「同行业且今天能被抽到」的股票里均匀抽；
+    该行业可抽的股票 < min_pool 只则退回全市场池（计数在 SECTOR_FALLBACKS）。已在跑的块不换行业，其余逻辑和 block_side 一样。
+    检验的是同行业内选股，不奖励行业轮动。"""
+    if industry is None:
+        return block_side(ex, ok_all, sig, lengths, k, rng)
+    industry = np.asarray(industry)
+    T = len(sig)
+    out = np.zeros((T, k))
+    pos = np.zeros((T, k), dtype="<i4")
+    neg = np.zeros((T, k), dtype="<i4")
+    codes = np.zeros((k, 0), dtype=int)
+    rem = np.zeros((k, 0), dtype=int)
+    for t in range(T):
+        n = len(sig[t])
+        if n == 0:
+            codes = rem = np.zeros((k, 0), dtype=int)
+            continue
+        ok = ok_all[t]
+        pool = np.flatnonzero(ok)
+        slot_ind = industry[np.asarray(sig[t], dtype=int)][np.argsort(rng.random((k, n)), axis=1)]   # (k, n) 每个槽位的行业
+        new_c = pool[rng.integers(0, len(pool), (k, n))]                  # 默认全市场池（行业未知/池太小的槽位用它）
+        for g in np.unique(slot_ind):
+            if g < 0:
+                continue
+            m_g = slot_ind == g
+            pg = np.flatnonzero(ok & (industry == g))
+            if len(pg) < min_pool:
+                SECTOR_FALLBACKS[0] += int(m_g.sum())
+                continue
+            new_c[m_g] = pg[rng.integers(0, len(pg), int(m_g.sum()))]
+        new_r = rng.choice(lengths, size=(k, n))
+        if codes.shape[1]:
+            alive = (rem > 1) & ok[codes]
+            keys = np.where(alive, rng.random(alive.shape), 2.0)
+            order = np.argsort(keys, axis=1, kind="stable")[:, :n]
+            m = order.shape[1]
+            ka = np.take_along_axis(alive, order, 1)
+            new_c[:, :m] = np.where(ka, np.take_along_axis(codes, order, 1), new_c[:, :m])
+            new_r[:, :m] = np.where(ka, np.take_along_axis(rem, order, 1) - 1, new_r[:, :m])
+        codes, rem = new_c, new_r
+        e = ex[t][codes]
+        out[t] = e.sum(1)
+        pos[t] = (e > 0).sum(1)
+        neg[t] = (e < 0).sum(1)
+    return out, pos, neg
+
+
+_BLOCK_MEMO: dict = {}
+
+
+def _ledger_stamp(c) -> tuple:
+    """账本内容的指纹：哪个库文件、本连接写过多少行、别的连接有没有提交过、各表行数。任何一项变了就重算。"""
+    q = lambda sql: tuple(tuple(r) for r in c.execute(sql).fetchall())
+    return (q("PRAGMA database_list"), c.total_changes, q("PRAGMA data_version"),
+            q("SELECT COUNT(*), MAX(day) FROM done WHERE h=5 AND n>0"), q("SELECT strategy, COUNT(*), MAX(day) FROM signals GROUP BY strategy"),
+            q("SELECT COUNT(*) FROM moves WHERE h=5"))
+
+
+def block_days(c, k: int = NULL_K) -> dict:
+    """全部非对照策略的区块对照，按信号日：{策略: [(day, n, own_sum, own_hits, sums(k,), hits(k,)), ...]}。
+    口径与 ensure_null 相同（当天全市场均值做基准、买入扣来回费用、开盘一字板不算、跳过没有有效信号的天）；
+    只是随机持仓会连续持有。每个策略一个固定种子，结果只取决于账本内容（同一账本重算结果相同）。"""
+    from . import signal_ledger as L
+    key = (_ledger_stamp(c), k)
+    if key in _BLOCK_MEMO:
+        return _BLOCK_MEMO[key]
+    cost = L.ROUND_TRIP_BP / 1e4
+    days = [r["day"] for r in c.execute("SELECT day FROM done WHERE h=? AND n>0 ORDER BY day", (H,))]
+    per = {}
+    for r in c.execute("SELECT day, code, ret, lim FROM moves WHERE h=? ORDER BY day", (H,)):
+        per.setdefault(r["day"], []).append((r["code"], r["ret"], r["lim"]))
+    days = [d for d in days if per.get(d)]
+    codes = sorted({cd for d in days for cd, _, _ in per[d]})
+    ix = {cd: i for i, cd in enumerate(codes)}
+    U = len(codes)
+    EX, OKB, OKS, BASE = {}, {}, {}, {}
+    for d in days:
+        i = np.array([ix[cd] for cd, _, _ in per[d]], dtype=int)
+        ret = np.array([x for _, x, _ in per[d]], dtype="f8")
+        lim = np.array([x for _, _, x in per[d]])
+        BASE[d] = float(ret.mean())
+        ex = np.full(U, np.nan); ex[i] = ret - BASE[d]
+        okb = np.zeros(U, bool); oks = np.zeros(U, bool)
+        okb[i[lim != 1]] = True; oks[i[lim != -1]] = True
+        EX[d], OKB[d], OKS[d] = ex, okb, oks
+    dset = set(days)
+    sig = {}
+    for r in c.execute("""SELECT s.day, s.strategy, s.code, s.action, m.lim FROM signals s
+                          JOIN moves m ON m.day=s.day AND m.code=s.code AND m.h=? ORDER BY s.day, s.rowid""", (H,)):
+        if r["day"] not in dset or is_control(r["strategy"]):
+            continue
+        buy = r["action"] in L.BUYS
+        if r["lim"] == (1 if buy else -1):
+            continue
+        b, s_ = sig.setdefault(r["strategy"], {}).setdefault(r["day"], ([], []))
+        (b if buy else s_).append(ix[r["code"]])
+    out = {}
+    for strat in sorted(sig):
+        bd = [d for d in days if d in sig[strat]
+              and not ((sig[strat][d][0] and not OKB[d].any()) or (sig[strat][d][1] and not OKS[d].any()))]
+        if not bd:
+            continue
+        buys = [np.array(sig[strat][d][0], dtype=int) for d in bd]
+        sells = [np.array(sig[strat][d][1], dtype=int) for d in bd]
+        ex = [EX[d] for d in bd]
+        rng = np.random.default_rng(zlib.crc32(f"block|{strat}".encode()))
+        T = len(bd)
+        sums = np.zeros((T, k)); hits = np.zeros((T, k), dtype="<i4")
+        nb = np.array([len(b) for b in buys])
+        if nb.any():
+            lb = run_lengths(buys)
+            e, p_, _ = block_side(ex, [OKB[d] for d in bd], buys, lb if len(lb) else np.array([1]), k, rng)
+            sums += e - (nb * cost)[:, None]; hits += p_
+        if any(len(s_) for s_ in sells):
+            ls = run_lengths(sells)
+            e, _, n_ = block_side(ex, [OKS[d] for d in bd], sells, ls if len(ls) else np.array([1]), k, rng)
+            sums += -e; hits += n_
+        rows = []
+        for t, d in enumerate(bd):
+            eb, es = ex[t][buys[t]], ex[t][sells[t]]
+            own = float((eb - cost).sum() + (-es).sum())
+            oh = int((eb > 0).sum() + (es < 0).sum())
+            rows.append((d, len(buys[t]) + len(sells[t]), own, oh, sums[t], hits[t]))
+        out[strat] = rows
+    _BLOCK_MEMO.clear()                                    # 只留最近一份：一年账本约 250 天 × 25 策略 × K 个，按天存约 75MB
+    _BLOCK_MEMO[key] = out
+    return out
+
+
+def block_weekly(c, strategy: str, cw: list[str], lo: str | None = None, hi: str | None = None, k: int = NULL_K) -> dict:
+    """与 load_weekly 同样的返回结构，只是对照换成区块抽样。"""
+    ok = set(cw)
+    agg = {}
+    for d, n, own, oh, s, h in block_days(c, k).get(strategy, []):
+        if (lo and d <= lo) or (hi and d > hi):
+            continue
+        w = week_key(d)
+        if w not in ok:
+            continue
+        a = agg.get(w)
+        if a is None:
+            agg[w] = [n, own, oh, s.copy(), h.astype("f8"), 1]
+        else:
+            a[0] += n; a[1] += own; a[2] += oh; a[3] += s; a[4] += h; a[5] += 1
+    weeks = sorted(agg)
+    if not weeks:
+        return {"weeks": [], "n": [], "days": [], "own": np.zeros(0), "null": np.zeros((0, k)), "own_hits": np.zeros(0), "null_hits": np.zeros((0, k))}
+    return {"weeks": weeks, "n": [agg[w][0] for w in weeks], "days": [agg[w][5] for w in weeks],
+            "own": np.array([agg[w][1] / agg[w][0] for w in weeks]),
+            "null": np.array([agg[w][3] / agg[w][0] for w in weeks]),
+            "own_hits": np.array([agg[w][2] for w in weeks], dtype="f8"),
+            "null_hits": np.array([agg[w][4] for w in weeks])}
+
+
+def weekly(c, strategy, cw, lo=None, hi=None, k=NULL_K, method=None) -> dict:
+    """晋升检验用的周数据：method="block"（默认，D100）或 "iid"（旧的 null_draws）。"""
+    return (block_weekly if (method or NULL_METHOD) == "block" else load_weekly)(c, strategy, cw, lo, hi, k)
+
+
 # ------------------------------------------------------------ 按周聚合
 def complete_weeks(c, today: str) -> list[str]:
     """已经结束、且这一周所有信号日都已走满 5 日的交易周。当前这一周不算。"""
@@ -169,6 +390,29 @@ def _cum(wk):
 
 def _emp_p(own, null_row) -> float:
     return float((1 + (null_row >= own).sum()) / (len(null_row) + 1))
+
+
+def weekly_t_p(own, null) -> float:
+    """D109（方案 A）：按周 t 检验的单侧 p。own (W,) 每周平均得分，null (W,K) 对照每周平均得分；
+    d_w = 自己 − 对照均值（K 个对照取平均），用周与周之间的实际波动算 t，df = 周数 − 1。
+    同一周里所有信号共同的冲击（行业、风格）会体现在 d_w 的波动里，不需要对照去模拟。周数 < 2 返回 1.0。"""
+    from scipy import stats
+    d = np.asarray(own, dtype="f8") - np.asarray(null, dtype="f8").mean(1)
+    W = len(d)
+    if W < 2:
+        return 1.0
+    sd = d.std(ddof=1)
+    if not sd > 0:
+        return 1.0 if d.mean() <= 0 else 0.0
+    return float(stats.t.sf(d.mean() / (sd / math.sqrt(W)), W - 1))
+
+
+WEEKLY_T_GATE = False        # D109：方案 A 未通过预注册（N3 在 5% 处 8.5% > 6.5%），B 也没通过 → 默认关闭，是否启用是所有者的独立决定
+
+
+def gate_p(p_null: float, p_t: float) -> float:
+    """晋升的组合门：区块（或旧）对照 p 与按周 t 检验的 p 都要小，所以取较大的那个送进 Holm。WEEKLY_T_GATE 关闭时只用对照 p。"""
+    return max(p_null, p_t) if WEEKLY_T_GATE else p_null
 
 
 def holm(p: dict, m: int, alpha: float = ALPHA) -> set:
@@ -218,14 +462,15 @@ def summarize(wk: dict, m: int, k: int = NULL_K) -> dict:
 
 
 # ------------------------------------------------------------ 晋升状态（全部策略）
-def promotion_status(c, today: str, k: int = NULL_K) -> dict:
+def promotion_status(c, today: str, k: int = NULL_K, method: str | None = None) -> dict:
+    method = method or NULL_METHOD
     m = n_hypotheses(c)
     cw = complete_weeks(c, today)
     names = [r["strategy"] for r in c.execute("SELECT strategy FROM strategy_registry ORDER BY strategy")]
     cps = cw[-PROMO_STREAK:]                                  # 最近 4 个周检查点
     data, cums = {}, {}
     for s in names:
-        wk = load_weekly(c, s, cw, k=k)
+        wk = weekly(c, s, cw, k=k, method=method)
         if wk["weeks"]:
             data[s] = wk
             cums[s] = _cum(wk)
@@ -239,7 +484,8 @@ def promotion_status(c, today: str, k: int = NULL_K) -> dict:
             j = wk["weeks"].index(cp)
             own_c, null_c = cums[s]
             if j + 1 >= PROMO_MIN_WEEKS and sum(wk["n"][:j + 1]) >= PROMO_MIN_N:
-                p[s] = _emp_p(float(own_c[j]), null_c[j])
+                p[s] = gate_p(_emp_p(float(own_c[j]), null_c[j]),
+                              weekly_t_p(wk["own"][:j + 1], wk["null"][:j + 1]))      # D109：与按周 t 检验都过才算
         passes[cp] = holm(p, m)
     out = {}
     for s in names:
@@ -250,8 +496,12 @@ def promotion_status(c, today: str, k: int = NULL_K) -> dict:
             out[s] = info
             continue
         info.update(summarize(wk, m, k))
+        if method == "block":                                 # 旧口径（每天独立抽样）的 p 只作对照显示，不参与判定
+            wi = load_weekly(c, s, cw, k=k)
+            info["p_iid"] = summarize(wi, m, k).get("p") if wi["weeks"] == wk["weeks"] else None
         own_c, null_c = cums[s]
         W, n = info["weeks"], info["n"]
+        info["p_t"] = weekly_t_p(wk["own"], wk["null"])        # D109：按周 t 检验的 p（只展示；判定用的是 holm 里的组合门）
         streak = 0
         for cp in reversed(cps):
             if s in passes[cp]:
@@ -293,7 +543,7 @@ def promotion_status(c, today: str, k: int = NULL_K) -> dict:
             info["status"] = "未通过"
         out[s] = info
     any_pass = [s for s, v in out.items() if v.get("holm_pass")]
-    return {"today": today, "m": m, "alpha": ALPHA, "k": k, "complete_weeks": len(cw), "checkpoints": cps,
+    return {"today": today, "m": m, "alpha": ALPHA, "k": k, "null_method": method, "complete_weeks": len(cw), "checkpoints": cps,
             "any_passed": bool(any_pass), "passed": any_pass,
             "eligible": [s for s, v in out.items() if v.get("streak", 0) >= PROMO_STREAK and v.get("data_ok")],
             "message": ("通过晋升检验：" + "、".join(any_pass)) if any_pass else "尚无策略通过晋升检验",
@@ -329,7 +579,7 @@ def segment(c, strategy: str, today: str, lo: str | None, hi: str | None = None,
         hits = sum(r["own_hits"] for r in rows)
         out.update(hit=hits / n, score=sum(r["own_sum"] for r in rows) / n)
         out["hit_lo"], out["hit_hi"] = L._wilson(hits, n)
-    out["vs_control"] = summarize(load_weekly(c, strategy, complete_weeks(c, today), lo, hi, k), m, k)
+    out["vs_control"] = summarize(weekly(c, strategy, complete_weeks(c, today), lo, hi, k), m, k)
     out["enough"] = n >= BOARD_MIN_N and len(rows) >= BOARD_MIN_DAYS
     return out
 

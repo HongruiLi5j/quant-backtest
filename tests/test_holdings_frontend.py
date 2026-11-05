@@ -20,9 +20,10 @@ class HoldingsStaticTests(unittest.TestCase):
     def test_nav_sixth_item_personal_only(self):
         nav = re.search(r'const PERSONAL_NAV = (.*);', APP).group(1)
         pages = re.findall(r'\["(\w+)",', nav)
-        self.assertEqual(len(pages), 7)
+        self.assertEqual(len(pages), 8)   # 第 8 项 usmonitor（美股盯盘）后来加入，测试同步
         self.assertEqual(pages[5], 'holdings')
         self.assertEqual(pages[6], 'monitor')
+        self.assertEqual(pages[7], 'usmonitor')
         self.assertIn('["holdings", "持仓"]', nav)
         self.assertIn('["monitor", "盯盘"]', nav)
         # 完整模式的静态导航里没有持仓入口；路由在非个人模式回今日。
@@ -203,7 +204,7 @@ const colText = (row) => row.children.map(td => td.children[1].textContent);
     const t = await boot({personal: true});
     t.run('setupPersonalPages = () => {}');
     const tabs = t.get('tabs'); t.run('setupPersonalNavigation()');
-    assert.deepEqual(tabs.children.map(x => x.dataset.p), ['today', 'trade', 'market', 'watch', 'lab', 'holdings', 'monitor']);
+    assert.deepEqual(tabs.children.map(x => x.dataset.p), ['today', 'trade', 'market', 'watch', 'lab', 'holdings', 'monitor', 'usmonitor']);
     assert.equal(tabs.children[5].textContent, '持仓');
     assert.equal(tabs.children[6].textContent, '盯盘');
   }

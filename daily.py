@@ -87,6 +87,34 @@ def _ledger(market):
         daily_status.note(market, "信号核对账本更新失败")
 
 
+def _us_scan_due() -> bool:
+    """D103：美股外部数据目录里有文件比上次扫描新时才重扫（不联网；目录不在就不跑）。"""
+    from src import scan_us, usdata
+    r = usdata.root()
+    d = r / "data" if r else None
+    if not d or not d.is_dir():
+        return False
+    newest = max((e.stat().st_mtime for e in os.scandir(d) if e.name.endswith(".parquet")), default=0.0)
+    if not newest:
+        return False                      # 目录里没有数据文件：没东西可扫
+    return not scan_us.META.exists() or newest > scan_us.META.stat().st_mtime
+
+
+def _us_scan():
+    """D103：美股全市场回测加入每日任务（只读外部数据目录，不下载）。失败只记状态，不影响美股汇总。"""
+    try:
+        if not _us_scan_due():
+            logging.info("美股全市场数据没有比上次扫描更新的文件，跳过美股全市场回测")
+            return
+        from src import scan_us
+        logging.info("正在进行美股全市场回测")
+        m = scan_us.run()
+        logging.info("美股全市场回测：%d 只，%d 秒，数据日期 %s", m["stocks"], m["seconds"], m["data_date"])
+    except Exception as e:
+        logging.exception("美股全市场回测失败：%s", e)
+        daily_status.note("us", f"美股全市场回测失败：{daily_status.format_error(e)}")
+
+
 def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
     cfg = MARKETS[market]
     # 扫描已更新时只补清单，不重复下载、扫描和原有跟踪统计。
@@ -141,6 +169,8 @@ def run_market(market: str, offline: bool = False, auto: bool = False) -> dict:
                 errors[code] = err
                 logging.info("%s %s %s: %s", market, code, wl.get(code, ""),
                              f"失败 {err}" if err else f"{len(df)} 行，最新 {df.index[-1].date() if len(df) else '-'}")
+    if market == "us":
+        _us_scan()
     if market == "cn" and cfg.get("all_market") and not listed_day:   # 沪深全市场
         try:
             _step(2, total, "全市场数据更新（快照、补缺口）")
@@ -295,6 +325,8 @@ def main():
                     help="定时任务用：只更新\"已经收盘、但还没处理过\"的市场")
     a = ap.parse_args()
     setup_logging()
+    from src import net_timeout
+    net_timeout.install()   # D55：akshare 部分接口没设超时，对方不回数据时会卡到 3 小时看门狗；只在本进程生效，网页服务和盯盘不受影响
     restart_server_if_requested()
     os.umask(0o077)   # 新建的文件只有你自己能读写
 
@@ -344,15 +376,33 @@ def main():
             run.market_error(m, e)
     run.finish(notify_fn=notify.send)   # 写 logs/daily_status.json；连续失败 ≥2 次且原因今天没提醒过则发 Mac 通知
     if markets:   # 数据更新过，顺便重新生成离线版单文件（失败只记日志，不影响每日更新）
-        try:
-            import subprocess
-            r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "export_offline.py")],
-                               capture_output=True, text=True, timeout=300)
-            logging.info("离线版：%s", (r.stdout.strip().splitlines() or ["无输出"])[-1] if r.returncode == 0
-                         else "生成失败 " + (r.stderr or "")[-200:])
-        except Exception as e:
-            logging.warning("离线版生成失败（不影响更新）：%s", e)
+        _export_offline()
     sys.exit(0 if ok else 1)
+
+
+def _export_offline():
+    """重新生成离线版；输入和上次成功生成时完全一样就跳过（D22：傍晚等 ETF 日线时每 15 分钟一次，
+    原来每次都花 60–85 秒重写同样的 18 MB 文件）。指纹算不出来或没有记录时照常生成。"""
+    from src import offline_fingerprint
+    store = ROOT / "logs" / "offline_export.fingerprint"
+    fp = None
+    try:
+        same, fp = offline_fingerprint.unchanged(ROOT, store)
+        if same and (ROOT / "export" / "量化日报-离线版.html").exists():
+            logging.info("离线版：输入没有变化，跳过重新生成 (unchanged)")
+            return
+    except Exception as e:
+        logging.warning("离线版输入指纹计算失败，照常重新生成：%s", e)
+    try:
+        import subprocess
+        r = subprocess.run([sys.executable, str(ROOT / "export_offline.py")],
+                           capture_output=True, text=True, timeout=300)
+        logging.info("离线版：%s", (r.stdout.strip().splitlines() or ["无输出"])[-1] if r.returncode == 0
+                     else "生成失败 " + (r.stderr or "")[-200:])
+        if r.returncode == 0 and fp:
+            offline_fingerprint.remember(store, fp)   # 只在成功后记录；失败下次必然重试
+    except Exception as e:
+        logging.warning("离线版生成失败（不影响更新）：%s", e)
 
 
 if __name__ == "__main__":

@@ -38,11 +38,9 @@ _lock = threading.RLock()
 
 
 def limit_pct(code: str) -> float:
-    if str(code).startswith(("30", "68")):
-        return 0.20
-    if str(code).startswith(("8", "4", "92")):
-        return 0.30
-    return 0.10
+    """统一委托 src/limits.py。账本的信号不含 ST 股（scan 已排除），所以只按板块（最新规则）。"""
+    from .limits import limit_pct as _lp
+    return _lp(code, "")
 
 
 def connect(path=None):
@@ -60,8 +58,14 @@ def connect(path=None):
     CREATE TABLE IF NOT EXISTS done(day TEXT, h INTEGER, n INTEGER, PRIMARY KEY(day, h));
     CREATE TABLE IF NOT EXISTS day_params(day TEXT PRIMARY KEY, thr REAL, mt REAL);
     CREATE TABLE IF NOT EXISTS strategy_registry(strategy TEXT PRIMARY KEY, first_day TEXT);
+    CREATE TABLE IF NOT EXISTS fwd_features(day TEXT, code TEXT, name TEXT, ratio REAL, max20 REAL, abvol5_60 REAL, yizi INTEGER,
+        computed_at TEXT, PRIMARY KEY(day, code));
+    CREATE TABLE IF NOT EXISTS limit_close(day TEXT, code TEXT, up_close INTEGER, yizi INTEGER, PRIMARY KEY(day, code));
     CREATE TABLE IF NOT EXISTS null_draws(day TEXT, strategy TEXT, n INTEGER, nb INTEGER, ns INTEGER, own_sum REAL, own_hits INTEGER,
         k INTEGER, sums BLOB, hits BLOB, PRIMARY KEY(day, strategy));
+    -- D101：precision / scored 按「策略 + 动作」查 signals，主键 (day, strategy, code) 用不上，原来每次扫整张表。
+    -- 只加索引、不改任何数据；已存在就跳过，第一次建约 0.1 秒（11.6 万行）。核对报告 7.8 秒 → 1.0 秒，结果逐字节相同。
+    CREATE INDEX IF NOT EXISTS signals_sa ON signals(strategy, action);
     """)
     return c
 
@@ -119,8 +123,12 @@ def moves_for(code: str, bars: dict, day: str, cal: list[str], horizons=HORIZONS
     if not c0 or not o1:
         return []
     gap = o1 / c0 - 1
-    lim = limit_pct(code)
-    lim_open = 1 if gap >= lim - 0.002 else (-1 if gap <= -lim + 0.002 else 0)
+    from .limits import listed_days, no_limit
+    if no_limit(code, entry, listed_days(code, entry)):     # D17：新股上市初期不设涨跌停，开盘价都能成交
+        lim, lim_open = None, 0
+    else:
+        lim = limit_pct(code)
+        lim_open = 1 if gap >= lim - 0.002 else (-1 if gap <= -lim + 0.002 else 0)
     out = []
     for h in horizons:
         dh = nth_day(cal, day, h)
@@ -130,7 +138,7 @@ def moves_for(code: str, bars: dict, day: str, cal: list[str], horizons=HORIZONS
         pumps, prev = 0, c0
         for d in cal[i0:ih + 1]:
             b = bars.get(d)
-            if b and prev and b[3] / prev - 1 >= lim - 0.002:
+            if b and prev and lim is not None and b[3] / prev - 1 >= lim - 0.002:
                 pumps += 1
             if b:
                 prev = b[3]
@@ -170,6 +178,96 @@ def evaluate(c, provider, cal: list[str], today: str) -> dict:
     return {f"{d}/{h}": n for (d, h), n in counts.items()}
 
 
+# ------------------------------------------------------------ 收盘涨停的买入信号（D30）
+def ensure_limit_close(c, provider) -> int:
+    """给每条（非对照策略的）买入/加仓信号记下：信号日收盘是不是在涨停价（收盘 ≥ 昨收 ×(1+幅度) − 0.2pp）。
+    趋势、突破类策略天然会在涨停那天发买入信号，这些股票第二天开盘仍一字涨停（买不进）的概率远高于其他股票。
+    幅度用 src/limits.py 的同一张规则表（按信号日、带上市天数）。已记过的不重算；返回新写入的行数。"""
+    from .limits import limit_pct as _lp, listed_days
+    todo = {}
+    for r in c.execute("""SELECT DISTINCT s.day, s.code, s.name FROM signals s
+                          LEFT JOIN limit_close l ON l.day=s.day AND l.code=s.code
+                          WHERE s.action IN ('买入','加仓') AND s.strategy NOT LIKE 'ctrl_%' AND l.code IS NULL"""):
+        todo.setdefault(r["code"], []).append((r["day"], r["name"] or ""))
+    rows = []
+    for code, items in todo.items():
+        bars = provider.bars(code)
+        if not bars:
+            continue
+        ds = sorted(bars)
+        for day, name in items:
+            i = bisect_right(ds, day) - 1
+            if i < 1 or ds[i] != day:
+                continue
+            prev, (o, hi, lo, close) = bars[ds[i - 1]][3], bars[day]
+            lim = _lp(code, name, day, listed_days(code, day))
+            up = 1 if (lim is not None and prev and close and close / prev - 1 >= lim - 0.002) else 0
+            yizi = 1 if (up and all(math.isclose(x, close, rel_tol=1e-10, abs_tol=1e-10) for x in (o, hi, lo))) else 0   # 一字板：开高低收相同
+            rows.append((day, code, up, yizi))
+    c.executemany("INSERT OR IGNORE INTO limit_close VALUES(?,?,?,?)", rows)
+    c.commit()
+    return len(rows)
+
+
+FWD_FREEZE = "2026-11-09"     # D61：R2/R5 前向检验的冻结日（overnight/research/R2_forward_prereg.md）；之前的信号日不记
+
+
+def ensure_fwd_features(c, provider, start: str = FWD_FREEZE) -> int:
+    """D61 审计副本：从冻结日起，给每条（非对照策略的）买入/加仓信号记下当天就算好的 4 个值（数据 ≤ 信号日）。
+    正式检验按 R2_forward_prereg.md 在判定时从 cn_all 重算；这张表只用来核对"当天的值"和"事后重算的值"是否一致
+    （行情文件偶尔会被事后改写，revquant 实测最多差 0.24pp）。不影响任何选股、清单、页面。
+      ratio     = (收盘_D / 收盘_{D-1} − 1) ÷ 当天涨跌停幅度（src/limits.py，带名称和上市天数；新股不设涨跌停 → NULL）
+      max20     = 截至 D 的 20 个交易日里最大的单日收盘涨幅
+      abvol5_60 = 5 日平均成交额 ÷ 60 日平均成交额（成交额 = 收盘 × 成交量；provider 没有成交量时为 NULL）
+      yizi      = 信号日一字板（开高低收相同）
+    已记过的不重算；返回新写入的行数。"""
+    from .limits import limit_pct as _lp, listed_days
+    todo = {}
+    for r in c.execute("""SELECT DISTINCT s.day, s.code, s.name FROM signals s
+                          LEFT JOIN fwd_features f ON f.day=s.day AND f.code=s.code
+                          WHERE s.action IN ('买入','加仓') AND s.strategy NOT LIKE 'ctrl_%' AND s.day >= ? AND f.code IS NULL""", (start,)):
+        todo.setdefault(r["code"], []).append((r["day"], r["name"] or ""))
+    rows, now = [], datetime.now().isoformat(timespec="seconds")
+    for code, items in todo.items():
+        bars = provider.bars(code)
+        if not bars:
+            continue
+        vols = provider.volume(code) if hasattr(provider, "volume") else {}
+        ds = sorted(bars)
+        for day, name in items:
+            i = bisect_right(ds, day) - 1
+            if i < 1 or ds[i] != day:
+                continue
+            closes = [bars[d][3] for d in ds[max(0, i - 20):i + 1]]
+            rets = [b / a - 1 for a, b in zip(closes[:-1], closes[1:]) if a]
+            lim = _lp(code, name, day, listed_days(code, day))
+            o, hi, lo, cl = bars[day]
+            ratio = (rets[-1] / lim) if (rets and lim) else None
+            amt = [bars[d][3] * vols[d] for d in ds[max(0, i - 59):i + 1] if d in vols]
+            ab = (sum(amt[-5:]) / 5) / (sum(amt) / len(amt)) if len(amt) >= 60 and sum(amt) > 0 else None
+            yz = 1 if all(math.isclose(x, cl, rel_tol=1e-10, abs_tol=1e-10) for x in (o, hi, lo)) else 0
+            rows.append((day, code, name, ratio, max(rets) if len(rets) >= 20 else None, ab, yz, now))
+    c.executemany("INSERT OR IGNORE INTO fwd_features VALUES(?,?,?,?,?,?,?,?)", rows)
+    c.commit()
+    return len(rows)
+
+
+def limit_close_stats(c) -> dict:
+    """收盘涨停的买入信号，次日开盘一字涨停（买不进）的比例。按 (信号日, 代码) 去重，只看已走满 1 日的。
+    分三组（revquant D30 复核）：close_limit = 收盘涨停但不是一字板（清单上「今日收盘涨停」提示用的就是这一组的比例）；
+    yizi = 一字板（清单原有的「一字涨停」提示）；other = 其余买入信号。三组不混在一起算。"""
+    out = {}
+    for key, where in (("close_limit", "l.up_close=1 AND l.yizi=0"), ("yizi", "l.up_close=1 AND l.yizi=1"), ("other", "l.up_close=0")):
+        r = c.execute(f"""SELECT COUNT(*) n, SUM(m.lim = 1) blocked, COUNT(DISTINCT l.day) days FROM limit_close l
+                          JOIN moves m ON m.day=l.day AND m.code=l.code AND m.h=1 WHERE {where}""").fetchone()
+        n, b = r["n"] or 0, r["blocked"] or 0
+        out[key] = {"n": n, "blocked": b, "days": r["days"] or 0, "rate": (b / n) if n else None}
+    out["enough"] = out["close_limit"]["n"] >= MIN_SAMPLE and out["close_limit"]["days"] >= MIN_DAYS
+    out["note"] = ("收盘在涨停价的买入/加仓信号（所有正式策略，按信号日+代码去重），次日开盘一字涨停买不进的比例。"
+                   "close_limit=收盘涨停但非一字板，yizi=一字板，other=其余买入信号。")
+    return out
+
+
 # ------------------------------------------------------------ 统计
 def _mean(xs):
     return sum(xs) / len(xs) if xs else None
@@ -201,12 +299,101 @@ def _day_t(ex_by_day: dict):
     return m / (sd / len(xs) ** 0.5) if sd > 0 else None
 
 
+# 有效 / 反向 的结论至少要跨这么多个完整交易周（与 promotion.PROMO_MIN_WEEKS 的 12 周一致）。
+# 不到之前一律显示「积累中」：13 个信号日的 5 日收益相邻重叠 4/5，实际只相当于两三个独立周。
+VERDICT_MIN_WEEKS = 12
+
+# 双侧 95% 的 t 分布分位数（自由度 1–30）；纯标准库，不依赖 scipy
+_T975 = (12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131,
+         2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042)
+
+
+def _t975(df: int) -> float:
+    if df < 1:
+        return float("inf")
+    return _T975[df - 1] if df <= len(_T975) else 1.96 + 2.4 / df      # df>30 的近似误差 < 0.005
+
+
+def _cal_pos(c) -> dict:
+    """信号日在「已记录交易日」序列里的位置。若中间漏记了交易日，位置差会偏小，下面的抽稀就更保守（只会多丢、不会重叠）。"""
+    return {r["day"]: i for i, r in enumerate(c.execute("SELECT day FROM days ORDER BY day"))}
+
+
+def _thin(days, pos: dict, h: int) -> list:
+    """从信号日里按时间顺序挑出持有窗口互不重叠的日子：相邻两个被选中的日子至少隔 h 个交易日。
+    h=1 时就是全部信号日；h=5 大约一周一天；h=10 大约两周一天。"""
+    out, last = [], None
+    for d in sorted(days):
+        p = pos.get(d)
+        if p is None:
+            continue
+        if last is None or p - last >= h:
+            out.append(d)
+            last = p
+    return out
+
+
+MIN_PERIODS_CI = 3      # 少于 3 期（自由度 < 2）时 t 分位数 ≥ 12.7，区间没有意义，干脆不给
+
+
+def _period_ci(day_vals: dict, center, h: int, pos: dict, bounds=(None, None), floor=None):
+    """按「期」做 t 区间：期 = 持有窗口互不重叠的信号日（_thin），每期一个当天平均值，自由度 = 期数 − 1。
+    区间中心用全部信号逐条加权的点估计，宽度用抽稀后各期平均值的标准误（比用全部日子更宽、更保守）。
+    为什么不用逐条 Wilson：同一天几百条信号共享同一个大盘行情，不是独立样本，Wilson 区间会窄约 3 倍、覆盖率只有 70% 多。
+    为什么不用按天整块重抽样：只有 4–30 个日子时覆盖率只有 80–91%（revquant 的模拟，overnight/research/revquant/ci_coverage_sim.py）。
+    bounds：区间截断到的取值范围（命中率 (0, 1)，比随机多多少 (-1, 1)）。
+    floor：(下限, 上限)，区间至少要这么宽（命中率传逐条 Wilson）。各期完全一样（比如每条都命中）时样本标准差为 0，
+    t 区间会缩成一个点；取两者的并集，保证不比“把信号当独立样本”的区间更窄。
+    返回 (下限, 上限, 期数, 抽稀后的 t 值)。期数 < MIN_PERIODS_CI 时返回 (None, None, 期数, None)：页面显示“期数不足”。"""
+    sel = _thin(day_vals.keys(), pos, h)
+    xs = [day_vals[d] for d in sel]
+    g = len(xs)
+    if g < MIN_PERIODS_CI or center is None:
+        return None, None, g, None
+    sd = statistics.stdev(xs)
+    se = sd / g ** 0.5
+    half = _t975(g - 1) * se
+    t = (sum(xs) / g) / se if se > 0 else None
+    lo, hi = center - half, center + half
+    if floor is not None and floor[0] is not None:
+        lo, hi = min(lo, floor[0]), max(hi, floor[1])
+    if bounds[0] is not None:
+        lo = max(lo, bounds[0])
+    if bounds[1] is not None:
+        hi = min(hi, bounds[1])
+    return lo, hi, g, t
+
+
+def _week(day: str) -> str:
+    y, w, _ = datetime.fromisoformat(day).isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+def _complete_weeks(days, today: str | None = None) -> int:
+    """信号日覆盖到的交易周数；today 所在的这一周还没结束，不算。"""
+    cur = _week(today) if today else None
+    return len({_week(d) for d in days if _week(d) != cur})
+
+
+def random_share(c) -> dict:
+    """{(day, h): (跑赢当天全市场平均的股票占比, 跑输的占比)}。
+    这是「随机挑一只股票」的命中率基线：收益右偏，多数股票跑输等权平均，所以买入方向通常只有 45%–48%，不是 50%。"""
+    out = {}
+    for r in c.execute("""SELECT m.day, m.h, AVG(m.ret > b.m) up, AVG(m.ret < b.m) dn FROM moves m
+                          JOIN (SELECT day, h, AVG(ret) m FROM moves GROUP BY day, h) b ON b.day=m.day AND b.h=m.h
+                          GROUP BY m.day, m.h"""):
+        out[(r["day"], r["h"])] = (r["up"], r["dn"])
+    return out
+
+
 def verdict(p: dict) -> str:
-    """有效 / 无效 / 反向 / 样本不足。只用于展示与反思，不会自动改任何策略。"""
+    """有效 / 反向 / 看不出差别 / 积累中 / 样本不足。只用于展示与反思，不会自动改任何策略。
+    t 来自持有窗口互不重叠的「期」（见 _period_ci），而且要跨满 VERDICT_MIN_WEEKS 个完整交易周才下结论。"""
     if not p["enough"]:
         return "样本不足"
+    if p.get("weeks", 0) < VERDICT_MIN_WEEKS:
+        return "积累中"
     t = p.get("t_day")
-    good = p["action"] in BUYS or p["action"] == "卖出" or p["action"] == "减仓"
     sgn = 1 if p["action"] in BUYS else -1
     if t is None:
         return "样本不足"
@@ -217,8 +404,14 @@ def verdict(p: dict) -> str:
     return "看不出差别"
 
 
-def precision(c, strategy: str) -> list[dict]:
-    base, out = baseline(c), []
+def precision(c, strategy: str, today: str | None = None, *, tables=None) -> list[dict]:
+    """每个 (动作, 持有天数)：命中率、随机基线、比随机多多少，以及按「期」算的 95% 区间（_period_ci）。
+    对照基准统一是「当天全市场（有行情的个股）等权平均」；卖出/减仓按方向翻转：股票跑输平均 = 方向正确。
+    hit_excess_lo/hi、mean_excess_lo/hi、edge_lo/hi 都是 t 区间（不再是逐条 Wilson）。"""
+    # D93：tables=(baseline, random_share, _cal_pos) 由调用方算一次传进来（build_report 里 29 个策略共用，原来每个策略都重算一遍整表）；
+    # 不传就和原来一样自己算。三张表只读，同一次报告里数据库不变，所以结果相同。
+    base, rnd, pos = tables if tables is not None else (baseline(c), random_share(c), _cal_pos(c))
+    out = []
     cost = ROUND_TRIP_BP / 1e4
     for action in ACTIONS:
         for h in HORIZONS:
@@ -235,16 +428,35 @@ def precision(c, strategy: str) -> list[dict]:
                 by_day.setdefault(r["day"], []).append(e)
             k = sum(1 for r in ok if sgn * r["ret"] > 0)
             ke = sum(1 for e in ex if sgn * e > 0)
-            lo, hi = _wilson(ke, len(ok))
+            n = len(ok)
             me = _mean(ex)
-            p = {"action": action, "h": h, "n": len(ok), "days": len({r["day"] for r in ok}), "untradable": len(rows) - len(ok),
-                 "hit_raw": k / len(ok) if ok else None, "hit_excess": ke / len(ok) if ok else None,
-                 "hit_excess_lo": lo, "hit_excess_hi": hi,
+            # 逐日：方向命中占比、当天随机基线、平均超额（按方向取号前）
+            day_hit = {d: sum(1 for e in v if sgn * e > 0) / len(v) for d, v in by_day.items()}
+            day_rnd = {d: rnd[(d, h)][0 if buy else 1] for d in by_day}
+            day_edge = {d: day_hit[d] - day_rnd[d] for d in by_day}
+            day_ex = {d: sum(v) / len(v) for d, v in by_day.items()}
+            hit_excess = ke / n if n else None
+            hit_random = (sum(day_rnd[d] * len(v) for d, v in by_day.items()) / n) if n else None
+            edge = (hit_excess - hit_random) if n else None
+            w_lo, w_hi = _wilson(ke, n)
+            h_lo, h_hi, periods, _ = _period_ci(day_hit, hit_excess, h, pos, (0.0, 1.0), (w_lo, w_hi))
+            e_lo, e_hi, _, _ = _period_ci(day_edge, edge, h, pos, (-1.0, 1.0),
+                                          (w_lo - hit_random, w_hi - hit_random) if w_lo is not None else None)
+            m_lo, m_hi, _, t_per = _period_ci(day_ex, me, h, pos)
+            days = sorted(by_day)
+            p = {"action": action, "h": h, "n": n, "days": len(days), "untradable": len(rows) - n,
+                 "tradable_rate": n / len(rows) if rows else None,      # D30 可成交率：开盘一字涨/跌停成交不了的不算准确率，单独给比例
+                 "periods": periods, "weeks": _complete_weeks(days, today), "weeks_needed": VERDICT_MIN_WEEKS,
+                 "benchmark": "全市场等权平均",
+                 "hit_raw": k / n if n else None, "hit_excess": hit_excess,
+                 "hit_excess_lo": h_lo, "hit_excess_hi": h_hi,
+                 "hit_random": hit_random, "edge": edge, "edge_lo": e_lo, "edge_hi": e_hi,
                  "mean_ret": _mean([r["ret"] for r in ok]), "mean_excess": me,
+                 "mean_excess_lo": m_lo, "mean_excess_hi": m_hi,
                  "median_excess": statistics.median(ex) if ex else None,
                  "net_excess": (me - cost) if (me is not None and buy) else None,     # 买入类扣掉来回费用；卖出类是“躲掉的跌幅”，不扣
-                 "t_day": _day_t(by_day),
-                 "enough": len(ok) >= MIN_SAMPLE and len({r["day"] for r in ok}) >= MIN_DAYS}
+                 "t_day": t_per,            # 名字沿用；现在是持有窗口互不重叠的「期」上的 t（h=1 时就是按日）
+                 "enough": n >= MIN_SAMPLE and len(days) >= MIN_DAYS}
             p["verdict"] = verdict(p)
             out.append(p)
     return out
@@ -285,41 +497,66 @@ def recall(c, day: str, strategy: str, h: int = 5):
             "recall": rc, "base_rate": base, "lift": (rc / base) if (rc is not None and base) else None}
 
 
+ACTION_EN = {"买入": "Buy", "卖出": "Sell", "加仓": "Add", "减仓": "Reduce"}
+
+
 def reflect(c, main: str, prec: dict, rec: list, today: str) -> list[dict]:
     """每日反思：只写“发现了什么、建议怎么改”。策略公式、阈值都不会被它自动修改。
-    每条 = {level: ok/warn/info, text, suggestion}。"""
+    每条 = {level: ok/warn/info, text, suggestion, text_en, suggestion_en}（D89：英文同样的数字）。"""
     out = []
+
+    def add(level, text, text_en, suggestion="", suggestion_en=""):
+        out.append({"level": level, "text": text, "suggestion": suggestion, "text_en": text_en, "suggestion_en": suggestion_en})
+
     days = [r["day"] for r in c.execute("SELECT DISTINCT day FROM done WHERE n>0 ORDER BY day")]
     if len(days) < MIN_DAYS:
-        out.append({"level": "info", "text": f"已核对 {len(days)} 个信号日，不到 {MIN_DAYS} 个，所有结论都只是观察。",
-                    "suggestion": f"再积累 {MIN_DAYS - len(days)} 个已走满的信号日再看显著性；现在不要据此改策略。"})
+        add("info", f"已核对 {len(days)} 个信号日，不到 {MIN_DAYS} 个，所有结论都只是观察。",
+            f"{len(days)} signal days checked, fewer than {MIN_DAYS}; every conclusion is only an observation.",
+            f"再积累 {MIN_DAYS - len(days)} 个已走满的信号日再看显著性；现在不要据此改策略。",
+            f"Wait for {MIN_DAYS - len(days)} more completed signal days before judging significance; do not change the strategy on this yet.")
     for p in prec.get(main, []):
         if p["h"] not in (5, 20) or not p["enough"]:
             continue
         v, tag = p["verdict"], f"{p['action']}信号 {p['h']} 日"
+        tag_en = f"{ACTION_EN.get(p['action'], p['action'])} signals, {p['h']} days"
         ex = p["mean_excess"]
         if v == "有效":
-            out.append({"level": "ok", "text": f"{tag}：相对全市场 {ex:+.2%}（按日 t={p['t_day']:.1f}），方向对。", "suggestion": ""})
+            add("ok", f"{tag}：相对全市场 {ex:+.2%}（按互不重叠的期 t={p['t_day']:.1f}），方向对。",
+                f"{tag_en}: {ex:+.2%} vs the market (t={p['t_day']:.1f} on non-overlapping periods), right direction.")
             if p["net_excess"] is not None and p["net_excess"] <= 0:
-                out.append({"level": "warn", "text": f"{tag}：扣掉来回约 {ROUND_TRIP_BP}bp 费用后超额 {p['net_excess']:+.2%}，没有净优势。",
-                            "suggestion": "考虑提高 TRADE_LIST_THRESHOLD（少给小幅加减仓信号），降低换手。"})
+                add("warn", f"{tag}：扣掉来回约 {ROUND_TRIP_BP}bp 费用后超额 {p['net_excess']:+.2%}，没有净优势。",
+                    f"{tag_en}: after about {ROUND_TRIP_BP}bp round-trip costs the excess is {p['net_excess']:+.2%}, no net edge.",
+                    "考虑提高 TRADE_LIST_THRESHOLD（少给小幅加减仓信号），降低换手。",
+                    "Consider raising TRADE_LIST_THRESHOLD (fewer small add/reduce signals) to cut turnover.")
         elif v == "反向":
-            out.append({"level": "warn", "text": f"{tag}：相对全市场 {ex:+.2%}（按日 t={p['t_day']:.1f}），方向和信号相反。",
-                        "suggestion": "先检查该类信号是否集中在某类股票（小盘、低流动性、涨停附近）；若是，建议加过滤条件，需你同意后才改。"})
+            add("warn", f"{tag}：相对全市场 {ex:+.2%}（按互不重叠的期 t={p['t_day']:.1f}），方向和信号相反。",
+                f"{tag_en}: {ex:+.2%} vs the market (t={p['t_day']:.1f} on non-overlapping periods), opposite to the signal.",
+                "先检查该类信号是否集中在某类股票（小盘、低流动性、涨停附近）；若是，建议加过滤条件，需你同意后才改。",
+                "First check whether these signals cluster in certain stocks (small caps, low liquidity, near the limit); if so, a filter may help, but only with your approval.")
+        elif v == "积累中":
+            add("info", f"{tag}：相对全市场 {ex:+.2%}；才 {p['weeks']} 个完整交易周，满 {p['weeks_needed']} 周前不下结论。",
+                f"{tag_en}: {ex:+.2%} vs the market; only {p['weeks']} complete weeks, no conclusion before {p['weeks_needed']} weeks.")
         else:
-            out.append({"level": "info", "text": f"{tag}：相对全市场 {ex:+.2%}，和随机差别不显著。", "suggestion": ""})
+            add("info", f"{tag}：相对全市场 {ex:+.2%}，和随机差别不显著。",
+                f"{tag_en}: {ex:+.2%} vs the market, not significantly different from random.")
     if rec:
         r = rec[-1]
         if r.get("lift") is not None:
             lvl = "ok" if r["lift"] >= 1.2 else ("warn" if r["lift"] < 0.9 else "info")
-            out.append({"level": lvl, "text": f"{r['day']} 之后 {r['h']} 日涨幅居前的 {r['winners']} 只，被推荐/已持有占 {r['recall']:.0%}，"
-                        f"随机持有的基准是 {r['base_rate']:.0%}（提升 {r['lift']:.2f} 倍）。",
-                        "suggestion": "提升倍数长期 <1 说明策略没比随机更会选涨得多的股票。" if lvl == "warn" else ""})
+            add(lvl, f"{r['day']} 之后 {r['h']} 日涨幅居前的 {r['winners']} 只，被推荐/已持有占 {r['recall']:.0%}，"
+                     f"随机持有的基准是 {r['base_rate']:.0%}（提升 {r['lift']:.2f} 倍）。",
+                f"Of the {r['winners']} top gainers over the {r['h']} days after {r['day']}, {r['recall']:.0%} were recommended or held; "
+                f"a random holding would catch {r['base_rate']:.0%} (lift {r['lift']:.2f}x).",
+                "提升倍数长期 <1 说明策略没比随机更会选涨得多的股票。" if lvl == "warn" else "",
+                "A lift below 1 for long means the strategy is no better than random at catching big gainers." if lvl == "warn" else "")
         cats = r.get("categories", {})
         if cats.get("被过滤", 0) >= max(3, cats.get("已推荐", 0)):
-            out.append({"level": "warn", "text": f"漏掉的涨幅居前股票里 {cats['被过滤']} 只是被流动性/小目标仓位过滤挡掉的。",
-                        "suggestion": "过滤规则可能过严；可对比 TRADE_LIST_MIN_TURNOVER 放宽后的结果，需你同意后才改。"})
-    out.append({"level": "info", "text": "本节只是统计与建议；策略公式和阈值不会自动修改。", "suggestion": ""})
+            add("warn", f"漏掉的涨幅居前股票里 {cats['被过滤']} 只是被流动性/小目标仓位过滤挡掉的。",
+                f"{cats['被过滤']} of the missed top gainers were blocked by the liquidity / small-target filters.",
+                "过滤规则可能过严；可对比 TRADE_LIST_MIN_TURNOVER 放宽后的结果，需你同意后才改。",
+                "The filters may be too strict; compare with a looser TRADE_LIST_MIN_TURNOVER, only with your approval.")
+    add("info", "本节只是统计与建议；策略公式和阈值不会自动修改。",
+        "This section is statistics and suggestions only; strategy formulas and thresholds are never changed automatically.")
     return out
 
 
@@ -327,28 +564,47 @@ def build_report(c, today: str, main_strategy: str = "blend2") -> dict:
     strategies = [r["strategy"] for r in c.execute("SELECT DISTINCT strategy FROM signals ORDER BY strategy")]
     days = [r["day"] for r in c.execute("SELECT DISTINCT day FROM done WHERE n>0 ORDER BY day")]
     rec = [x for x in (recall(c, d, main_strategy) for d in days) if x]
-    notes = []
-    prec_main = precision(c, main_strategy)
+    notes, notes_en = [], []          # D89：notes_en 与 notes 一一对应
+    tables = (baseline(c), random_share(c), _cal_pos(c))     # D93：所有策略共用一份
+    prec_main = precision(c, main_strategy, today, tables=tables)
     for p in prec_main:
         if p["h"] in (5, 20) and p["action"] in BUYS + ("卖出",):
             nm = {5: "5 日", 20: "20 日"}[p["h"]]
+            ae = ACTION_EN.get(p["action"], p["action"])
+            verdict_en = {"有效": "significant (right direction)", "反向": "significant (wrong direction)", "看不出差别": "no clear difference", "积累中": "accumulating", "样本不足": "sample too small"}.get(p["verdict"], p["verdict"])
             if p["enough"]:
-                notes.append(f"{main_strategy} {p['action']}信号{nm}：{p['n']} 条，跑赢全市场 {p['hit_excess']:.0%}，相对全市场平均 {p['mean_excess']:+.2%}，结论：{p['verdict']}。")
+                notes.append(f"{main_strategy} {p['action']}信号{nm}：{p['n']} 条，方向正确 {p['hit_excess']:.0%}（随机挑约 {p['hit_random']:.0%}），"
+                             f"相对全市场平均 {p['mean_excess']:+.2%}，结论：{p['verdict']}" + (f"（第 {p['weeks']}/{p['weeks_needed']} 周）" if p['verdict'] == '积累中' else '') + "。")
+                notes_en.append(f"{main_strategy} {ae} signals, {p['h']} days: {p['n']} signals, right direction {p['hit_excess']:.0%} (random about {p['hit_random']:.0%}), "
+                                f"{p['mean_excess']:+.2%} vs the market average; verdict: {verdict_en}" + (f" (week {p['weeks']}/{p['weeks_needed']})" if p['verdict'] == '积累中' else '') + ".")
             else:
                 notes.append(f"{main_strategy} {p['action']}信号{nm}：{p['n']} 条、只跨 {p['days']} 个信号日，样本不足（需要至少 {MIN_SAMPLE} 条且跨 {MIN_DAYS} 个信号日），仅作观察，不据此改策略。")
+                notes_en.append(f"{main_strategy} {ae} signals, {p['h']} days: {p['n']} signals over only {p['days']} signal days; sample too small "
+                                f"(needs at least {MIN_SAMPLE} signals over {MIN_DAYS} signal days); observation only, no strategy change.")
     if rec:
         last = rec[-1]
+        cat_en = {"已推荐": "recommended", "已持有": "held", "被过滤": "filtered", "没有信号": "no signal"}
         notes.append(f"{last['day']} 之后 5 日涨幅居前的 {last['winners']} 只里：" + "、".join(f"{k} {v}" for k, v in last["categories"].items()) + "。")
+        notes_en.append(f"Of the {last['winners']} top 5-day gainers after {last['day']}: " + ", ".join(f"{cat_en.get(k, k)} {v}" for k, v in last["categories"].items()) + ".")
     elif days:
         notes.append("已有结果的信号日缺少当时的持仓状态，暂时不能算召回率；从今天起每天都会记录。")
+        notes_en.append("Signal days with results lack the holdings state of that day, so recall can't be computed yet; it is recorded daily from today.")
     if not days:
         notes.append("还没有走满一个交易日的信号，等下一个交易日收盘后才会有第一批核对结果。")
-    prec_all = {s_: precision(c, s_) for s_ in strategies}
+        notes_en.append("No signal has completed a trading day yet; the first check comes after the next close.")
+    prec_all = {s_: precision(c, s_, today, tables=tables) for s_ in strategies}
     reflection = reflect(c, main_strategy, prec_all, rec, today)
     return {"today": today, "reflection": reflection, "signal_days": [r["day"] for r in c.execute("SELECT day FROM days ORDER BY day")],
             "evaluated_days": days, "min_sample": MIN_SAMPLE, "main": main_strategy,
-            "precision": prec_all, "recall": rec, "notes": notes,
-            "caveats": ["结果是统计，不是预测；样本小时波动很大。", "入场=次日开盘价；“相对全市场”未扣费用，净超额一栏扣了来回约 16bp。显著性按信号日聚合后检验。",
+            "precision": prec_all, "recall": rec, "notes": notes, "notes_en": notes_en,
+            "caveats_en": ["These are statistics, not forecasts; small samples swing a lot.",
+                           "Entry = next day's open; 'vs the market' = that day's equal-weight average of all A-share stocks, before costs; the net column deducts about 16bp round trip.",
+                           "95% ranges and significance use non-overlapping holding periods (about one per week for 5 days); random picks beat the average less than 50% of the time, so read 'vs random'.",
+                           f"No 'significant' verdict (right or wrong direction) before {VERDICT_MIN_WEEKS} complete trading weeks; until then it shows 'accumulating'.",
+                           "Consecutive limit-up / limit-up-open stocks are excluded from recall."],
+            "caveats": ["结果是统计，不是预测；样本小时波动很大。", "入场=次日开盘价；“相对全市场”=当天全市场个股等权平均，未扣费用，净超额一栏扣了来回约 16bp。",
+                        "95% 区间和显著性按持有窗口互不重叠的“期”计算（5 日约一周一期）；随机挑股的命中率本来就不到 50%，看“比随机多多少”。",
+                        f"满 {VERDICT_MIN_WEEKS} 个完整交易周之前不下“有效/反向”结论，只显示“积累中”。",
                         "连板/开盘涨停的股票已从召回统计里剔除。"]}
 
 
@@ -378,9 +634,10 @@ def strategy_board(c) -> dict:
     """每个策略：按天的准确率、95% 置信区间，以及累计准确率每天提高/降低了多少。
     准确率 = 跑赢全市场的信号占比（命中率）；得分 = 每条信号平均比全市场多赚多少（扣费后）。
     样本不足（< BOARD_MIN_N 条或 < BOARD_MIN_DAYS 个信号日）的标 enough=False，不排名。
-    置信区间把每条信号当独立样本，同一天的信号其实共享大盘行情，所以区间偏窄，只作参考；晋升看 promotion 里的按周检验。"""
+    置信区间按持有窗口互不重叠的「期」算 t 区间（_period_ci），不把同一天的信号当独立样本；晋升仍看 promotion 里的按周检验。"""
     from . import promotion as PR
     base = baseline(c)
+    pos = _cal_pos(c)
     strategies = [r["strategy"] for r in c.execute("SELECT DISTINCT strategy FROM signals ORDER BY strategy")]
     out = {}
     for st in strategies:
@@ -400,8 +657,9 @@ def strategy_board(c) -> dict:
                               "d_hit": None if prev_hit is None else hit - prev_hit,
                               "d_score": None if prev_score is None else score - prev_score})
                 prev_hit, prev_score = hit, score
-            lo, hi = _wilson(ck, cn)
-            per_h[h] = {"n": cn, "days": len(days), "hit": ck / cn if cn else None, "hit_lo": lo, "hit_hi": hi, "score": cs / cn if cn else None,
+            day_hit = {dd["day"]: dd["hit"] for dd in daily}
+            lo, hi, periods, _ = _period_ci(day_hit, ck / cn if cn else None, h, pos, (0.0, 1.0), _wilson(ck, cn))      # 不再用逐条 Wilson（见 _period_ci）
+            per_h[h] = {"n": cn, "days": len(days), "periods": periods, "hit": ck / cn if cn else None, "hit_lo": lo, "hit_hi": hi, "score": cs / cn if cn else None,
                         "enough": cn >= PR.BOARD_MIN_N and len(days) >= PR.BOARD_MIN_DAYS, "rank": None, "daily": daily}
         out[st] = {f"h{h}": per_h[h] for h in BOARD_H}
     for hk in ("h1", "h5"):      # 只给样本够的、非对照的排名
@@ -580,6 +838,14 @@ def run(payload: dict, *, provider, cal: list[str], state_rows=None, db=None, ar
             except Exception:
                 pass
             evaluate(c, provider, cal, payload["data_date"])
+            try:      # D30：收盘涨停买入信号的次日可成交率；失败不影响核对本身
+                ensure_limit_close(c, provider)
+            except Exception:
+                pass
+            try:      # D61：R2/R5 前向检验的当天值审计副本；失败不影响核对本身
+                ensure_fwd_features(c, provider)
+            except Exception:
+                pass
             status = None
             try:   # 晋升检验：匹配的随机对照（1000 次）+ Holm 修正；失败时不晋升（主策略保持不变）
                 from . import promotion
@@ -596,6 +862,10 @@ def run(payload: dict, *, provider, cal: list[str], state_rows=None, db=None, ar
             from . import promotion as _pr
             rep["promotion"] = _pr.jsonable(status)
             try:
+                rep["limit_close"] = limit_close_stats(c)
+            except Exception as e:
+                rep["limit_close"] = {"error": f"{type(e).__name__}: {e}"}
+            try:
                 from . import shadow
                 rep["labels"] = shadow.LABELS
                 rep["families"] = shadow.FAMILY
@@ -607,7 +877,9 @@ def run(payload: dict, *, provider, cal: list[str], state_rows=None, db=None, ar
                 rep["tune"] = tune
                 rep["reflection"].insert(0, {"level": {"adopt": "warn", "switch": "warn"}.get(tune["action"], "info"),
                                              "text": "自动调参：" + (tune["why"] or "保持当前参数。") + f"（当前 阈值 {tune['active_after']['thr']:.0%}、小仓位线 {tune['active_after']['mt']:.0%}）",
-                                             "suggestion": ""})
+                                             "suggestion": "", "suggestion_en": "",
+                                             "text_en": f"Auto-tune: {tune['action']} (current threshold {tune['active_after']['thr']:.0%}, "
+                                                        f"small-position line {tune['active_after']['mt']:.0%}); parameters stay frozen until enough complete weeks."})
             except Exception as e:
                 rep["tune"] = {"error": f"{type(e).__name__}: {e}"}
         finally:
@@ -646,6 +918,13 @@ class LocalProvider:
             return {}
         return {d: (o, h, l, cl) for d, o, h, l, cl in zip(df.index.strftime("%Y-%m-%d"), df.Open.astype(float), df.High.astype(float),
                                                           df.Low.astype(float), df.Close.astype(float))}
+
+    def volume(self, code):
+        """D61：成交量（只用于 fwd_features 的成交额比值）。"""
+        df = self.am._drop_unfinished(self.am.load(code))
+        if df is None or len(df) == 0 or "Volume" not in df:
+            return {}
+        return dict(zip(df.index.strftime("%Y-%m-%d"), df.Volume.astype(float)))
 
 
 def read_state():

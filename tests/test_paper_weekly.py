@@ -106,8 +106,10 @@ class TestNormalWeek(Base):
         buy5 = [r for r in p["rows"] if r["action"] == "买入" and r["h"] == 5][0]
         self.assertEqual(buy5["n"], 40)
         self.assertTrue(buy5["enough"])
-        self.assertLessEqual(buy5["hit_excess_lo"], buy5["hit_excess"])
-        self.assertLessEqual(buy5["hit_excess"], buy5["hit_excess_hi"])
+        # D16：区间按持有窗口互不重叠的「期」算，期数 < 3 时不给区间（None）；给了就必须包住点估计
+        if buy5["hit_excess_lo"] is not None:
+            self.assertLessEqual(buy5["hit_excess_lo"], buy5["hit_excess"])
+            self.assertLessEqual(buy5["hit_excess"], buy5["hit_excess_hi"])
         self.assertEqual(len(p["week_curve"]), 5)
         self.assertEqual(rep["recall"]["status"], "ok")
         self.assertEqual(rep["promotion"]["status"], "ok")

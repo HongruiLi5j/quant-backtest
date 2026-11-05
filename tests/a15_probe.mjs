@@ -42,13 +42,16 @@ globalThis.window = { location: { pathname: '/w/holdings.html', search: '' }, di
 globalThis.CustomEvent = class { constructor(type) { this.type = type; } };
 
 const withMerge = merge === '1';
+// i18n 部件已退役（parts/ 移到 _to_delete/，词条全部在基础字典里）：「合并前」= 基础字典去掉该任务的键（键名单见 tests/fixtures/i18n_parts_keys.json）
+const PART_KEYS = JSON.parse(fs.readFileSync(new URL('./fixtures/i18n_parts_keys.json', import.meta.url), 'utf8'));
+const without = (d, keys) => Object.fromEntries(Object.entries(d).filter(([k]) => !keys.includes(k)));
 globalThis.fetch = async (path) => {
   const s = String(path);
   if (s.startsWith('/api/search')) return { ok: true, status: 200, json: async () => [] };
   const lang = s.endsWith('/en.json') ? 'en' : 'zh';
   const base = JSON.parse(fs.readFileSync(new URL(s), 'utf8'));
-  const part = withMerge ? JSON.parse(fs.readFileSync(`${ui}/i18n/parts/A15.${lang}.json`, 'utf8')) : {};
-  return { ok: true, status: 200, json: async () => ({ ...base, ...part }) };
+  const body = withMerge ? base : without(base, PART_KEYS.A15);
+  return { ok: true, status: 200, json: async () => body };
 };
 
 const i18n = await import(new URL('shared/i18n.js', uiUrl));

@@ -67,6 +67,7 @@ class PersonalModeTests(unittest.TestCase):
     def handler(self, method, path, authenticated=True, external=False, guard=True):
         cls = extracted(["do_GET", "do_POST", "_personal_blocked", "_maintenance_blocked"],
                         meta=lambda: {"markets": ["synthetic"]},
+                        feature_flags=lambda h: {},     # /api/meta 的只读功能开关（体检 / 前向账本）；这里只测个人模式，开关单独测
                         MARKETS={"cn": {}}, time=SimpleNamespace(time=lambda: 0),
                         _bad_login=[], _alive={}, refresh_status=lambda: {"ok": True},
                         search=lambda *a: {"search": True}, scan_query=lambda q: {"scan": True},

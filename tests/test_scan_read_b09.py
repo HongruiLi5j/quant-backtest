@@ -136,7 +136,7 @@ class TestStripIntradayEquivalent(unittest.TestCase):
         allmarket.ALL = self.dir_b
         calls = []
         real_load = allmarket.load
-        allmarket.load = lambda code, delisted=False: (calls.append(code), real_load(code, delisted))[1]
+        allmarket.load = lambda code, delisted=False, raw=False: (calls.append(code), real_load(code, delisted, raw=raw))[1]
         try:
             fixed = allmarket.strip_intraday()
         finally:

@@ -30,8 +30,10 @@ class CheckPageTests(unittest.TestCase):
         self.assertIn('data-page="check"', HTML)
 
     def test_calls_only_the_upload_endpoint(self):
-        self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/check/upload"})
-        self.assertIn("404", JS)                                                    # 功能未开启时的提示分支
+        # 进页面读 /api/meta 的 features.upload_check 判断开关（不再用空 POST 探测）；提交只打 /api/check/upload
+        self.assertEqual(set(re.findall(r"/api/[a-z_/]+", JS)), {"/api/check/upload", "/api/meta"})
+        self.assertIn("features?.upload_check", JS)
+        self.assertIn("404", JS)                                                    # 提交时仍按 404 显示「功能未开启」（开关在两次之间被关掉）
 
     def test_admin_toggle_present(self):
         av = (UI / "pages" / "admin-views.js").read_text(encoding="utf-8")

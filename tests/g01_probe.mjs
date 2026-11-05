@@ -23,7 +23,8 @@ const load = (rel) => import(pathToFileURL(`${ui}/${rel}`).href);
 const i18n = await load('shared/i18n.js');
 const { stockPage, rememberStockStrategy } = await load('shared/stock-link.js');
 const { tDefault } = await load('shared/t-fallback.js');
-const A02_KEYS = Object.keys(JSON.parse(fs.readFileSync(`${ui}/i18n/parts/A02.zh.json`, 'utf8')));
+// A02 部件已退役，键名单取快照 tests/fixtures/i18n_parts_keys.json
+const A02_KEYS = JSON.parse(fs.readFileSync(new URL('./fixtures/i18n_parts_keys.json', import.meta.url), 'utf8')).A02;
 const { pageHref, stockHref } = await load('pages/U1-common.js');
 
 const out = { links: {}, fallback: {}, store: {} };

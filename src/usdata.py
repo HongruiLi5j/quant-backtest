@@ -47,8 +47,25 @@ def universe() -> pd.DataFrame:
     return df
 
 
+US_CLOSE_READY = (16, 30)     # 美东 16:30 以后保存的文件，当天 K 线才算收盘完成
+
+
+def drop_partial(df: pd.DataFrame, saved_ts: float) -> pd.DataFrame:
+    """D87（revquant 美股审计 U3）：外部下载目录里，如果文件是在某天美东 16:30 之前保存的，那天（及以后）的 K 线是盘中数据，去掉。
+    只在内存里去掉，不改外部文件（和 A 股 allmarket.strip_intraday 同一个判断，后者会改写自己的缓存）。"""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    if df.empty:
+        return df
+    saved = datetime.fromtimestamp(saved_ts, ZoneInfo("America/New_York"))
+    ready = saved.date() if (saved.hour, saved.minute) >= US_CLOSE_READY else saved.date() - timedelta(days=1)
+    idx = pd.DatetimeIndex(df.index).tz_localize(None) if getattr(df.index, "tz", None) is not None else pd.DatetimeIndex(df.index)
+    return df[idx.normalize() <= pd.Timestamp(ready)]
+
+
 def load_raw(code: str) -> pd.DataFrame:
-    return pd.read_parquet(root() / "data" / f"{code}.parquet")
+    p = root() / "data" / f"{code}.parquet"
+    return drop_partial(pd.read_parquet(p), p.stat().st_mtime)
 
 
 def adjust(raw: pd.DataFrame) -> pd.DataFrame:
@@ -73,7 +90,7 @@ def screen(raw: pd.DataFrame, df: pd.DataFrame) -> str:
     if (raw["Close"] <= 0).any() or (raw["Adj Close"] <= 0).any():
         return "价格异常（出现 0 或负数）"
     if (df["Close"].pct_change().abs() > 3.0).any():
-        return "价格异常（单日涨跌超过 300%，疑似坏数据）"
+        return "价格异常（单日涨跌超过 300%：可能是坏数据，也可能是真实暴跌或反向拆股；整只排除）"     # D87：规则不变（U2 待所有者决定），只改说明
     tail = raw.iloc[-60:]
     dv = (tail["Close"] * tail["Volume"].fillna(0)).median()
     if raw["Close"].iloc[-1] < 1.0:
@@ -83,6 +100,46 @@ def screen(raw: pd.DataFrame, df: pd.DataFrame) -> str:
     if (raw["Volume"].iloc[-252:].fillna(0) <= 0).mean() > 0.25:
         return "停牌或无成交的日子太多"
     return ""
+
+
+MIN_DOLLAR_VOL = 500_000      # 与 screen 同一组门槛（D103：改成按历史时点判断；股价门槛不用，见 eligible_pit）
+MAX_ZERO_SHARE = 0.25
+MIN_AGE = 250
+
+
+def hard_screen(raw: pd.DataFrame, df: pd.DataFrame) -> str:
+    """D103：整只排除只剩“数据本身不能用”的情况（上市不满一年、出现 0/负价、单日 ±300%）。
+    股价、成交额、停牌这些“当时能不能买”的条件改由 eligible_pit 按历史时点逐月判断，不再用今天的值整只排除。"""
+    if len(df) < MIN_AGE:
+        return "上市不满一年"
+    if (raw["Close"] <= 0).any() or (raw["Adj Close"] <= 0).any():
+        return "价格异常（出现 0 或负数）"
+    if (df["Close"].pct_change().abs() > 3.0).any():
+        return "价格异常（单日涨跌超过 300%：可能是坏数据，也可能是真实暴跌或反向拆股；整只排除）"
+    return ""
+
+
+def eligible_pit(raw: pd.DataFrame, index) -> pd.Series:
+    """D103：按历史时点的可交易样本。每月第一个交易日调仓：用“上一个交易日收盘为止”的数据判断
+    近 60 日成交额中位数 ≥ 50 万美元、近 252 日无成交天数 ≤ 25%、已上市 ≥ 250 个交易日，
+    全部满足这个月才算样本内（可以持有），否则整月空仓。门槛和 screen 相同，只是不再用今天的值。
+    没有“股价 ≥ 1 美元”这一条（revquant 复核）：Yahoo 的 Close 已按之后的拆股调整过，用它判断当时的股价就是用了未来信息
+    （NVDA 2012 年 Close 只有 0.35，当时真实价约 14 美元；反向拆股则相反）。成交额 = Close × Volume，拆股对两者的调整互相抵消，不受影响。
+    不用未来数据：第 d 天的结果只取决于 d 之前的数据。返回 index 上的 bool Series。"""
+    r = raw.dropna(subset=["Close"])
+    r = r[~r.index.duplicated(keep="last")].sort_index()
+    px = r["Close"]
+    vol = r["Volume"].fillna(0.0)
+    dv = (px * vol).rolling(60, min_periods=60).median()
+    zero = (vol <= 0).astype(float).rolling(252, min_periods=1).mean()
+    age = pd.Series(np.arange(1, len(r) + 1), index=r.index)
+    ok = (dv >= MIN_DOLLAR_VOL) & (zero <= MAX_ZERO_SHARE) & (age >= MIN_AGE)
+    ok = ok.reindex(index).fillna(False).astype(bool)
+    prev = ok.shift(1, fill_value=False)                       # 上一个交易日收盘为止
+    idx = pd.DatetimeIndex(index)
+    month = idx.to_period("M")
+    first = pd.Series(month, index=idx) != pd.Series(month, index=idx).shift(1)
+    return prev.where(first.to_numpy()).ffill().fillna(False).astype(bool)
 
 
 def caps() -> pd.DataFrame:

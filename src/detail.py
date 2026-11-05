@@ -45,7 +45,7 @@ def lookup(market: str, code: str, mcfg: dict) -> tuple[pd.DataFrame | None, dic
     if code in wl and wl[code]:
         info["name"] = wl[code]
     info["watch"] = code in wl
-    df = allmarket.load(code) if allmarket.path(code).exists() else datasource.load_cached(market, code)
+    df = allmarket.load(code, keep_flagged=True) if allmarket.path(code).exists() else datasource.load_cached(market, code)
     df = allmarket._drop_unfinished(df) if not df.empty else df
     return (df if not df.empty else None), info
 
@@ -130,26 +130,61 @@ def _run(name, prices, code, mcfg, cost, cash, limits):
     return W, res
 
 
-def build(market: str, code: str, mcfg: dict, strategy: str = "blend2", period: str = "1y") -> dict:
-    df, info = lookup(market, code, mcfg)
-    if df is None or len(df) < 60:
-        return {"error": f"{code} 没有数据（还没下载，或者上市时间太短）"}
-    from src import display_price
-    df, _k, _note = display_price.apply(market, code, df)
-    info = dict(info, price_basis=_note)
-    if strategy not in SINGLE:
-        strategy = "blend2"
-    prices = {code: df}
-    cash_df = datasource.load_cached(market, mcfg["cash"])
-    cash = cash_df["Close"].pct_change() if not cash_df.empty else None
-    is_stock = info["kind"] == "个股"
-    cost = (mcfg.get("stock_cost_bp", mcfg["cost_bp"]) if is_stock else mcfg["cost_bp"]) / 1e4
-    limits = {code: datasource.limit_pct(code, info["name"])} if market == "cn" else None
-    t0 = df.index[min(250, len(df) - 1)]
-    rf = cash.reindex(df.index).fillna(0.0) if cash is not None else pd.Series(0.0, index=df.index)
+def _suspended_days(market: str, mcfg: dict, df) -> int | None:
+    """D86：这只股票在自己的数据区间里缺了多少个交易日（多半是停牌）。A 股用交易所交易日历 data/daily/cn_trade_calendar.csv
+    （revquant 建议，和他的核对口径一致）；读不到或其他市场时退回本市场基准 ETF（mcfg['main']）的日期。只数两者重叠的区间。
+    回测年化按「有 K 线的天数」算、停牌期间的现金利息也没计入（revquant_ref_engine.md），页面在这个数超过 20 时提示。
+    只读，不改任何回测数字；拿不到日历时返回 None。"""
+    cal = None
+    if market == "cn":
+        try:
+            cal = pd.DatetimeIndex(pd.to_datetime(pd.read_csv(datasource.CACHE / "cn_trade_calendar.csv")["trade_date"]))
+        except Exception:
+            cal = None
+    if cal is None:
+        try:
+            cal = datasource.load_cached(market, mcfg["main"]).index
+        except Exception:
+            return None
+    if len(cal) == 0 or len(df) == 0:
+        return None
+    lo, hi = max(cal[0], df.index[0]), min(cal[-1], df.index[-1])
+    want = cal[(cal >= lo) & (cal <= hi)]
+    have = df.index[(df.index >= lo) & (df.index <= hi)]
+    return int(len(want.difference(have)))
 
-    # ---- 所有策略对比
-    compare, chosen = [], None
+
+_COMPARE_MEMO: "OrderedDict" = None     # D94：(输入指纹) -> (对比表, {策略: (W, res)})；最多 32 只，最久没用的先丢
+_COMPARE_MAX = 32
+
+
+def _frame_digest(obj) -> str:
+    """表格内容指纹（含索引、列名和每个值）：内容一变指纹就变。"""
+    import hashlib
+    if obj is None:
+        return "-"
+    h = hashlib.sha1(pd.util.hash_pandas_object(obj, index=True).to_numpy().tobytes())
+    h.update(repr(list(getattr(obj, "columns", [getattr(obj, "name", None)]))).encode())
+    return h.hexdigest()
+
+
+def _compare_all(market, code, prices, mcfg, cost, cash, limits, t0, rf):
+    """8 个单品种策略在整段历史上的回测 + 对比表行。和区间（period）、页面上选的策略都无关，
+    原来离线版每只股票按 3 个区间各算一遍、网页上切换区间也重算 8 个回测。
+    D94：按「价格表内容 + 现金收益 + 费用 + 涨跌停幅度 + 市场配置」做指纹缓存；结果只读，对比表每次返回深拷贝。"""
+    import copy
+    import json
+    from collections import OrderedDict
+    global _COMPARE_MEMO
+    if _COMPARE_MEMO is None:
+        _COMPARE_MEMO = OrderedDict()
+    key = (market, code, float(cost), tuple(sorted((limits or {}).items())), str(t0),
+           _frame_digest(prices[code]), _frame_digest(cash), json.dumps(mcfg, sort_keys=True, default=str))
+    hit = _COMPARE_MEMO.get(key)
+    if hit is not None:
+        _COMPARE_MEMO.move_to_end(key)
+        return copy.deepcopy(hit[0]), hit[1]
+    compare, runs = [], {}
     for name in SINGLE:
         try:
             W, res = _run(name, prices, code, mcfg, cost, cash, limits)
@@ -166,8 +201,34 @@ def build(market: str, code: str, mcfg: dict, strategy: str = "blend2", period: 
             "exposure": st.get("Exposure%"), "y1": float(((1 + r.iloc[-252:]).prod() - 1) * 100),
             "next": next_w, "action": _action(now_w, next_w),
         })
-        if name == strategy:
-            chosen = (W, res)
+        runs[name] = (W, res)
+    _COMPARE_MEMO[key] = (copy.deepcopy(compare), runs)
+    while len(_COMPARE_MEMO) > _COMPARE_MAX:
+        _COMPARE_MEMO.popitem(last=False)
+    return compare, runs
+
+
+def build(market: str, code: str, mcfg: dict, strategy: str = "blend2", period: str = "1y") -> dict:
+    df, info = lookup(market, code, mcfg)
+    if df is None or len(df) < 60:
+        return {"error": f"{code} 没有数据（还没下载，或者上市时间太短）"}
+    from src import display_price
+    df, _k, _note = display_price.apply(market, code, df)
+    info = dict(info, price_basis=_note)
+    if strategy not in SINGLE:
+        strategy = "blend2"
+    prices = {code: df}
+    cash_df = datasource.load_cached(market, mcfg["cash"])
+    cash = cash_df["Close"].pct_change() if not cash_df.empty else None
+    is_stock = info["kind"] == "个股"
+    cost = (mcfg.get("stock_cost_bp", mcfg["cost_bp"]) if is_stock else mcfg["cost_bp"]) / 1e4
+    limits = {code: datasource.limit_pct(code, info["name"])} if market == "cn" else None
+    t0 = registry.stats_start(df.index)          # D18：和 registry.run 同一个起点，各页数字一致
+    rf = cash.reindex(df.index).fillna(0.0) if cash is not None else pd.Series(0.0, index=df.index)
+
+    # ---- 所有策略对比（D94：同一份数据只算一次，换区间 / 换显示策略时直接复用，见 _compare_all）
+    compare, runs = _compare_all(market, code, prices, mcfg, cost, cash, limits, t0, rf)
+    chosen = runs.get(strategy)
 
     W, res = chosen
     held = res.weights.iloc[:, 0].reindex(df.index).fillna(0.0)
@@ -215,7 +276,10 @@ def build(market: str, code: str, mcfg: dict, strategy: str = "blend2", period: 
                         "d1": float((c.iloc[-1] / c.iloc[-2] - 1) * 100),
                         "m1": float((c.iloc[-1] / c.iloc[-22] - 1) * 100) if len(c) > 22 else None,
                         "y1": float((c.iloc[-1] / c.iloc[-252] - 1) * 100) if len(c) > 252 else None,
-                        "rows": len(df), "first_date": df.index[0].strftime("%Y-%m-%d")},
+                        "rows": len(df), "first_date": df.index[0].strftime("%Y-%m-%d"),
+                        "suspended_days": _suspended_days(market, mcfg, df),
+                        # D110：数据质量标记（只 A 股全市场文件有）；mask = 全市场统计里已屏蔽，flag = 只提示
+                        "quality": [{k: g[k] for k in ("from", "to", "n", "kind")} for g in allmarket.quality_flags(info["code"])] if market == "cn" else []},
         "strategy": strategy, "period": period, "cost_bp": cost * 1e4,
         "dates": [d.strftime("%Y-%m-%d") for d in idx],
         "open": ser(win["Open"]), "high": ser(win["High"]), "low": ser(win["Low"]),
@@ -228,6 +292,7 @@ def build(market: str, code: str, mcfg: dict, strategy: str = "blend2", period: 
         "equity": ser(eq), "bench": ser(bh),
         "trades": trades[::-1],
         "compare": compare,
+        "compare_start": t0.strftime("%Y-%m-%d"),      # 对比表的统计起点（全部历史，扣除预热期）
         "next": float(W.iloc[-1].sum()),
         "action": _action(float(held.iloc[-1]), float(W.iloc[-1].sum())),
     }

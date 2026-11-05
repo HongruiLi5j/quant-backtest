@@ -57,7 +57,7 @@ class LockFlagTests(unittest.TestCase):
             self.assertTrue(up[200] and not up[210])
             self.assertGreaterEqual(int(up.sum() + dn.sum()), 6)
             for i in range(1, len(df)):
-                flags = limit_flags(code, df.iloc[i - 1:i + 1])
+                flags = [f for f in limit_flags(code, df.iloc[i - 1:i + 1], close_rate={}) if "一字" in f]     # 只比一字板（D30 新增的收盘涨停提示另测）
                 self.assertEqual(up[i], any("涨停" in f for f in flags), (code, i))
                 self.assertEqual(dn[i], any("跌停" in f for f in flags), (code, i))
 

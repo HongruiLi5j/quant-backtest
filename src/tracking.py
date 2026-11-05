@@ -116,6 +116,13 @@ def evaluate(market: str, mcfg: dict, hist: "pd.DataFrame | None" = None) -> dic
     latest_price = bench.index[-1].date() if bench is not None and not bench.empty else pd.Timestamp(d["signal_date"].max()).date()
     expected_first_5 = pd.bdate_range(start=pd.Timestamp(latest_price) + pd.Timedelta(days=1), periods=5)[-1].date().isoformat()
 
+    # D76：和信号核对 / 发布清单同一个基准（当天全市场个股等权平均，读账本），卖出/减仓按方向翻转，附随机挑股基线。
+    # x{n}/beat{n}（相对 510300，大盘股）保留不动，页面改标签后再决定是否隐藏。
+    try:
+        from .trade_signals import _ledger_baseline
+        ew, rnd = _ledger_baseline() if market == "cn" else ({}, {})
+    except Exception:
+        ew, rnd = {}, {}
     summary = []
     for (strat, act), g in d.groupby(["strategy", "action"]):
         item = {"strategy": strat, "action": act, "signals": int(len(g)),
@@ -127,6 +134,13 @@ def evaluate(market: str, mcfg: dict, hist: "pd.DataFrame | None" = None) -> dic
             item[f"ex{n}"] = float(done[f"x{n}"].mean()) if len(done) else None
             item[f"win{n}"] = float((done[f"r{n}"] > 0).mean() * 100) if len(done) else None
             item[f"beat{n}"] = float((done[f"x{n}"] > 0).mean() * 100) if len(done) else None
+            buy = act in ("买入", "加仓")
+            ew_rows = [(r / 100, ew[(str(day)[:10], n)], rnd[(str(day)[:10], n)][0 if buy else 1])
+                       for day, r in zip(done["signal_date"], done[f"r{n}"]) if (str(day)[:10], n) in ew]
+            item[f"ew_n{n}"] = len(ew_rows)
+            item[f"ew_dir{n}"] = (sum((r > m) if buy else (r < m) for r, m, _ in ew_rows) / len(ew_rows) * 100) if ew_rows else None
+            item[f"ew_random{n}"] = (sum(x for _, _, x in ew_rows) / len(ew_rows) * 100) if ew_rows else None
+            item[f"ew_edge{n}"] = (item[f"ew_dir{n}"] - item[f"ew_random{n}"]) if ew_rows else None
         summary.append(item)
 
     recent = d.sort_values("signal_date", ascending=False).head(200)
@@ -140,6 +154,9 @@ def evaluate(market: str, mcfg: dict, hist: "pd.DataFrame | None" = None) -> dic
         "total": int(len(d)), "since": d["signal_date"].min(), "latest": d["signal_date"].max(),
         "latest_price_date": latest_price.isoformat(), "expected_first_5": expected_first_5,
         "summary": summary,
+        "counts_only": market == "us",      # D87（U6）：美股没有等权基准账本、信号太少，页面先只显示条数
+        "ew_note": "ew_* = 相对当天全市场个股等权平均（与信号核对同一基准，只覆盖账本有记录的信号日）；卖出/减仓：股票跑输平均 = 方向正确；"
+                   "ew_random = 随机挑股的同口径命中率，ew_edge = 两者之差（百分点）。x/beat 是相对 510300（大盘股）。",
         "recent": recent[["signal_date", "entry_day", "code", "name", "strategy", "action",
                           "r5", "r20", "r60", "r_now", "x_now"]].to_dict("records"),
     }

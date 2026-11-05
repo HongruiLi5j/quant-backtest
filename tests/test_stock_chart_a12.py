@@ -10,6 +10,7 @@
 3. stock.js 把视图状态接到 kChart、开关只在数据量大时出现；两个文件里没有 innerHTML 之类的拼 HTML 写法
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -18,9 +19,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
-ZH = json.loads((PARTS / "A12.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A12.en.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
+ZH = parts_compat.part("A12", "zh")
+EN = parts_compat.part("A12", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 STOCK_JS = (UI / "pages" / "stock.js").read_text(encoding="utf-8")
@@ -43,14 +45,10 @@ class A12DictTests(unittest.TestCase):
         for k, v in EN.items():
             self.assertIsNone(CJK.search(v), f"{k}: {v}")
 
-    def test_no_collision_with_base_or_other_parts(self):
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(ZH) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if p.name.startswith("A12."):
-                    continue
-                self.assertFalse(set(ZH) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+            self.assertEqual(parts_compat.missing_in_base("A12", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set(re.findall(r"""t\(\s*['"](a12\.[a-z_.0-9]+)['"]""", STOCK_JS + CHART_JS))

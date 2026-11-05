@@ -79,7 +79,14 @@ class MobileCssTests(unittest.TestCase):
         self.assertIsNotNone(block)
         value = rule_body(block, ".ws-grid--kpi6 .metric__value")
         self.assertIsNotNone(value)
-        size = int(re.search(r"font-size:\s*(\d+)px", value).group(1))
+        # D81 起字号可能写成 token（var(--fs-md) 等），按 fonts.css 里 token 的 rem 值换算成 px 再比
+        m = re.search(r"font-size:\s*(\d+)px", value)
+        if m:
+            size = int(m.group(1))
+        else:
+            tok = re.search(r"font-size:\s*var\((--fs-[\w-]+)\)", value).group(1)
+            rem = re.search(re.escape(tok) + r":\s*([\d.]+)rem", css("shared/fonts.css")).group(1)
+            size = round(float(rem) * 16)
         self.assertLessEqual(size, 18)          # 22px 的 “500,000.00” 要 128px，装不进约 100px 的卡片内容区
         self.assertIn("overflow-wrap: anywhere", value)
         self.assertIn("min-width: 0", rule_body(block, ".u3-capital"))

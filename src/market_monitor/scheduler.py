@@ -42,6 +42,37 @@ TRACK_WRITE_GAP = 60     # 追踪记录写入 jsonl 的最小间隔（秒），�
 WATCH_STORE_ROOT = STORE_ROOT.parent / 'market_monitor_watch'   # 与 S2 的 5 只快照分开，互不校验
 KNOWN_ERRORS = ('timeout', 'network_error', 'worker_exit', 'http_status', 'redirect_refused', 'invalid_record')
 
+# D108：止损线的种类（stops.stop_lines 的 kind）和通知里的叫法
+STOP_NAMES = {'fixed': '跌破固定止损线', 'donchian_s1': '跌破海龟出场线'}
+
+
+def _clean_stops(raw):
+    """D108：把 watchlist 给的止损线（stops.stop_lines 的结果）收成页面和提醒要用的最少字段：
+    {code: [{'kind', 'price', 'as_of'}]}，按价格从高到低（第一条是价格往下最先碰到的）。
+    不带持仓成本和规则原文（盯盘接口不暴露成本；规则文字由页面按语言写）。价格不是有限正数的线丢掉。"""
+    out = {}
+    for code, info in (raw or {}).items():
+        lines = []
+        for line in (info or {}).get('lines') or []:
+            try:
+                price = float(line['price'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if line.get('kind') in STOP_NAMES and price > 0 and price < float('inf'):
+                lines.append({'kind': line['kind'], 'price': price, 'as_of': line.get('as_of')})
+        if lines:
+            out[code] = sorted(lines, key=lambda x: -x['price'])
+    return out
+
+
+def _fixed_stop_pct():
+    """固定止损比例（模拟盘 simtrade.STOP_LOSS，页面说明用）；读不到返回 None。"""
+    try:
+        from src import simtrade
+        return float(simtrade.STOP_LOSS)
+    except Exception:
+        return None
+
 
 def validate_settings(interval, top_n, max_watch=DEFAULT_MAX_WATCH, batch_mode=False):
     """严格校验：只接受真正的 int，拒绝 bool/浮点/越界。批量模式的最小间隔放宽到 10 秒。"""
@@ -322,7 +353,7 @@ class MonitorScheduler:
     def _apply_plan(self, plan):
         self._plan = {'codes': list(plan['codes'])[:self.max_watch], 'sources': dict(plan.get('sources', {})),
                       'targets': dict(plan.get('targets', {})), 'signals': dict(plan.get('signals', {})),
-                      'truncated': bool(plan.get('truncated'))}
+                      'stops': _clean_stops(plan.get('stops')), 'truncated': bool(plan.get('truncated'))}
         keep = set(self._plan['codes'])
         conditions = {}
         for code, target in self._plan['targets'].items():
@@ -334,6 +365,12 @@ class MonitorScheduler:
                 conditions[code + ':down'] = Condition(symbol, 'down', target['buy'])
             if 'sell' in target:
                 conditions[code + ':up'] = Condition(symbol, 'up', target['sell'])
+        # D108：持仓止损线（固定止损 / 海龟出场线），价格从上往下穿过时提醒；只是盘中预警，规则以收盘价为准
+        for code, lines in self._plan['stops'].items():
+            if code not in keep:
+                continue
+            for line in lines:
+                conditions[f"{code}:stop:{line['kind']}"] = Condition(symbol_for(code), 'down', line['price'])
         self._conditions = conditions
         self._quotes = {c: q for c, q in self._quotes.items() if c in keep}
         self._history = {c: h for c, h in self._history.items() if c in keep}
@@ -433,6 +470,7 @@ class MonitorScheduler:
             self._data['limits'][key] = {'day': state.day, 'count': state.count,
                                          'last_alert': state.last_alert.isoformat()}
             record = {'code': code, 'direction': condition.direction, 'threshold': condition.threshold,
+                      **({'line': key.split(':', 2)[2]} if ':stop:' in key else {}),
                       'previous_price': alert.previous_price, 'price': alert.price,
                       'source_time': alert.source_time.astimezone(BEIJING).isoformat(),
                       'received_at': alert.received_at.astimezone(BEIJING).isoformat(),
@@ -447,9 +485,14 @@ class MonitorScheduler:
     def _notify(self, record):
         if self.notify_fn is None:
             return
-        side = '跌破买入目标价' if record['direction'] == 'down' else '突破卖出目标价'
+        if record.get('line'):
+            side = STOP_NAMES.get(record['line'], '跌破止损线')
+            title, tail = '盯盘止损提醒', '（盘中预警，规则以收盘价为准）'
+        else:
+            side = '跌破买入目标价' if record['direction'] == 'down' else '突破卖出目标价'
+            title, tail = '盯盘到价提醒', ''
         try:
-            self.notify_fn('盯盘到价提醒', f"{record['code']} {side} {record['threshold']}，现价 {record['price']}")
+            self.notify_fn(title, f"{record['code']} {side} {record['threshold']}，现价 {record['price']}{tail}")
         except Exception:
             LOG.info('market_monitor: notify unavailable')
 
@@ -514,7 +557,32 @@ class MonitorScheduler:
                     'provider': 'easy' if self._batch_active() else 'tencent',
                     'batch_requested': self.batch_requested, 'degraded': self._degraded,
                     'truncated': self._plan['truncated'], 'rounds': self._round['rounds'],
+                    'estimate': self._estimate(),
+                    'rules': self._rules(),
                     'timezone': '北京时间'}
+
+    def _rules(self):
+        """D68：页面「提醒规则」说明用的只读数据。阈值就是 _intraday_step 实际用的 intraday.DEFAULT_THRESHOLDS
+        （execution_hints / detect_new_signals 都没传自定义阈值），页面不再抄一份常数。
+        targets = 当前名单里有目标买入 / 卖出价的股票数：目标价只来自买卖清单行的 buy_price / sell_price
+        （watchlist.row_targets），清单目前没有这两个字段，所以通常是 0，目标价告警不会触发。调用方已持锁。"""
+        return {'thresholds': dict(intraday.DEFAULT_THRESHOLDS), 'targets': len(self._plan.get('targets') or {}),
+                'stops': len(self._plan.get('stops') or {}), 'stop_pct': _fixed_stop_pct()}
+
+    def _estimate(self):
+        """D15（C27）：按现有限速规则估算一轮要多久、今天剩下的预算还够几轮，给页面显示「参数是否可行」。
+        只读，不改任何间隔或预算。名单为空（未开始）时按名单上限估算。调用方已持锁。
+        逐只模式：每只一个请求、相邻请求至少 REQUEST_GAP 秒（_poll_group），一轮 ≥ 只数 × REQUEST_GAP；
+        批量模式：一轮的请求数 = _batch_cost(只数)，最小间隔 = effective_interval(只数)。"""
+        n = len(self._plan['codes']) or self.max_watch
+        basis = 'watch' if self._plan['codes'] else 'max_watch'
+        if self._batch_active():
+            per_round, round_s = _batch_cost(n), max(self.interval, effective_interval(n))
+        else:
+            per_round, round_s = n, max(self.interval, n * REQUEST_GAP)
+        left = max(0, self.budget - self._used)
+        return {'count': n, 'basis': basis, 'requests_per_round': per_round, 'round_seconds': round_s,
+                'rounds_affordable': left // per_round if per_round else 0}
 
     def quotes(self):
         with self._lock:
@@ -526,6 +594,9 @@ class MonitorScheduler:
                     'sources': list(self._plan['sources'].get(code, []))}
                 if 'alert' not in row:
                     row['alert'] = 'armed' if any(k[:6] == code for k in self._conditions) else 'none'
+                stops = self._plan.get('stops') or {}
+                if code in stops:                    # D108：只给持仓股；不含持仓成本
+                    row['stop'] = deepcopy(stops[code])
                 rows.append(row)
             return rows
 

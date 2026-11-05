@@ -79,10 +79,21 @@ def default_signals():
         return []
 
 
+def default_stops():
+    """D108：持仓的自动止损线（见 stops.py）；出错降级为空。"""
+    try:
+        from .stops import stop_lines
+        return stop_lines()
+    except Exception:
+        LOG.info('watchlist: stop lines unavailable, degraded to empty')
+        return {}
+
+
 def build_watchlist(top_n=DEFAULT_TOP_N, *, max_watch=DEFAULT_MAX_WATCH, holdings_fn=default_holdings, watch_fn=default_watch,
-                    signals_fn=default_signals):
+                    signals_fn=default_signals, stops_fn=None):
     """返回 {'codes': [...], 'sources': {code: [来源]}, 'targets': {code: {'buy','sell'}},
-    'signals': {code: {'action','name','close'}}（S3b：供盘中实时分析用，只读拷贝）, 'truncated': bool}。"""
+    'signals': {code: {'action','name','close'}}（S3b：供盘中实时分析用，只读拷贝）,
+    'stops': {code: 止损线}（D108：只给名单里的持仓股，见 stops.stop_lines）, 'truncated': bool}。"""
     validate_max_watch(max_watch)
     if type(top_n) is not int or not 0 <= top_n <= max_watch:
         raise ValueError('invalid_top_n')
@@ -126,6 +137,15 @@ def build_watchlist(top_n=DEFAULT_TOP_N, *, max_watch=DEFAULT_MAX_WATCH, holding
         LOG.warning('watchlist: over limit (%d > %d), truncated', len(order), max_watch)
         order = order[:max_watch]
     keep = set(order)
+    if stops_fn is None:                     # 只有用真实持仓台账时才默认算止损线；注入假持仓（测试）时不去读真实台账和行情
+        stops_fn = default_stops if holdings_fn is default_holdings else dict
+    try:
+        stops = dict(stops_fn() or {})
+    except Exception:
+        LOG.info('watchlist: stop lines failed, degraded to empty')
+        stops = {}
     return {'codes': order, 'sources': {c: sources[c] for c in order},
             'targets': {c: t for c, t in targets.items() if c in keep},
-            'signals': {c: v for c, v in signals.items() if c in keep}, 'truncated': truncated}
+            'signals': {c: v for c, v in signals.items() if c in keep},
+            'stops': {c: v for c, v in stops.items() if c in keep and SOURCE_HOLDING in sources.get(c, [])},
+            'truncated': truncated}

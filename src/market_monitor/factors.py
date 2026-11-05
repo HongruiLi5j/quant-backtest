@@ -42,6 +42,14 @@ class Panel:
     industry: Optional[pd.Series] = None       # 代码 -> 行业（残差动量用）
     market_ret: Optional[pd.Series] = None     # 大盘日收益；缺省用全市场等权收益（沪深300 本地没有）
 
+    def __post_init__(self):
+        # D99：坏复权数据（如 600595 在 2019-05~2020-05 前复权价 ≤0）：OHLC 任一非正则整行置 NaN，
+        # 复牌后的第一天收益因 pct_change(fill_method=None) 也变 NaN，不会出现 +1867% 的假收益
+        bad = (self.open <= 0) | (self.high <= 0) | (self.low <= 0) | (self.close <= 0)
+        if bool(bad.to_numpy().any()):
+            self.open, self.high, self.low, self.close = (x.mask(bad) for x in (self.open, self.high, self.low, self.close))
+            self.volume = self.volume.mask(bad)
+
     @property
     def ret(self):
         return self.close.pct_change(fill_method=None)
@@ -251,7 +259,7 @@ _DEFS = [
     _m('breakout20', '20日突破', 'trend', 'flag', breakout20, 'close_t > max(close_{t-20..t-1})', 'Donchian channel / Turtle 规则', 1, 0.0, 21),
     _m('vol_breakout', '量能放大突破', 'trend', 'flag', vol_breakout, '20日突破 且 volume_t > 1.5×mean(volume_{t-20..t-1})', 'Donchian channel + 量能确认（技术分析教材的常见定义，阈值 1.5 倍为项目自设）', 1, 0.0, 21),
     _m('liq_filter', '流动性过滤>1亿', 'risk', 'filter', liquidity_filter, 'mean(close×volume,20) > 1e8', '实盘可成交性的常规门槛（项目自设）', 1, 0.0, 20),
-    _m('st_filter', 'ST过滤', 'risk', 'filter', st_filter, "名称不含 'ST'", 'A股 ST/*ST 退市风险与 5% 涨跌幅限制', 1, 0.0, 0),
+    _m('st_filter', 'ST过滤', 'risk', 'filter', st_filter, "名称不含 'ST'", 'A股 ST/*ST 退市风险（主板 ST 涨跌幅 2026-07-06 起由 5% 改为 10%）', 1, 0.0, 0),
     _m('susp_filter', '停牌过滤', 'risk', 'filter', suspension_filter, 'volume_t>0 且收盘价存在', 'A股停牌不可成交', 1, 0.0, 1),
 ]
 

@@ -9,6 +9,7 @@
 5. 安全 / 规模：改动的文件不用 innerHTML 等、不出现外部网址，单文件 ≤ 500 行
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -17,7 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 PROBE = ROOT / "tests" / "g01_probe.mjs"
 CHANGED = [
     UI / "shared" / "stock-link.js", UI / "shared" / "t-fallback.js", UI / "shared" / "page-boot.js",
@@ -37,7 +39,9 @@ def strip_comments(src):
 
 
 def load(name):
-    return json.loads((PARTS / name).read_text(encoding="utf-8"))
+    """「G01.zh.json」这种部件文件名 → 该任务的词条（键来自快照，值来自基础字典）"""
+    part, lang, _ = name.split(".")
+    return parts_compat.part(part, lang)
 
 
 def placeholders(s):
@@ -63,10 +67,10 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(used - set(zh), set(), "js 里用了但词条里没有")
         self.assertEqual(set(zh) - used, set(), "词条里有但没被用到")
 
-    def test_base_dicts_untouched_by_g01(self):
+    def test_g01_keys_merged_into_base(self):
+        """部件已合并并退役：原来要求 G01 词条只在 parts/ 里，现在要求它们都在基础字典里"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse([k for k in base if k.startswith("g01.")], "G01 的词条只能放在 parts/，不能写进基础字典")
+            self.assertEqual(parts_compat.missing_in_base("G01", lang), [], lang)
 
     def test_new_text_hidden_until_merged(self):
         """新词条没合并进基础字典前，代码一律经 tMaybe / 已有词条兜底，不直接 t('g01.…')（否则会露键名）"""
@@ -82,7 +86,7 @@ class I18nTests(unittest.TestCase):
         self.assertIn("if (s !== 'a02.fmt.name_code') return s;", src)
         self.assertIn("nameCode(v || k, k)", src)
         imports = set(re.findall(r"from '\.\./shared/([\w-]+\.js)'", src))
-        self.assertLessEqual(imports, {"dom.js", "i18n.js", "api.js"})
+        self.assertLessEqual(imports, {"dom.js", "i18n.js", "api.js", "url-state.js"})   # url-state.js：ux D06（回测参数写进网址）
 
 
 @unittest.skipUnless(shutil.which("node"), "没有 node，跳过探针")

@@ -7,6 +7,7 @@
    以及字典合并前（不露键名、标题退回已有词条）和合并后
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -16,11 +17,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 PAGES = UI / "pages"
 PROBE = ROOT / "tests" / "g03_probe.mjs"
-ZH = json.loads((PARTS / "G03.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "G03.en.json").read_text(encoding="utf-8"))
+ZH = parts_compat.part("G03", "zh")
+EN = parts_compat.part("G03", "en")
 BASE_ZH = json.loads((UI / "i18n" / "zh.json").read_text(encoding="utf-8"))
 MOCK = lambda name: json.loads((UI / "mock-data" / f"{name}.json").read_text(encoding="utf-8"))  # noqa: E731
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
@@ -49,13 +51,11 @@ class G03DictTests(unittest.TestCase):
         for k, v in EN.items():
             self.assertIsNone(CJK.search(v), f"{k}: {v}")
 
-    def test_no_collision_with_base_or_other_parts(self):
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(ZH) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if not p.name.startswith("G03."):
-                    self.assertFalse(set(ZH) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+            self.assertEqual(parts_compat.missing_in_base("G03", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set()
@@ -128,7 +128,11 @@ class G03RuntimeTests(unittest.TestCase):
 
     def test_first_screen_order(self):
         p = self.merged["personal"]
-        self.assertEqual(p["top"][:3], ["u1-datewrap", "u1-brief u1-brief--3", "eyebrow u1-details"])
+        # 首屏三张卡下面多了一行「这些信号准不准」（A 股，content 加，取不到账本时隐藏但节点仍在）
+        # D72：首次访问时最上面多一条「每页做什么」提示条（关掉后不再出现），其余顺序不变
+        # D91：最上面多一个「答案优先」预览开关按钮（默认关，只是一个按钮），也不算进首屏顺序
+        top = [c for c in p["top"] if c != "card ux-welcome" and "u1-hero-toggle" not in (c or "")]
+        self.assertEqual(top[:4], ["u1-datewrap", "u1-brief u1-brief--3", "ws-note u1-acc-line", "eyebrow u1-details"])
         self.assertEqual(p["card_classes"], ["card u1-actions", "card u1-pos", "card u1-risk u1-risk--on"])
         self.assertEqual(p["titles"], [BASE_ZH["u1.today.actions"], ZH["g03.pos.title"], ZH["g03.risk.title"]])
         self.assertFalse(any("u1-note" in c for c in p["top"]), "系统提示不再单独占首屏最上面一条")

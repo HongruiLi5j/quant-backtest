@@ -54,11 +54,64 @@ def path(code: str, delisted: bool = False) -> Path:
     return _dir(delisted) / f"{code}.parquet"
 
 
-def load(code: str, delisted: bool = False) -> pd.DataFrame:
+def mask_bad_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """D99（旧补丁 02 的 b）：复权价 ≤ 0 的坏数据行（全市场只有 600595：2019-05~2020-05 共 76 行，
+    前复权减出来的负价）整行置 NaN（开高低收和成交量），不删行、不改文件。
+    之后算收益用 pct_change(fill_method=None) 的地方，这些天和复牌第一天的收益都是 NaN，不会出现 +1867% 这种假收益。
+    注意：这只处理 ≤ 0 的行；600595 在这段前后价格接近 0 的正数行，日涨跌仍会远超涨跌停，那段数据整体不可信。"""
+    cols = [c for c in ("Open", "High", "Low", "Close") if c in df.columns]
+    if df.empty or not cols:
+        return df
+    bad = (df[cols] <= 0).any(axis=1)
+    if not bool(bad.any()):
+        return df
+    df = df.copy()
+    df.loc[bad, [c for c in ("Open", "High", "Low", "Close", "Volume") if c in df.columns]] = float("nan")
+    return df
+
+
+QUALITY_FILE = Path(__file__).resolve().parent.parent / "data_quality" / "cn_all_quality.json"
+_QUALITY: dict = {}
+
+
+def quality_flags(code: str | None = None):
+    """D110：数据质量标记（scripts/build_quality_flags.py 生成，进仓库）。
+    code=None 返回整份 {代码: [段]}；否则返回该代码的段列表 [{from,to,n,kind,reason}]，没有标记返回 []。
+    kind="mask"：全市场统计里整段置 NaN；kind="flag"：只提示，不动数据。文件缺失/坏掉 = 没有标记（不影响运行）。"""
+    mt = QUALITY_FILE.stat().st_mtime if QUALITY_FILE.exists() else None
+    if _QUALITY.get("mt") != mt or _QUALITY.get("f") != str(QUALITY_FILE):
+        try:
+            doc = json.loads(QUALITY_FILE.read_text(encoding="utf-8")) if mt else {}
+        except Exception:
+            doc = {}
+        _QUALITY.update(mt=mt, f=str(QUALITY_FILE), codes=doc.get("codes", {}))
+    return _QUALITY["codes"] if code is None else _QUALITY["codes"].get(code, [])
+
+
+def mask_flagged(df: pd.DataFrame, code: str) -> pd.DataFrame:
+    """把 kind="mask" 的日期段整行置 NaN（开高低收成交量），不删行、不改文件。没有这类段就原样返回。"""
+    segs = [g for g in quality_flags(code) if g.get("kind") == "mask"]
+    if df.empty or not segs:
+        return df
+    df = df.copy()
+    cols = [c for c in ("Open", "High", "Low", "Close", "Volume") if c in df.columns]
+    for g in segs:
+        df.loc[g["from"]:g["to"], cols] = float("nan")
+    return df
+
+
+def load(code: str, delisted: bool = False, raw: bool = False, keep_flagged: bool = False) -> pd.DataFrame:
+    """读一只股票。默认把复权价 ≤0 的坏行置 NaN（D99），并把数据质量标记里 kind="mask" 的段置 NaN（D110）；
+    raw=True 原样读出，只给本模块“读出来改完再存回去”的地方用，保证数据文件本身永远不被这个清洗改写；
+    keep_flagged=True 只做 D99，不做 D110（个股页要把原始走势画出来并配「数据不可靠」提示）。"""
     p = path(code, delisted)
     if not p.exists():
         return pd.DataFrame(columns=COLS)
-    return pd.read_parquet(p)
+    df = pd.read_parquet(p)
+    if raw:
+        return df
+    df = mask_bad_rows(df)
+    return df if keep_flagged else mask_flagged(df, code)
 
 
 def save(code: str, df: pd.DataFrame, delisted: bool = False):
@@ -287,6 +340,9 @@ def spot_snapshot() -> pd.DataFrame:
                     except Exception as exc:
                         log.warning("成交额旁表保存失败（不影响行情更新）：%s", exc)
                     return df
+                # D58：返回了但不完整（≤1000 只）。原来直接再请求、不等待，也不记原因，最后报错的原因是空的
+                errs.append(f"{name}: 只有 {len(df)} 只，不完整")
+                time.sleep(5)
             except Exception as e:
                 errs.append(f"{name}: {type(e).__name__}")
                 time.sleep(5)
@@ -301,7 +357,7 @@ def append_snapshot(trade_day: date, snap: pd.DataFrame, cal: list[date]) -> dic
     stats = {"appended": 0, "already": 0, "suspended": 0, "gaps": [], "new": []}
     cached = set(cached_codes())
     for code in cached:
-        df = load(code)
+        df = load(code, raw=True)
         if df.empty:
             stats["gaps"].append(code)
             continue
@@ -413,7 +469,7 @@ def backfill(codes: list[str], max_minutes: float | None = None, full: bool = Fa
         for i, code in enumerate(codes):
             if max_minutes and time.time() - t0 > max_minutes * 60:
                 break
-            old = pd.DataFrame(columns=COLS) if full else load(code)
+            old = pd.DataFrame(columns=COLS) if full else load(code, raw=True)
             if until is not None and not old.empty and old.index[-1].date() >= until:
                 handled += 1   # 上次已经更新好了
                 continue
@@ -490,7 +546,7 @@ def backfill_daily(codes: list[str], *, until: date, max_minutes: float = 30,
         for index, code in enumerate(batch):
             if time.monotonic() - started >= max_minutes * 60:
                 break
-            old = load(code)
+            old = load(code, raw=True)
             if not old.empty and old.index[-1].date() >= until:
                 done += 1
                 continue
@@ -747,7 +803,7 @@ def strip_intraday() -> int:
             continue
         ready = pd.Timestamp(market_clock.last_usable_bar_date(saved))
         if (idx > ready).any():          # 绝大多数股票走不到这里，只有真有半天 K 线才整份读出来改写
-            df = load(code)
+            df = load(code, raw=True)
             save(code, df[~(df.index > ready)])
             fixed += 1
     return fixed
@@ -758,7 +814,7 @@ def _store(code: str, new: pd.DataFrame, delisted: bool = False):
     new = _drop_unfinished(new)
     new = new[(new[["Open", "Close"]] > 0).all(axis=1)].sort_index()
     new = new[~new.index.duplicated()]
-    old = load(code, delisted)
+    old = load(code, delisted, raw=True)
     if not old.empty:
         common = old.index.intersection(new.index)
         if len(common):
@@ -817,7 +873,7 @@ def backfill_multi(codes: list[str], sources=("sina", "tencent", "tencent"), pro
                 stop.set()
                 break
             try:
-                old = load(code, delisted)
+                old = load(code, delisted, raw=True)
                 if until and not old.empty and old.index[-1].date() >= until:
                     finish(code, True, src)
                 else:

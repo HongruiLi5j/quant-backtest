@@ -6,6 +6,7 @@
 3. （有 node 时）规则函数、表单行为（合并词条 / 未合并词条两种状态，中英文各一遍）
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -14,9 +15,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
-ZH = json.loads((PARTS / "A15.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A15.en.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
+ZH = parts_compat.part("A15", "zh")
+EN = parts_compat.part("A15", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 FORM_JS = (UI / "pages" / "holdings-form.js").read_text(encoding="utf-8")
@@ -43,14 +45,11 @@ class A15DictTests(unittest.TestCase):
         for k, v in ZH.items():
             self.assertIsNotNone(CJK.search(v), k)
 
-    def test_no_collision_with_base_or_other_parts(self):
-        for lang, mine in (("zh", ZH), ("en", EN)):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(mine) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if p.name.startswith("A15."):
-                    continue
-                self.assertFalse(set(mine) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
+        for lang in ("zh", "en"):
+            self.assertEqual(parts_compat.missing_in_base("A15", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set(re.findall(r"""['"`](a15\.[a-z_.0-9]+)['"`]""", FORM_JS + RULES_JS))

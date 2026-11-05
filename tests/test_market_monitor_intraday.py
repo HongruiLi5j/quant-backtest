@@ -38,8 +38,12 @@ class LimitRuleTests(unittest.TestCase):
         self.assertEqual(im.limit_pct('000001'), 0.10)
         self.assertEqual(im.limit_pct('300750'), 0.20)
         self.assertEqual(im.limit_pct('688001'), 0.20)
-        self.assertEqual(im.limit_pct('600000', '*ST某某'), 0.05)
-        self.assertEqual(im.limit_pct('300001', 'ST某某'), 0.05)     # ST 优先于创业板
+        # D17：主板 ST 2026-07-06 起由 5% 改为 10%；创业板 ST 按板块 20%（规则表在 src/limits.py）
+        self.assertEqual(im.limit_pct('600000', '*ST某某', '2026-07-03'), 0.05)
+        self.assertEqual(im.limit_pct('600000', '*ST某某', '2026-07-06'), 0.10)
+        self.assertEqual(im.limit_pct('600000', '*ST某某'), 0.10)
+        self.assertEqual(im.limit_pct('300001', 'ST某某'), 0.20)
+        self.assertEqual(im.limit_pct('830799'), 0.30)
 
     def test_limit_state_boundaries(self):
         self.assertEqual(im.limit_state('600000', '', 11.00, 10.0), 'up')       # 刚好涨停
@@ -48,8 +52,9 @@ class LimitRuleTests(unittest.TestCase):
         self.assertIsNone(im.limit_state('600000', '', 9.01, 10.0))
         self.assertEqual(im.limit_state('300750', '', 12.00, 10.0), 'up')
         self.assertIsNone(im.limit_state('300750', '', 11.00, 10.0))            # 创业板 +10% 不是涨停
-        self.assertEqual(im.limit_state('600000', 'ST某', 10.50, 10.0), 'up')
-        self.assertEqual(im.limit_state('600000', 'ST某', 9.50, 10.0), 'down')
+        self.assertIsNone(im.limit_state('600000', 'ST某', 10.50, 10.0))         # D17：主板 ST 现在是 10%，+5% 不是涨停
+        self.assertEqual(im.limit_state('600000', 'ST某', 11.00, 10.0), 'up')
+        self.assertEqual(im.limit_state('600000', 'ST某', 9.00, 10.0), 'down')
         self.assertEqual(im.limit_state('600000', '', 10.99, 9.99), 'up')       # 9.99*1.1=10.989 -> 10.99
         for bad in (None, 0, -1, float('nan'), True):
             self.assertIsNone(im.limit_state('600000', '', bad, 10.0))
@@ -109,7 +114,8 @@ class ExecutionHintTests(unittest.TestCase):
         self.assertEqual(im.execution_hints(at(60), sig, [], {'300750': sample(60, 11.0)}), [])             # 创业板 +10% 不是涨停
         self.assertEqual(kinds(im.execution_hints(at(60), sig, [], {'300750': sample(60, 12.0)})), [('300750', 'limit_up_no_buy')])
         st = [{'code': '600001', 'action': '买入'}]
-        self.assertEqual(kinds(im.execution_hints(at(60), st, [], {'600001': sample(60, 10.5, name='ST某')})), [('600001', 'limit_up_no_buy')])
+        self.assertEqual(im.execution_hints(at(60), st, [], {'600001': sample(60, 10.5, name='ST某')}), [])     # D17：主板 ST 10%
+        self.assertEqual(kinds(im.execution_hints(at(60), st, [], {'600001': sample(60, 11.0, name='ST某')})), [('600001', 'limit_up_no_buy')])
 
     def test_holding_drop_default_5pct_and_custom(self):
         snap = {'600000': sample(60, 9.4)}                                     # -6%

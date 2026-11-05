@@ -145,8 +145,9 @@ class Stats(unittest.TestCase):
         self.assertGreater(t, 2)
 
     def test_verdict(self):
-        base = {"action": "买入", "enough": True, "t_day": 3.0}
+        base = {"action": "买入", "enough": True, "t_day": 3.0, "weeks": L.VERDICT_MIN_WEEKS}
         self.assertEqual(L.verdict(base), "有效")
+        self.assertEqual(L.verdict({**base, "weeks": L.VERDICT_MIN_WEEKS - 1}), "积累中")     # 不满 12 个完整周不下结论
         self.assertEqual(L.verdict({**base, "t_day": -3.0}), "反向")
         self.assertEqual(L.verdict({**base, "action": "卖出", "t_day": -3.0}), "有效")
         self.assertEqual(L.verdict({**base, "t_day": 0.5}), "看不出差别")

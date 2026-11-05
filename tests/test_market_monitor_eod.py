@@ -1,5 +1,5 @@
 """T006 S3c：收盘后分析端到端测试。合成 parquet + 临时目录；不联网，不读写 data/。"""
-from datetime import datetime
+from datetime import date, datetime
 import csv
 import json
 from pathlib import Path
@@ -86,7 +86,7 @@ class EodEndToEnd(unittest.TestCase):
             self.assertIn(text, report)
         with open(res['files']['residual'], encoding='utf-8-sig') as f:
             sides = [r['side'] for r in csv.DictReader(f)]
-        self.assertEqual(sides.count('buy_watch'), 14)            # 29 只合格 → k=min(20, 29//2)=14，两边各 14 且互斥
+        self.assertEqual(sides.count('watch'), 14)            # 29 只合格 → k=min(20, 29//2)=14，两边各 14 且互斥
         self.assertEqual(sides.count('avoid'), 14)
         self.assertFalse(set(res['top'].index) & set(res['bottom'].index))
 
@@ -179,20 +179,27 @@ class EodEndToEnd(unittest.TestCase):
 class LockedBoundary(unittest.TestCase):
     """封存段（2026-04-01 起）：分析日落在其中一律拒绝；分析日之前的分析不得读到封存段的行。"""
 
-    def test_locked_days_refused(self):
+    def test_post_lock_days_allowed(self):
+        """当日复盘不受封存段限制（eod_analysis.LOCKED_SEGMENT_START 的注释）：封存段只约束 run_factor_scan 等历史回测/因子筛选。
+        分析日在 2026-04-01 之后可以正常出报告；面板只含分析日及以前的行（不含未来）。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             daily = make_daily(root, end='2026-04-10')
             jsonl = root / 'j.jsonl'
             write_jsonl(jsonl, ['600003'])
             now = datetime(2026, 12, 1, 10, 0, tzinfo=BEIJING)
-            for bad in ('2026-04-01', '2026-04-10', '2026-10-23'):
-                out = root / ('o_' + bad)
-                with self.assertRaises(ValueError) as cm:
-                    eod.run_eod_analysis(bad, str(jsonl), str(daily), str(out), now=now)
-                self.assertEqual(cm.exception.args[0], 'locked_segment')
-                self.assertFalse(out.exists())
-            self.assertEqual(script.main(['--day', '2026-10-23', '--output', str(root / 'cli'), '--daily-dir', str(daily)], now=now), 1)
+            for day in ('2026-04-01', '2026-04-10'):
+                out = root / ('o_' + day)
+                res = eod.run_eod_analysis(day, str(jsonl), str(daily), str(out), now=now)
+                self.assertEqual(res['day'], day)
+                self.assertTrue(out.exists())
+            panel = eod.load_panel(str(daily), '2026-04-01', now=now)
+            self.assertEqual(panel.close.index.max(), pd.Timestamp('2026-04-01'))      # 不含 04-02 及以后的行
+
+    def test_factor_scan_still_guards_locked_segment(self):
+        """封存段守卫仍在因子筛选脚本里：它引用 LOCKED_SEGMENT_START（2026-04-01）。"""
+        self.assertEqual(eod.LOCKED_SEGMENT_START, date(2026, 4, 1))
+        self.assertIn("LOCKED_SEGMENT_START", Path(script.__file__).parent.joinpath("run_factor_scan.py").read_text(encoding="utf-8"))
 
     def test_locked_boundary(self):
         """分析日 2026-03-31：parquet 里即使有 04-01 及之后的行，面板也不含它们。"""
@@ -205,8 +212,6 @@ class LockedBoundary(unittest.TestCase):
             self.assertTrue((panel.close.index < pd.Timestamp('2026-04-01')).all())
             res = eod.run_eod_analysis('2026-03-31', str(root / 'none.jsonl'), str(daily), str(root / 'ok'), now=now)
             self.assertEqual(res['day'], '2026-03-31')
-            with self.assertRaises(ValueError):                      # load_panel 自己也有守卫
-                eod.load_panel(str(daily), '2026-04-01', now=now)
 
 
 class WatchAvoidDisjoint(unittest.TestCase):

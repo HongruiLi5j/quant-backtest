@@ -41,17 +41,18 @@ globalThis.window = { location: loc, matchMedia: () => ({ matches: false, addEve
 globalThis.CustomEvent = class { constructor(type, o) { this.type = type; this.detail = o?.detail; } };
 
 /* ---------- 假 fetch：字典读文件（merged 时叠上 parts）；/api/* 读 api 表，记录调用 ---------- */
-const PARTS = (lang) => fs.readdirSync(`${ui}/i18n/parts`).filter((f) => f.endsWith(`.${lang}.json`))
-  .reduce((acc, f) => ({ ...acc, ...JSON.parse(fs.readFileSync(`${ui}/i18n/parts/${f}`, 'utf8')) }), {});
+// i18n 部件已退役（parts/ 移到 _to_delete/，词条全部在基础字典里）：「合并前」= 基础字典去掉该任务的键（键名单见 tests/fixtures/i18n_parts_keys.json）
+const PART_KEYS = JSON.parse(fs.readFileSync(new URL('./fixtures/i18n_parts_keys.json', import.meta.url), 'utf8'));
+const without = (d, keys) => Object.fromEntries(Object.entries(d).filter(([k]) => !keys.includes(k)));
 let api = {};
 const calls = [];
 globalThis.fetch = async (url) => {
   const s = String(url);
   if (s.startsWith('file:')) {
     const path = new URL(s).pathname;
-    const body = JSON.parse(fs.readFileSync(path, 'utf8'));
+    let body = JSON.parse(fs.readFileSync(path, 'utf8'));
     const m = /\/i18n\/(zh|en)\.json$/.exec(path);
-    if (m && mode === 'merged') Object.assign(body, PARTS(m[1]));
+    if (m && mode !== 'merged') body = without(body, PART_KEYS.G03);   // base 模式 = G03 词条还没合并（其他部件当时已在基础字典里）
     return { ok: true, status: 200, json: async () => body };
   }
   const p = s.split('?')[0];

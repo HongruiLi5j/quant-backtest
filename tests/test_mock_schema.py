@@ -243,7 +243,8 @@ class RealMockTests(unittest.TestCase):
             for r in hard:
                 found[(r.file.name, r.mock, ".".join(r.path), r.key)] = f"{r.file.name}:{r.line} {r.expr}"
         unexpected = {k: v for k, v in found.items() if k not in KNOWN_UNGUARDED}
-        self.assertEqual(unexpected, {}, "页面没有保护地读了这些字段，mock 里却没有：" + json.dumps(unexpected, ensure_ascii=False, indent=1))
+        # 键是元组，json.dumps 不能直接序列化（以前这里会抛 TypeError，把真正的失败原因盖住）
+        self.assertEqual(unexpected, {}, "页面没有保护地读了这些字段，mock 里却没有：" + json.dumps({" | ".join(k): v for k, v in unexpected.items()}, ensure_ascii=False, indent=1))
         stale = [k for k in KNOWN_UNGUARDED if k not in found]
         self.assertEqual(stale, [], f"这些已知例外已经不存在了，请从 KNOWN_UNGUARDED 里删掉：{stale}")
 

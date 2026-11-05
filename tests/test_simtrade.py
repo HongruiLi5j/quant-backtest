@@ -53,7 +53,8 @@ class T(unittest.TestCase):
     def test_limits(self):
         self.assertEqual(s.limit_prices("600000", "浦发", 10.0), (11.0, 9.0))
         self.assertEqual(s.limit_prices("300750", "宁德", 10.0), (12.0, 8.0))
-        self.assertEqual(s.limit_prices("600001", "*ST甲", 10.0), (10.5, 9.5))
+        self.assertEqual(s.limit_prices("600001", "*ST甲", 10.0), (11.0, 9.0))          # D17：主板 ST 2026-07-06 起 10%
+        self.assertEqual(s.limit_prices("300001", "ST乙", 10.0), (12.0, 8.0))           # 创业板 ST 按板块 20%
 
     def test_next_day(self):
         self.assertEqual(s.next_day("2026-10-16"), "2026-10-19")        # 周五 → 周一

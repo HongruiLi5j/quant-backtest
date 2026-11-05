@@ -15,6 +15,27 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 _SCALE_FILE = ROOT / "data" / "daily" / "engine_price_scale.json"
 _fail_until = 0.0
+stats = {"snapshot": 0, "tencent": 0, "failed": 0}   # D62：本进程里真实价来源计数（今日买卖清单生成后写进日志）
+_snap = {"stamp": None, "closes": {}}
+
+
+def _snapshot_close(code: str, day: str) -> float | None:
+    """D62：当天全市场快照的不复权收盘价（turnover_cn.parquet 的 close_raw，每日任务第 2 步写入）。
+    和腾讯接口取的是同一个数：2745 个已缓存的 (股票, 日期) 对比全部相同（perf.md §R3-perf-1）。
+    文件按修改时间+大小缓存，只读 date/code/close_raw 三列；读不到、没有这一天或价格不合法时返回 None，调用方再去腾讯取。"""
+    try:
+        from . import turnover
+        st = turnover.OUT.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+        if _snap["stamp"] != stamp:
+            import pandas as pd
+            t = pd.read_parquet(turnover.OUT, columns=["date", "code", "close_raw"])
+            _snap["closes"] = {(str(c), str(d)): v for c, d, v in zip(t["code"], t["date"], t["close_raw"])}
+            _snap["stamp"] = stamp
+    except Exception:
+        return None
+    v = _snap["closes"].get((code, day))
+    return float(v) if _good_price(v) else None
 
 
 def scale_for(market: str, code: str, df) -> tuple[float, str]:
@@ -33,13 +54,20 @@ def scale_for(market: str, code: str, df) -> tuple[float, str]:
     if hit and hit.get("day") == last_day and hit.get("raw"):
         # 同一只股票在不同数据文件里后复权基准可能不同，所以只缓存真实价，k 按当前数据重算
         return float(hit["raw"]) / last, "前复权"
-    if time.time() < _fail_until:
-        return 1.0, "未取到真实价格，显示为后复权"
-    from engines.common import _raw_close_tencent
-    raw = _raw_close_tencent(code, last_day)
-    if not raw:
-        _fail_until = time.time() + 120
-        return 1.0, "未取到真实价格，显示为后复权"
+    raw = _snapshot_close(code, last_day)          # D62：先用当天全市场快照里已有的真实收盘价，不联网
+    if raw is not None:
+        stats["snapshot"] += 1
+    else:
+        if time.time() < _fail_until:
+            stats["failed"] += 1
+            return 1.0, "未取到真实价格，显示为后复权"
+        from engines.common import _raw_close_tencent
+        raw = _raw_close_tencent(code, last_day)
+        if not raw:
+            _fail_until = time.time() + 120
+            stats["failed"] += 1
+            return 1.0, "未取到真实价格，显示为后复权"
+        stats["tencent"] += 1
     k = raw / last
     cache[code] = {"day": last_day, "k": k, "raw": raw}
     try:

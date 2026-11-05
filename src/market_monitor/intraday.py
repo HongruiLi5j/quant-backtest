@@ -41,13 +41,10 @@ VOLUME_SCALE = 100             # 腾讯成交量按"手"(100 股)估计；单位
 
 
 # ---------------------------------------------------------------- 涨跌停规则
-def limit_pct(code, name=''):
-    """涨跌停幅度：ST 5%、创业板/科创板 20%、主板 10%（与 datasource.limit_pct 同口径，这里不导入 pandas）。"""
-    if 'ST' in str(name).upper():
-        return 0.05
-    if str(code).startswith(('688', '689', '300', '301')):
-        return 0.20
-    return 0.10
+def limit_pct(code, name='', day=None):
+    """涨跌停幅度：统一委托 src/limits.py（纯标准库，不导入 pandas）；带上市天数判断，新股前几日不设涨跌停时返回 None。"""
+    from ..limits import live_limit_pct
+    return live_limit_pct(code, name, day)
 
 
 def _cents(x):
@@ -75,7 +72,10 @@ def limit_state(code, name, price, prev_close):
     """返回 'up'（涨停）/'down'（跌停）/None；价格恰好等于涨停价也算涨停（边界含等号）。"""
     if not (_pos(price) and _pos(prev_close)):
         return None
-    up, dn = limit_prices(prev_close, limit_pct(code, name))
+    pct = limit_pct(code, name)
+    if pct is None:                     # 新股上市初期不设涨跌停：不标
+        return None
+    up, dn = limit_prices(prev_close, pct)
     cents = _cents(price)
     if cents >= up:
         return 'up'
@@ -88,7 +88,10 @@ def distance_to_limits(code, name, price, prev_close):
     """(距涨停%, 距跌停%)：涨停价/现价-1、跌停价/现价-1（后者为负）；数据无效返回 (None, None)。"""
     if not (_pos(price) and _pos(prev_close)):
         return None, None
-    up, dn = limit_prices(prev_close, limit_pct(code, name))
+    pct = limit_pct(code, name)
+    if pct is None:                     # 新股上市初期不设涨跌停
+        return None, None
+    up, dn = limit_prices(prev_close, pct)
     return (up / 100 / price - 1) * 100, (dn / 100 / price - 1) * 100
 
 

@@ -163,7 +163,9 @@ class TradeListTests(unittest.TestCase):
                     self.assertIn(word, flags[0])
                     self.assertIn('明天可能仍', flags[0])
                     frame.loc[1, 'High'] += .001
-                    self.assertEqual(T.limit_flags(code, frame), [])
+                    # D30：不是一字板但收盘在涨停价 → 提示「收盘涨停」（比例注入，不读账本）；收盘跌停不提示
+                    got = T.limit_flags(code, frame, close_rate={"enough": True, "close_limit": {"rate": 0.145, "n": 255}})
+                    self.assertEqual(got, ["今日收盘涨停：历史上约 14% 次日开盘仍涨停买不进（账本 255 条）"] if sign > 0 else [])
             frame = pd.DataFrame({key: [100., 109.] for key in ('Open', 'High', 'Low', 'Close')})
             self.assertEqual(T.limit_flags(code, frame), [])
 

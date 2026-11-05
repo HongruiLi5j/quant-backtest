@@ -63,9 +63,14 @@ def _decls(body):
     return {m.group(1): m.group(2).strip() for m in re.finditer(r"(--[\w-]+)\s*:\s*([^;]+);", body)}
 
 
+TERMINAL = None   # D71：parse_colors 顺带读出的「终端」主题覆盖项
+
+
 def parse_colors(path=TOKENS):
     """返回 (dark, light, light_media)：三个 {变量名: 值字符串}。light 只含浅色覆盖项。"""
     dark = light = media = None
+    global TERMINAL
+    TERMINAL = None
     for sel, body in _blocks(Path(path).read_text(encoding="utf-8")):
         if sel.startswith(":root,") and 'data-theme="dark"' in sel:
             dark = _decls(body)
@@ -73,6 +78,8 @@ def parse_colors(path=TOKENS):
             light = _decls(body)
         elif sel.startswith("@media (prefers-color-scheme: light)"):
             media = _decls(body)
+        elif sel == ':root[data-theme="terminal"]':      # D71：可选的第三种主题（只覆盖部分变量，其余沿用深色）
+            TERMINAL = _decls(body)
     if dark is None or light is None:
         raise ValueError("tokens.css 里找不到深色或浅色主题块")
     return dark, light, media
@@ -170,7 +177,7 @@ TEXT_PAIRS = [
     ("涨(A股红)", "--red", NORMAL_BGS + BADGE_BGS[2:], AA_TEXT, "涨跌文字 / rise 徽章(cn)；美股模式下是跌"),
     ("跌(A股绿)", "--green", NORMAL_BGS + BADGE_BGS[2:], AA_TEXT, "涨跌文字 / fall 徽章(cn)；美股模式下是涨"),
     ("警告", "--amber", NORMAL_BGS + BADGE_BGS[2:] + ["警告横幅 amber8%@卡片"], AA_TEXT, "警告文字、warn 徽章、横幅"),
-    ("图表刻度字", "--chart-text", NORMAL_BGS, AA_TEXT, "SVG 坐标轴刻度，11px"),
+    ("图表刻度字", "--chart-text", NORMAL_BGS, AA_TEXT, "SVG 坐标轴刻度，12px（D36）"),
 ]
 
 # 非文字：图形/焦点环，门槛 3:1（WCAG 1.4.11）
@@ -182,6 +189,10 @@ GRAPHIC_PAIRS = [
     ("图表线2", "--chart-2", NORMAL_BGS, AA_LARGE, "副折线"),
     ("回撤线", "--chart-dd", NORMAL_BGS, AA_LARGE, "回撤区域"),
     ("基准线", "--chart-bench", NORMAL_BGS, AA_LARGE, "基准折线"),
+    ("系列色3", "--series-3", NORMAL_BGS, AA_LARGE, "多条线第 3 种（D79）"),
+    ("系列色4", "--series-4", NORMAL_BGS, AA_LARGE, "多条线第 4 种（D79）"),
+    ("系列色5", "--series-5", NORMAL_BGS, AA_LARGE, "多条线第 5 种（D79）"),
+    ("控件边框", "--border-control", NORMAL_BGS + BADGE_BGS[2:], AA_LARGE, "输入框/下拉框/分段按钮边界（1.4.11，D03）"),
 ]
 
 # 禁用态/纯装饰：WCAG 1.4.3 明确豁免「不可用的界面元素」和「纯装饰」，但仍设一个 3:1 的底线，
@@ -223,7 +234,10 @@ def _check_rows(theme):
 
 def load_themes(path=TOKENS):
     dark, light, _media = parse_colors(path)
-    return [Theme("深色", dark), Theme("浅色", {**dark, **light})]
+    themes = [Theme("深色", dark), Theme("浅色", {**dark, **light})]
+    if TERMINAL:
+        themes.append(Theme("终端", {**dark, **TERMINAL}))
+    return themes
 
 
 def all_rows(path=TOKENS):

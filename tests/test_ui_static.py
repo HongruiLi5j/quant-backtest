@@ -1,6 +1,8 @@
 """/ui/ 只读静态路由的测试：用 AST 从 app.py 摘出 Handler 的相关方法，起一个临时本机服务器，
 目录用 tempfile 造；不导入 app，不读真实 data/，不联网。"""
 import ast
+import json
+import re
 import hashlib
 import hmac
 import http.client
@@ -17,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))   # D65：摘出的 _ui_versioned_html 会 from src import ui_preload；直接运行本文件时也要能找到 src
 TREE = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
 HANDLER = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == "Handler")
 METHODS = {n.name: n for n in HANDLER.body if isinstance(n, ast.FunctionDef)}
@@ -40,8 +43,10 @@ def top_level(*names):
 def build_class(ui_dir):
     cls = ast.ClassDef(name="Handler", bases=[ast.Name(id="BaseHTTPRequestHandler", ctx=ast.Load())],
                        keywords=[], decorator_list=[], body=[METHODS[n] for n in NAMES])
-    body = top_level("UI_TYPES", "COMPRESSIBLE", "_gzip_cached", "_gz_cache") + [cls]
-    ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, urlparse=urlparse, parse_qs=parse_qs,
+    body = top_level("UI_TYPES", "COMPRESSIBLE", "_gzip_cached", "_gz_cache",
+                     "_ui_hash_cache", "_ui_hash", "_ui_importmap", "_ui_versioned_html", "_UI_FETCHED",
+                     "_css_bundles", "_LINK_RE", "_merge_css_links", "_css_bundle_bytes") + [cls]   # D20 哈希版本号
+    ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, urlparse=urlparse, parse_qs=parse_qs, json=json, re=re,
               unquote=unquote, hashlib=hashlib, hmac=hmac, Path=Path, SimpleCookie=SimpleCookie,
               UI_DIR=ui_dir, COOKIE="qb", MEMBER_COOKIE="qm", TOKEN=TOKEN, owner_access=None, ROOT=None,
               _bad_login=[], _alive={}, time=time, _gz_cache={},
@@ -124,7 +129,65 @@ class UiStaticTests(unittest.TestCase):
             self.assertEqual(r.getheader("Cache-Control"), "private, no-cache", path)
             self.assertTrue(r.getheader("ETag"), path)
             self.assertIn("script-src 'self'", r.getheader("Content-Security-Policy"), path)   # 走 _send，安全头不变
-        self.assertEqual(self.req("/ui/")[2], b"<html>idx</html>")
+        body = self.req("/ui/")[2]       # D20：页面里插了 import map，原文仍在
+        self.assertTrue(body.startswith(b'<script type="importmap">') and body.endswith(b"<html>idx</html>"), body[:80])
+
+    def test_d112_css_links_merged_into_one_bundle(self):
+        """D112：连续的两个以上样式表合并成一个 /ui/_b/<id>.css，顺序不变；清单外的 id 一律 404；含 url() 的不合并。"""
+        (self.ui / "y.css").write_text("b{}", encoding="utf-8")
+        (self.ui / "u.css").write_text("c{background:url(z.png)}", encoding="utf-8")
+        (self.ui / "w" / "m.html").write_text('<html><head><meta charset="utf-8"><link rel="stylesheet" href="../x.css">'
+                                              '<link rel="stylesheet" href="../y.css"></head></html>', encoding="utf-8")
+        (self.ui / "w" / "n.html").write_text('<html><head><meta charset="utf-8"><link rel="stylesheet" href="../x.css">'
+                                              '<link rel="stylesheet" href="../u.css"></head></html>', encoding="utf-8")
+        _, _, body, _ = self.req("/ui/w/m.html")
+        m = re.search(r'href="(/ui/_b/([0-9a-f]{10})\.css\?v=([0-9a-f]{10}))"', body.decode())
+        self.assertIsNotNone(m)
+        code, _, css, r = self.req(m.group(1))
+        self.assertEqual((code, css), (200, b"a{}\nb{}"))
+        self.assertIn("immutable", r.getheader("Cache-Control"))
+        self.assertEqual(self.req("/ui/_b/0000000000.css")[0], 404)
+        _, _, body2, _ = self.req("/ui/w/n.html")
+        self.assertNotIn("/ui/_b/", body2.decode())                        # 含 url() 的不合并
+
+    def test_d20_versioned_assets_and_importmap(self):
+        """D20：页面里的相对 js/css 加 ?v=内容哈希；import map 覆盖所有 js；CSP 只放行这张 map 的 sha256；
+        带 ?v= 的静态文件长期缓存，不带的仍 no-cache，HTML 永远 no-cache。"""
+        import base64
+        page = ('<html><head><meta charset="utf-8"><link rel="stylesheet" href="../x.css">'
+                '<script type="module" src="../app.js"></script><a href="#x"></a><svg><use href="../i.svg#i-x"></use></svg>'
+                '<link href="https://cdn.example/a.css"><script src="../missing.js"></script></head></html>')
+        (self.ui / "w" / "v.html").write_text(page, encoding="utf-8")
+        code, _, body, r = self.req("/ui/w/v.html")
+        html = body.decode()
+        h_css = hashlib.sha1(b"a{}").hexdigest()[:10]
+        h_js = hashlib.sha1(b"var a=1;").hexdigest()[:10]
+        self.assertIn(f'href="../x.css?v={h_css}"', html)
+        self.assertIn(f'src="../app.js?v={h_js}"', html)
+        self.assertIn(f'<link rel="modulepreload" href="/ui/app.js?v={h_js}">', html)   # D65：模块预加载用同一个带哈希地址
+        self.assertIn('href="https://cdn.example/a.css"', html)            # 外部地址不动
+        self.assertIn(f'<use href="../i.svg?v={hashlib.sha1(b"<svg/>").hexdigest()[:10]}#i-x">', html)   # D39：svg 片段在版本号后面
+        self.assertIn('<meta name="qb-asset-v" content="">', html)          # 测试目录里没有字典/图标：表为空
+        self.assertIn('src="../missing.js"', html)                          # 不存在的文件不加版本号
+        self.assertLess(html.index("<meta charset"), html.index("importmap"))
+        imap_txt = re.search(r'<script type="importmap">(.*?)</script>', html).group(1)
+        imap = json.loads(imap_txt)["imports"]
+        self.assertEqual(imap["/ui/app.js"], f"/ui/app.js?v={h_js}")
+        self.assertIn("/ui/big.js", imap)
+        self.assertFalse(any("/.dot/" in k or ".hidden" in k for k in imap))  # 点开头的文件和目录不进 map
+        want = "sha256-" + base64.b64encode(hashlib.sha256(imap_txt.encode()).digest()).decode()
+        self.assertIn(f"script-src 'self' '{want}';", r.getheader("Content-Security-Policy"))
+        self.assertEqual(r.getheader("Cache-Control"), "private, no-cache")
+        self.assertEqual(self.req("/ui/app.js?v=" + h_js)[3].getheader("Cache-Control"), "private, max-age=31536000, immutable")
+        self.assertEqual(self.req("/ui/w/v.html?v=1")[3].getheader("Cache-Control"), "private, no-cache")   # HTML 不长期缓存
+        self.assertEqual(self.req("/ui/app.js?v=0000000000")[3].getheader("Cache-Control"), "private, no-cache")   # 哈希不符：不长期缓存
+        self.assertEqual(self.req("/ui/app.js?v=")[3].getheader("Cache-Control"), "private, no-cache")
+        self.assertEqual(self.req("/ui/app.js")[3].getheader("Cache-Control"), "private, no-cache")
+        js_csp = self.req("/ui/app.js")[3].getheader("Content-Security-Policy")
+        self.assertNotIn("sha256-", js_csp)                                  # 只有页面响应带哈希
+        (self.ui / "app.js").write_text("var a=2;", encoding="utf-8")       # 内容变了：哈希跟着变
+        self.assertIn(f'src="../app.js?v={hashlib.sha1(b"var a=2;").hexdigest()[:10]}"', self.req("/ui/w/v.html")[2].decode())
+        self.assertEqual(self.req("/ui/app.js?v=" + h_js)[3].getheader("Cache-Control"), "private, no-cache")   # 旧哈希地址拿到新内容：不缓存一年
 
     def test_redirect_without_slash(self):
         code, _, _, r = self.req("/ui")
@@ -176,7 +239,7 @@ class UiStaticTests(unittest.TestCase):
     def test_head_has_no_body(self):
         code, ct, body, r = self.req("/ui/index.html", method="HEAD")
         self.assertEqual((code, body, ct), (200, b"", "text/html; charset=utf-8"))
-        self.assertEqual(r.getheader("Content-Length"), str(len(b"<html>idx</html>")))
+        self.assertEqual(r.getheader("Content-Length"), str(len(self.req("/ui/index.html")[2])))   # 与 GET 正文一致
         self.assertEqual(self.req("/ui/missing.js", method="HEAD")[:3:2], (404, b""))
         self.assertEqual(self.req("/ui/app.js", method="HEAD", auth=False)[0], 401)
 

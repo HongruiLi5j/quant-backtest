@@ -1,7 +1,10 @@
 """美股全市场逐只回测：和 A 股 scan.py 同一套策略、同一套统计口径，数据来自 usdata。
 
 输出：data/daily/scan_us.parquet + scan_us_meta.json
-排除：流动性差、低价、坏数据、上市不满一年的股票（原因和数量写在 meta 里）。
+排除：坏数据、上市不满一年的股票整只排除（原因和数量写在 meta 里）。
+D103：成交额、停牌这些条件按历史时点逐月判断（usdata.eligible_pit）：某个月不满足就整月空仓，
+  股价 ≥1 美元不再用（数据里的历史价已按之后的拆股调整，没法知道当时的真实股价），
+  不再用“今天”的条件整只排除。市值名单仍是今天的名单、退市股仍不在数据里，所以幸存者偏差只是减小、没有消除。
 成本：个股单边 10bp（佣金近乎 0，主要是买卖价差和滑点）。无涨跌停。
 注意：股票名单来自今天的上市名单，退市公司不在里面，回测偏乐观（幸存者偏差）。
 """
@@ -41,9 +44,12 @@ def scan_one(code: str) -> tuple[list[dict], str]:
         df = usdata.adjust(raw)
     except Exception as e:
         return [], f"读取失败：{type(e).__name__}"
-    why = usdata.screen(raw.dropna(subset=["Close", "Adj Close"]), df)
+    why = usdata.hard_screen(raw.dropna(subset=["Close", "Adj Close"]), df)
     if why:
         return [], why
+    # D103：按历史时点的样本——每月初用上一交易日为止的数据判断能不能持有，不能就整月空仓（策略和买入持有都一样）
+    elig = usdata.eligible_pit(raw, df.index)
+    m = elig.astype(float).to_numpy()
     name, board, mc, rk = _INFO.get(code, (code, "", np.nan, np.nan))
     n, c = len(df), df["Close"]
     prices = {code: df}
@@ -53,15 +59,18 @@ def scan_one(code: str) -> tuple[list[dict], str]:
     cash = _CASH.reindex(df.index).fillna(0.0) if _CASH is not None else pd.Series(0.0, index=df.index)
     evaluate = n >= scan.MIN_EVAL
     t0 = df.index[250] if evaluate else df.index[-1]
+    base["eligible_now"] = bool(elig.iloc[-1])
+    base["eligible_share"] = float(elig.loc[t0:].mean()) if evaluate else float(elig.mean())
+    base["screen_today"] = usdata.screen(raw.dropna(subset=["Close", "Adj Close"]), df)    # 旧口径（今天的条件）的结论，只作对照
     if evaluate:
-        rb = run_weights(prices, pd.Series(1.0, index=df.index, name=code).to_frame(), cost=COST).returns.loc[t0:]
+        rb = run_weights(prices, pd.Series(m, index=df.index, name=code).to_frame(), cost=COST).returns.loc[t0:]
         b = scan._stats(rb, cash.loc[t0:])
         bis, boos = scan._split_sharpe(rb, cash)
         base.update({"b_cagr": b["cagr"], "b_sharpe": b["sharpe"], "b_maxdd": b["maxdd"], "b_y1": b["y1"], "b_sharpe_is": bis, "b_sharpe_oos": boos})
     rows = []
     for s in scan.STRATS:
         try:
-            W = registry.target_weights(s, prices, code, registry.clean_params(s, {}), _MCFG)
+            W = registry.target_weights(s, prices, code, registry.clean_params(s, {}), _MCFG).mul(m, axis=0)
             res = run_weights(prices, W, cost=COST, band=0.10, cash_ret=cash)
         except Exception as e:
             rows.append(base | {"strategy": s, "error": str(e)[:80]})
@@ -118,8 +127,19 @@ def run(processes: int | None = None, limit: int | None = None) -> dict:
     latest = df["last_date"].max()
     now = datetime.now(ZoneInfo("America/New_York"))
     meta = {"generated": now.strftime("%Y-%m-%d %H:%M"), "generated_at": now.isoformat(timespec="seconds"), "timezone_label": "美东时间",
-            "data_date": latest, "stocks": int(df["code"].nunique()), "delisted": 0, "downloaded": len(codes), "listed": len(codes),
-            "excluded_st": 0, "excluded": dict(why), "split": scan.SPLIT, "seconds": round(time.time() - t0), "strategies": {}}
+            "data_date": latest, "stocks": int(df["code"].nunique()), "delisted": 0, "downloaded": len(codes), "listed": None,      # D87（U4）：以前 listed = 下载数，有误导；退市股数据里一只都没有
+            "delisted_note": "股票名单来自今天的上市名单，数据里没有已退市公司（幸存者偏差，结果偏乐观）",
+            "excluded_st": 0, "excluded": dict(why), "split": scan.SPLIT, "seconds": round(time.time() - t0), "strategies": {},
+            "sample": "point_in_time",                                   # D103
+            "sample_note": "每月初按当时的成交额、停牌情况判断能不能持有，不满足的月份空仓（策略和买入持有一样）；"
+                           "不再按“股价 ≥1 美元”筛（历史价已按之后的拆股调整，看不出当时的真实股价）；"
+                           "市值名单仍是今天的名单、退市公司不在数据里，偏差减小但没有消除",
+            "sample_note_en": "Each month the stock is held only if it passed the dollar-volume and trading-day checks "
+                              "using data up to the previous close; months that fail are in cash for both the strategies and buy-and-hold. "
+                              "There is no $1 price test, because historical prices are adjusted for later splits. "
+                              "The market-cap list is still today's and delisted companies are missing, so the bias is smaller but not gone",
+            "eligible_now": int(df.drop_duplicates("code")["eligible_now"].sum()) if "eligible_now" in df else None,
+            "excluded_by_old_screen": int((df.drop_duplicates("code")["screen_today"] != "").sum()) if "screen_today" in df else None}
     for s, g in df.groupby("strategy"):
         ev = g.dropna(subset=["sharpe", "b_sharpe"]) if "sharpe" in g else g.iloc[:0]
         fresh = g[g["last_date"] == latest]

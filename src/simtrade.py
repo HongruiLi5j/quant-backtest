@@ -55,13 +55,9 @@ def fees(code: str, side: str, amount: float) -> dict:
 
 
 def limit_pct(code: str, name: str = "") -> float:
-    if "ST" in (name or "").upper():
-        return 0.05
-    if str(code).startswith(("30", "68")):
-        return 0.20
-    if str(code).startswith(("8", "4", "92")):
-        return 0.30
-    return 0.10
+    """涨跌停幅度：统一委托 src/limits.py（最新规则）。"""
+    from .limits import limit_pct as _lp
+    return _lp(code, name)
 
 
 def _r2(x: float) -> float:

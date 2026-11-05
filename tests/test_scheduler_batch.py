@@ -294,7 +294,9 @@ class BatchModeTests(unittest.TestCase):
         self._custom(h, drop=codes)                               # 一条都没拿到
         h.s.start()
         self.assertTrue(until(lambda: h.s.status()['degraded']))
-        self.assertEqual(len(h.calls), 3)                         # 3 次整批失败后降级
+        # 降级后调度线程会立刻改成逐只请求（假时钟不等待），所以不能数全部请求：只数「整批」（多代码）请求 = 3 次失败
+        batch_calls = [c for c in list(h.calls) if len(c[1]) > 1]
+        self.assertEqual(len(batch_calls), 3)
         self.assertEqual(h.s.status()['state'], 'running')
         h.s.stop()
 

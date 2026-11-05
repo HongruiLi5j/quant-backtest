@@ -93,12 +93,30 @@ def _scan(root: Path) -> list[dict]:
     return out
 
 
+def _disambiguate(items: list[dict]) -> None:
+    """D42（T-3）：同一组里标题相同的报告（例如 112 份都叫「全市场历史因子扫描报告」）在列表里分不出来。
+    给这些报告的标题后面补上路径里能区分它们的部分：组目录和文件名之间的子目录（如 fill_v4_factor_r80），
+    文件直接放在组目录下时用文件名（去掉 .md）。只改列表显示的标题，不改文件、不改 path。"""
+    seen: dict[tuple, int] = {}
+    for it in items:
+        seen[(it["group"], it["title"])] = seen.get((it["group"], it["title"]), 0) + 1
+    for it in items:
+        if seen[(it["group"], it["title"])] < 2:
+            continue
+        parts = it["path"].split("/")
+        inner = parts[1:-1] if it["group"] else parts[:-1]
+        tag = "/".join(inner) if inner else parts[-1][:-3]
+        if tag and tag not in it["title"]:
+            it["title"] = f"{it['title']} · {tag}"[:240]
+
+
 def _listing(root: Path | None = None) -> list[dict]:
     root = root or REPORTS
     with _lock:
         if _cache["v"] is not None and _cache["root"] == str(root) and time.time() - _cache["t"] < CACHE_SECONDS:
             return _cache["v"]
     items = _scan(root) if root.is_dir() and not root.is_symlink() else []
+    _disambiguate(items)
     items.sort(key=lambda r: (r["date"], r["mtime"]), reverse=True)
     with _lock:
         _cache.update(t=time.time(), root=str(root), v=items)

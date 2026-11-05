@@ -8,6 +8,7 @@
 5. （有 node 时）假 DOM 里真的跑 shared/a11y.js 和持仓页的确认区 / 撤销确认：焦点落点、Esc、朗读标签；词条没合并前不露键名
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -16,9 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
-ZH = json.loads((PARTS / "A11.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A11.en.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
+ZH = parts_compat.part("A11", "zh")
+EN = parts_compat.part("A11", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -145,14 +147,11 @@ class A11DictTests(unittest.TestCase):
         for k, v in ZH.items():
             self.assertTrue(v.strip(), k)
 
-    def test_no_collision_with_base_or_other_parts(self):
-        for lang, mine in (("zh", ZH), ("en", EN)):
-            base = json.loads(read(UI / "i18n" / f"{lang}.json"))
-            self.assertFalse(set(mine) & set(base), "和基础字典撞键")
-            for f in PARTS.glob(f"*.{lang}.json"):
-                if f.name.startswith("A11."):
-                    continue
-                self.assertFalse(set(mine) & set(json.loads(read(f))), f"和 {f.name} 撞键")
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
+        for lang in ("zh", "en"):
+            self.assertEqual(parts_compat.missing_in_base("A11", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set()
@@ -222,7 +221,13 @@ class ClickableNonButtonTests(unittest.TestCase):
             rows += len(focusable)
             self.assertIn("activateOnKey(", src, f"{rel(p)}: 带 tabindex 的表格行没有用 activateOnKey（Enter 和空格都要响应）")
             self.assertIsNone(re.search(r"tr\.addEventListener\('keydown'", src), f"{rel(p)}: 表格行还在手写只认 Enter 的 keydown")
-        self.assertGreaterEqual(rows, 2, "至少 market.js 汇总表和 stock.js 策略对比表两处")
+        # D49-2（revtech A11-03）：market.js 汇总表和 stock.js 策略对比表不再整行可聚焦（读屏念成没名字的「行」），
+        # 改成首格放 <button aria-pressed>策略名</button>；这里守住新写法，并且行上不能再出现 aria-selected
+        for name, cls in (("market.js", "u4-rowbtn"), ("stock.js", "u2-rowbtn")):
+            src = strip_js_comments(read(UI / "pages" / name))
+            self.assertIn(f"class: '{cls}', type: 'button', 'aria-pressed'", src, f"{name}: 可点的策略行首格应是带 aria-pressed 的按钮")
+            self.assertNotRegex(src, r"el\('tr', \{[^}]*tabindex", f"{name}: 表格行不应再可聚焦")
+            self.assertNotIn("'aria-selected'", src, f"{name}: 普通表格行不支持 aria-selected")
 
     def test_activate_helper_handles_enter_and_space(self):
         src = read(UI / "shared" / "a11y.js")

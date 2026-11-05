@@ -117,6 +117,9 @@ def prices_for(market: str) -> dict:
     syms = list(cfg["universe"]) + list(datasource.load_watchlist(market))
     key = tuple((s, datasource.cache_path(market, s).stat().st_mtime)
                 for s in syms if datasource.cache_path(market, s).exists())
+    # D98：自选个股优先读全市场文件，它变了缓存也要失效
+    key += tuple((s, p.stat().st_mtime) for s in syms
+                 if s not in cfg["universe"] and (p := datasource.stock_price_path(market, s)) is not None)
     with _lock:
         hit = _price_cache.get(market)
         if hit and hit[0] == key:
@@ -389,9 +392,23 @@ def meta() -> dict:
                         "cost_bp": v["cost_bp"], "source": v["source"]}
                     for k, v in ((k, MARKETS[k]) for k in ENABLED)},
         "default_market": ENABLED[0],
-        "strategies": {k: {kk: v[kk] for kk in ("label", "desc", "kind", "params")}
+        # D77：label_en / desc_en 给英文界面用（registry 是两站策略名的唯一来源）
+        "strategies": {k: {kk: v.get(kk) for kk in ("label", "label_en", "desc", "desc_en", "kind", "params")}
                        for k, v in registry.STRATEGIES.items()},
     }
+
+
+def feature_flags(handler) -> dict:
+    """tester 走查 D41：体检页原来靠「空 POST 看是不是 404」来判断开关，每次打开都在控制台留一条红色 404，还发了个没意义的 POST。
+    现在 /api/meta 直接带两个只读开关；只给本机 / 已验证的所有者（和这两个接口本身的可用范围一致），远程分享访客拿不到这个字段。
+    写成模块函数并且任何异常都返回 {}：meta 是首屏必经接口，不能因为读开关出错而整页失败。"""
+    try:
+        from src import admin_settings
+        if handler._local_or_owner() is True and handler._remote() is False:
+            return {"features": {"upload_check": admin_settings.upload_check_on(), "ledger_page": admin_settings.ledger_page_on()}}
+    except Exception:
+        pass
+    return {}
 
 
 def _ua_info(ua: str) -> str:
@@ -449,6 +466,106 @@ def _gzip_cached(body: bytes, etag):
     return gzip.compress(body, 5, mtime=0)
 
 
+# ---------- D20：新界面 /ui/ 的静态文件按内容哈希长期缓存
+# 原来 /ui/ 下所有文件都是 no-cache，每打开一页约 37 个文件都要回服务器确认一次，远程（隧道，约 80ms 往返）时
+# 热缓存和冷缓存一样慢（约 1.4 秒）。做法和旧界面 _page 一样：HTML 里的 .js/.css 地址加 ?v=内容哈希，
+# 带 ?v= 的请求缓存一年；ES 模块之间的相对 import 带不上 ?v=，所以再给页面注入一张 import map，
+# 把每个 /ui/**/*.js 映射到带 ?v= 的地址。import map 是内联脚本，页面的 CSP 只给它的 sha256 放行。
+_ui_hash_cache = {}   # 相对路径 -> (修改时间 ns, 大小, 前 10 位 sha1)
+
+
+_UI_FETCHED = ("i18n/zh.json", "i18n/en.json", "shared/icons.svg")   # 脚本里按地址取用的非模块文件
+
+
+def _ui_hash(rel: str) -> str | None:
+    """/ui/ 下一个文件的内容哈希（前 10 位）；按修改时间+大小缓存；文件不存在返回 None。"""
+    f = UI_DIR / rel
+    try:
+        st = f.stat()
+    except OSError:
+        return None
+    hit = _ui_hash_cache.get(rel)
+    if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+        return hit[2]
+    h = hashlib.sha1(f.read_bytes()).hexdigest()[:10]
+    _ui_hash_cache[rel] = (st.st_mtime_ns, st.st_size, h)
+    return h
+
+
+def _ui_importmap() -> str:
+    """所有 /ui/**/*.js 的 import map（JSON 文本）。动态 import（page-boot.js 按页面名加载、debug-fields.js）也在里面；
+    漏掉的文件只会退回原来的 no-cache，不会出错。"""
+    imports = {}
+    for f in sorted(UI_DIR.rglob("*.js")):
+        rel = f.relative_to(UI_DIR).as_posix()
+        if any(p.startswith(".") for p in rel.split("/")):
+            continue
+        h = _ui_hash(rel)
+        if h:
+            imports[f"/ui/{rel}"] = f"/ui/{rel}?v={h}"
+    return json.dumps({"imports": imports}, separators=(",", ":"))
+
+
+# R7-perf-1 / D112：一个页面的 10 个样式表合成一个请求（HTTP/1.1 一个域名同时只开 6 条连接，37 个文件要排 6 轮）。
+# 合并表只在服务器内存里：id = 文件清单的哈希，/ui/_b/<id>.css 按清单现拼（清单只来自页面自己写的 <link>，请求里不能指定文件）。
+_css_bundles = {}
+_LINK_RE = re.compile(r'<link rel="stylesheet" href="([^"?#:]+\.css)\?v=[0-9a-f]+">')
+
+
+def _merge_css_links(html: str, base: str) -> str:
+    """把 <head> 里连续的 <link rel=stylesheet href=相对 .css?v=…> 换成一个合并样式表链接；少于 2 个不动。
+    样式表里没有 url() / @import（相对路径合并后会失效），有就不合并。"""
+    import posixpath
+
+    def merge(m):
+        rels = [posixpath.normpath(posixpath.join(base, u)) for u in _LINK_RE.findall(m.group(0))]
+        if len(rels) < 2 or any(r.startswith("..") for r in rels):
+            return m.group(0)
+        try:
+            if any(re.search(rb"url\(|@import", (UI_DIR / r).read_bytes()) for r in rels):
+                return m.group(0)
+        except OSError:
+            return m.group(0)
+        bid = hashlib.sha1("\n".join(rels).encode()).hexdigest()[:10]
+        _css_bundles[bid] = rels
+        h = hashlib.sha1(_css_bundle_bytes(bid)).hexdigest()[:10]
+        return f'<link rel="stylesheet" href="/ui/_b/{bid}.css?v={h}">'
+    return re.sub(rf'(?:{_LINK_RE.pattern}\s*){{2,}}', merge, html)
+
+
+def _css_bundle_bytes(bid: str) -> bytes:
+    return b"\n".join((UI_DIR / r).read_bytes() for r in _css_bundles[bid])
+
+
+def _ui_versioned_html(html: str, page_rel: str) -> tuple[str, str]:
+    """给 /ui/ 页面里的相对 .js/.css 地址加 ?v=哈希，并在 <head> 最前面插入 import map。
+    返回 (新 HTML, import map 脚本内容的 CSP 哈希源 'sha256-…')。"""
+    import base64
+    import posixpath
+    base = posixpath.dirname(page_rel)
+
+    def fix(m):
+        url, frag = m.group(2), m.group(3) or ""
+        rel = posixpath.normpath(posixpath.join(base, url))
+        h = None if rel.startswith("..") else _ui_hash(rel)
+        return f'{m.group(1)}{url}?v={h}{frag}"' if h else m.group(0)
+    # .svg 带 #片段（<use href="../shared/icons.svg#i-x">）：版本号放在 # 前面（D39）
+    html = re.sub(r'((?:src|href)=")((?![a-z]+:|/|#)[^"?#]+\.(?:js|css|svg))(#[^"]*)?"', fix, html)
+    html = _merge_css_links(html, base)
+    imap = _ui_importmap()
+    src = "sha256-" + base64.b64encode(hashlib.sha256(imap.encode()).digest()).decode()
+    # D39：脚本里 fetch 的字典和 JS 画的图标拿不到 import map，用 <meta> 告诉它们当前哈希（见 ui/shared/asset-v.js）
+    assets = ";".join(f"{r}={h}" for r in _UI_FETCHED if (h := _ui_hash(r)))
+    # D65：整页会用到的 ES 模块一次性列出来（modulepreload），第一次打开时浏览器不用等一个模块下完才发现下一个
+    from src import ui_preload
+    preload = "".join(f'<link rel="modulepreload" href="/ui/{r}?v={h}">'
+                      for r in ui_preload.modules_for_page(UI_DIR, page_rel, html) if (h := _ui_hash(r)))
+    tag = f'<script type="importmap">{imap}</script><meta name="qb-asset-v" content="{assets}">{preload}'
+    m = re.search(r"<meta charset[^>]*>", html, re.I) or re.search(r"<head[^>]*>", html, re.I)
+    html = html[:m.end()] + tag + html[m.end():] if m else tag + html   # 必须在任何模块脚本之前；字符集声明保持在最前
+    return html, src
+
+
 _bad_login = login_throttle.LoginThrottle()     # 令牌登录失败计数：按来源分开、滑动窗口、过期清理、有大小上限（src/login_throttle.py）
 _alive: dict = {}
 
@@ -496,8 +613,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         if self._https():     # 只有经 Cloudflare 隧道（HTTPS）来的请求才发 HSTS；本机是 http，不能发
             self.send_header("Strict-Transport-Security", "max-age=31536000")
+        script_hash = extra.pop("_csp_script_hash", None)    # D20：只给这一个响应里的 import map 放行（按内容哈希）
         self.send_header("Content-Security-Policy",
-                         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                         "default-src 'self'; script-src 'self'" + (f" '{script_hash}'" if script_hash else "") +
+                         "; style-src 'self' 'unsafe-inline'; "
                          "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
                          "form-action 'self'; object-src 'none'")
         for k, v in extra.items():
@@ -530,6 +649,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(301, b"", "text/plain", {"Location": "/ui/"})
         nf = lambda: self._send(404, b"not found", "text/plain")
         rel = unquote(u.path[len("/ui/"):]) or "index.html"      # 只解码一次，再逐段检查
+        mb = re.fullmatch(r"_b/([0-9a-f]{10})\.css", rel)
+        if mb:                                                   # D112：合并样式表（清单只来自页面渲染时登记的）
+            if mb.group(1) not in _css_bundles:
+                return nf()
+            data = _css_bundle_bytes(mb.group(1))
+            v = parse_qs(u.query).get("v", [None])[0]
+            h = hashlib.sha1(data).hexdigest()
+            return self._send(200, data, "text/css; charset=utf-8", {"ETag": '"' + h + '"'},
+                              cache="private, max-age=31536000, immutable" if v == h[:10] else "private, no-cache")
         parts = rel.split("/")
         if "\x00" in rel or "\\" in rel or any(p == "" or p.startswith(".") for p in parts):
             return nf()                                          # 绝对路径（空段）/ ../ / 点开头 / 目录请求
@@ -544,8 +672,18 @@ class Handler(BaseHTTPRequestHandler):
             data = f.read_bytes()
         except (OSError, ValueError):
             return nf()
+        extra = {}
+        if ctype.startswith("text/html"):    # D20：页面本身仍每次确认（no-cache），里面的 js/css 改成带哈希的地址
+            html, script_hash = _ui_versioned_html(data.decode("utf-8"), rel)
+            data, extra["_csp_script_hash"] = html.encode("utf-8"), script_hash
         etag = '"' + hashlib.sha1(data).hexdigest() + '"'
-        self._send(200, data, ctype, {"ETag": etag}, cache="private, no-cache")
+        # 只有 ?v= 等于文件当前内容哈希时才长期缓存（revtech C-D20）：页面加载途中文件被改/被回退时，
+        # 旧哈希地址拿到的是新内容，若也缓存一年，浏览器会一直留着错的那份；不匹配就按 no-cache 走
+        v = parse_qs(u.query).get("v", [None])[0]
+        versioned = (not ctype.startswith("text/html") and v is not None
+                     and v == hashlib.sha1(data).hexdigest()[:10])
+        self._send(200, data, ctype, {"ETag": etag, **extra},
+                   cache="private, max-age=31536000, immutable" if versioned else "private, no-cache")
 
     def _page(self, name: str):
         """HTML：把 <script src>/<link href> 里的 ?v=… 换成文件内容哈希，HTML 本身每次向服务器确认（no-cache + ETag）。"""
@@ -1192,7 +1330,7 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path in ("/app.js", "/engines.js", "/i18n.js", "/analysis.js", "/skin.js", "/ai_translator.js"):
                 self._static(u.path[1:], "text/javascript; charset=utf-8")
             elif u.path == "/api/meta":
-                self._json({**meta(), "personal_mode": self._personal_mode})
+                self._json({**meta(), "personal_mode": self._personal_mode, **feature_flags(self)})
             elif u.path == "/api/summary":
                 m = q.get("market", "")
                 if m not in MARKETS:
@@ -1640,12 +1778,18 @@ class Handler(BaseHTTPRequestHandler):
                 start = str(pd.Timestamp(start).date())
             except Exception:
                 start = None
+        # D43：区间预设（all / is=2013–2019 / recent=2020–2026-03-31），只接受白名单里的值；预设的起点覆盖 start
+        period = q.get("period") if q.get("period") in registry.PERIODS else "all"
+        p_start, end = registry.period_bounds(period)
+        if p_start:
+            start = max(start, p_start) if start else p_start
         # B07：回测是纯计算（同样的行情 + 参数一定同样的结果），约 0.65 秒；输入都进缓存键，任何一项变了就重算。
         # 行情用 prices_for 缓存对象的 id（对象随文件修改时间换新）；自选股名单影响 A 股涨跌停判断，也进键。
-        key = (m, name, sym, json.dumps(params, sort_keys=True, default=str), cost, start, id(base_prices),
+        key = (m, name, sym, json.dumps(params, sort_keys=True, default=str), cost, start, end, id(base_prices),
                tuple(watch.items()), resultcache.file_stamp(extra_file) if extra_file else None)
         return _backtest_memo.get_or_compute(
-            key, lambda: registry.run(name, prices, sym, params, cfg, cost_bp=cost, start=start, market=m, detail=True),
+            key, lambda: dict(registry.run(name, prices, sym, params, cfg, cost_bp=cost, start=start, market=m, detail=True, end=end),
+                              period=period),
             keepalive=base_prices)
 
     def _cache_scope(self) -> tuple:

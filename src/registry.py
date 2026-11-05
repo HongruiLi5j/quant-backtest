@@ -22,7 +22,8 @@ TV = P("target_vol", "目标年化波动", 0.15, 0, 0.4, 0.01, "0 = 不按波动
 STRATEGIES = {
     "blend2": {
         "label": "组合：趋势集成 + RSI2 + 海龟", "kind": "single",
-        "desc": "三个策略各 1/3 仓位。赚钱时段不同，合起来回撤最小。",
+        # D48（T-9 B06）：三个权重在 target_weights 里按总和归一化（见下方 tot），所以不必加起来等于 1
+        "desc": "三个策略各 1/3 仓位；它们赚钱的时段不同，历史上合起来的回撤通常比单个小（不保证）。三个权重会按比例换算，不需要加起来等于 1。",   # revquant D77：历史倾向，不是定论
         "params": [P("w_trend", "趋势集成权重", 1 / 3, 0, 1, 0.05),
                    P("w_rsi", "RSI2 权重", 1 / 3, 0, 1, 0.05),
                    P("w_donchian", "海龟权重", 1 / 3, 0, 1, 0.05)],
@@ -35,7 +36,7 @@ STRATEGIES = {
     },
     "trend_vol": {
         "label": "趋势 + 波动率目标（单均线）", "kind": "single",
-        "desc": "收盘在均线上方持有，下方空仓；仓位按波动率调整。",
+        "desc": "收盘高于均线 1% 以上时持有，低于均线 1% 以下时空仓（默认迟滞区间 1%）；仓位按波动率调整。",   # revquant D77：写出迟滞区间
         "params": [P("sma_len", "均线周期", 200, 20, 400, 10),
                    P("buffer", "均线迟滞区间", 0.01, 0, 0.05, 0.005), TV,
                    P("vol_len", "波动率回看天数", 20, 5, 120, 1)],
@@ -57,14 +58,16 @@ STRATEGIES = {
                    P("max_hold", "最多持有天数", 10, 2, 30, 1)],
     },
     "ma_adx_original": {
-        "label": "MA + ADX（你的原版）", "kind": "single",
-        "desc": "快线上穿慢线且 ADX 高于阈值买入，下穿卖出。",
+        # D44（T-5）：只改显示文字，规则和参数不变。原名「MA + ADX」不容易让人想到这就是双均线策略
+        "label": "双均线 + ADX 过滤（原版）", "kind": "single",
+        "desc": "双均线交叉：快线（默认 5 日）上穿慢线（默认 20 日）且 ADX 高于阈值时买入，下穿卖出。"
+                "想回测普通的双均线策略就选这个，把 ADX 阈值设为 0，基本等于不加过滤。",
         "params": [P("fast", "快线", 5, 2, 50, 1), P("slow", "慢线", 20, 5, 200, 1),
                    P("adx_min", "ADX 阈值", 20, 0, 50, 1)],
     },
     "ma_adx_plus": {
-        "label": "MA + ADX 改进版", "kind": "single",
-        "desc": "原版 + 200 日均线过滤 + 跟踪止损 + 波动率仓位。",
+        "label": "双均线 + ADX 过滤（改进版）", "kind": "single",
+        "desc": "在「双均线 + ADX 过滤（原版）」上加 200 日均线过滤、跟踪止损和波动率仓位。",
         "params": [P("fast", "快线", 5, 2, 50, 1), P("slow", "慢线", 20, 5, 200, 1),
                    P("adx_min", "ADX 阈值", 20, 0, 50, 1),
                    P("atr_mult", "跟踪止损 k×ATR", 3.0, 0.5, 6, 0.5), TV],
@@ -80,6 +83,49 @@ STRATEGIES = {
         "desc": "一直满仓，用来做比较。", "params": [],
     },
 }
+
+# D77：英文名和英文说明（两站策略名的唯一来源；公开站的演示数据生成脚本也从这里读）。
+# 只加显示字段，不改规则和参数；中文 label 仍是主名称，每个策略只有这一个中文名。
+STRATEGY_EN = {
+    "blend2": ("Blend: trend ensemble + RSI2 + Turtle",
+               "One third each of the three strategies. They tend to make money at different times, so historically the combined drawdown "
+               "has usually been smaller than each alone (not guaranteed). The three weights are rescaled, so they need not sum to 1."),
+    "trend_ens": ("Trend ensemble (4 moving averages)",
+                  "Looks at the 100/150/200/250-day averages: hold one quarter for each average the price is above, then scale by volatility."),
+    "trend_vol": ("Trend + volatility target (single MA)",
+                  "Hold while the close is more than 1% above the moving average, go to cash when it is more than 1% below; position size follows volatility."),
+    "donchian_s1": ("Turtle system 1 (channel breakout)",
+                    "Enter on a break of the N-day high; exit on a break of the M-day low or a k×ATR pullback."),
+    "rsi2": ("RSI(2) mean reversion",
+             "Buy short-term oversold dips inside a long-term uptrend and sell on the bounce. High win rate, short holds, sensitive to costs."),
+    "ma_adx_original": ("Dual MA + ADX filter (original)",
+                        "Moving-average crossover: buy when the fast MA (default 5 days) crosses above the slow MA (default 20 days) "
+                        "and ADX is above the threshold; sell on the cross back down. For a plain dual-MA strategy pick this and set the ADX threshold to 0."),
+    "ma_adx_plus": ("Dual MA + ADX filter (improved)",
+                    "The original plus a 200-day MA filter, a trailing stop and volatility-based sizing."),
+    "dual_momentum": ("Dual momentum rotation (multi-asset)",
+                      "At each month end pick the stronger of two equity assets; if it cannot beat cash, switch to bonds."),
+    "buy_hold": ("Buy and hold (benchmark)", "Always fully invested; used for comparison."),
+}
+for _k, (_label, _desc) in STRATEGY_EN.items():
+    STRATEGIES[_k]["label_en"], STRATEGIES[_k]["desc_en"] = _label, _desc
+
+# D89：参数的英文名和英文提示（按参数键；同一个键在所有策略里中文名都一样）。只加显示字段，不改默认值和范围
+PARAM_EN = {
+    "w_trend": ("Trend ensemble weight", ""), "w_rsi": ("RSI2 weight", ""), "w_donchian": ("Turtle weight", ""),
+    "target_vol": ("Target annual volatility", "0 = no volatility scaling: go fully invested when the signal fires"),
+    "vol_len": ("Volatility look-back (days)", ""),
+    "buffer": ("Moving-average buffer", "How far the price must be above the average to count as above it"),
+    "sma_len": ("Moving-average length", ""), "entry_len": ("Breakout period N", ""), "exit_len": ("Exit period M", ""),
+    "atr_mult": ("Trailing stop k×ATR", ""), "trend_len": ("Trend moving average", ""), "rsi_len": ("RSI period", ""),
+    "entry_th": ("Buy when RSI is below", ""), "exit_ma": ("Sell when the close crosses above this MA (days)", ""),
+    "max_hold": ("Maximum holding days", ""), "fast": ("Fast MA", ""), "slow": ("Slow MA", ""), "adx_min": ("ADX threshold", ""),
+    "lookback": ("Momentum look-back (days)", ""), "skip": ("Skip the most recent days", ""),
+}
+for _v in STRATEGIES.values():
+    for _p in _v["params"]:
+        if _p["key"] in PARAM_EN:
+            _p["label_en"], _p["help_en"] = PARAM_EN[_p["key"]]
 
 
 def clean_params(name: str, raw: dict | None) -> dict:
@@ -131,10 +177,28 @@ def target_weights(name: str, prices: dict, symbol: str, params: dict, mcfg: dic
     return w.rename(symbol).to_frame()
 
 
+# D43：回测区间预设（不开放自由输入的结束日期）。研究约定：样本内 2013–2019；后一段截到 2026-03-31（之后的数据不用于调参）。
+PERIODS = {
+    "all": (None, None),
+    "is": ("2013-01-01", "2019-12-31"),
+    "recent": ("2020-01-01", "2026-03-31"),
+}
+
+
+def period_bounds(period: str | None):
+    """预设区间 → (start, end)；不认识的值按 "all"。"""
+    return PERIODS.get(period or "all", PERIODS["all"])
+
+
 def run(name: str, prices: dict, symbol: str, params: dict, mcfg: dict,
         cost_bp: float | None = None, start: str | None = None, market: str | None = None,
-        detail: bool = False) -> dict:
-    """跑一次回测，返回网页需要的全部结果（可直接转成 JSON）。"""
+        detail: bool = False, end: str | None = None) -> dict:
+    """跑一次回测，返回网页需要的全部结果（可直接转成 JSON）。
+    end：结束日（含）。先把所有行情截到 end 再算，所以指标、成本敏感性、蒙特卡洛、参数敏感性都只用到 end 为止的数据；
+    策略只用当根及以前的数据，截断后 end 之前的每一天结果与不截断完全相同。"""
+    if end:
+        cut = pd.Timestamp(end)
+        prices = {k: v[v.index <= cut] for k, v in prices.items()}
     params = clean_params(name, params)
     is_stock = symbol not in mcfg["universe"]
     if cost_bp is None:
@@ -154,9 +218,7 @@ def run(name: str, prices: dict, symbol: str, params: dict, mcfg: dict,
                         pd.Series(1.0, index=prices[symbol].index, name=symbol).to_frame(), cost=cost,
                         limits=limits)
 
-    # 预热期（最长指标 252 天）之后才开始统计
-    warm = res.returns.index[min(260, len(res.returns) - 1)]
-    t0 = max(warm, pd.Timestamp(start)) if start else warm
+    t0 = stats_start(res.returns.index, start)
     r = res.returns.loc[t0:]
     b = bench.returns.reindex(r.index).fillna(0.0)
     rf = cash.reindex(r.index).fillna(0.0) if cash is not None else None
@@ -203,6 +265,17 @@ def run(name: str, prices: dict, symbol: str, params: dict, mcfg: dict,
     }
 
 
+WARMUP_BARS = 260      # 预热期（最长指标 252 天 + 余量）之后才开始统计
+
+
+def stats_start(index, start=None) -> pd.Timestamp:
+    """统计区间的起点：第 WARMUP_BARS 根 K 线（数据不够时取最后一根），用户给了 start 就取两者较晚的。
+    回测实验室、今日页、自选页（registry.run）和个股页的策略对比（detail.build）都用这一个函数，
+    所以同一品种、同一策略在各页的年化 / Sharpe 一致（D18；以前个股页从第 250 根起算，510300 正好多算进 2013 年 6 月的大跌）。"""
+    warm = index[min(WARMUP_BARS, len(index) - 1)]
+    return max(warm, pd.Timestamp(start)) if start else warm
+
+
 def _period_ret(r: pd.Series, n: int) -> float:
     return float(((1 + r.iloc[-n:]).prod() - 1) * 100)
 
@@ -244,6 +317,7 @@ def _detail(res, r, b, W, used, name, cost, band, cash, limits, prices, symbol, 
     except Exception:
         a["param_sens"] = None
     a["assumptions"] = analytics.assumptions(market, "lab", cost * 1e4, is_stock)
+    a["assumptions_en"] = analytics.assumptions_en(market, "lab", cost * 1e4, is_stock)   # D89/R8：前端英文模式整体替换
     return a
 
 
@@ -283,7 +357,7 @@ def _param_sens(name, prices, symbol, mcfg, cost, band, cash, limits, market, r,
     out, t0 = [], time.time()
     # 用当前请求的参数作基准：registry.run 已清洗过，这里从 clean_params 的结果重建
     for p in spec:
-        row = {"key": p["key"], "label": p["label"], "pts": []}
+        row = {"key": p["key"], "label": p["label"], "label_en": p.get("label_en"), "pts": []}   # D89：英文界面用
         span = (p["max"] - p["min"]) * 0.10
         for k in (-2, -1, 0, 1, 2):
             if time.time() - t0 > budget_s:

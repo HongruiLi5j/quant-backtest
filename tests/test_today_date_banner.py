@@ -8,6 +8,7 @@
    合并字典后中英文各自正确，合并前提示条不露键名；非 A 股不出提示条
 """
 import json
+import sys
 import re
 import shutil
 import subprocess
@@ -17,10 +18,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 PAGES = UI / "pages"
-ZH = json.loads((PARTS / "A07.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A07.en.json").read_text(encoding="utf-8"))
+ZH = parts_compat.part("A07", "zh")
+EN = parts_compat.part("A07", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 FILES = [PAGES / "today-date.js", PAGES / "today.js", PAGES / "today-personal.js"]
@@ -48,13 +50,11 @@ class A07DictTests(unittest.TestCase):
         for k, v in EN.items():
             self.assertIsNone(CJK.search(v), f"{k}: {v}")
 
-    def test_no_collision_with_base_or_other_parts(self):
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(ZH) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if not p.name.startswith("A07."):
-                    self.assertFalse(set(ZH) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+            self.assertEqual(parts_compat.missing_in_base("A07", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set()
@@ -107,6 +107,8 @@ class A07StaticTests(unittest.TestCase):
 
 
 NODE_SCRIPT = r"""
+const PART_KEYS = __PART_KEYS__;   // 部件已退役：键名单由 Python 从 tests/fixtures/i18n_parts_keys.json 填进来
+const without = (d, keys) => Object.fromEntries(Object.entries(d).filter(([k]) => !keys.includes(k)));   // 合并前 = 基础字典去掉本任务的键
 import fs from 'node:fs';
 const [ui, merge] = process.argv.slice(2);
 const uiUrl = new URL(`file://${ui}/`);
@@ -128,8 +130,7 @@ globalThis.fetch = async (url) => {                     // 字典：基础字典
   const s = String(url);
   const lang = s.endsWith('/en.json') ? 'en' : 'zh';
   const base = JSON.parse(fs.readFileSync(new URL(s), 'utf8'));
-  const part = merge === '1' ? JSON.parse(fs.readFileSync(`${ui}/i18n/parts/A07.${lang}.json`, 'utf8')) : {};
-  return { ok: true, json: async () => ({ ...base, ...part }) };
+  return { ok: true, json: async () => (merge === '1' ? base : without(base, PART_KEYS)) };
 };
 const i18n = await import(new URL('shared/i18n.js', uiUrl));
 const td = await import(new URL('pages/today-date.js', uiUrl));
@@ -176,10 +177,12 @@ for (const lang of ['zh', 'en']) {
   const notice = td.dateNotice('2026-10-29', { market: 'cn', now: NOW.fri_am });
   out[`${lang}.notice_kids`] = notice.kids.map((k) => k && k.className);
   out[`${lang}.notice_none_kids`] = td.dateNotice('2026-10-30', { market: 'cn', now: NOW.fri_pm }).kids.length;
+  out[`${lang}.banner_after_close_cls`] = td.dateBanner('2026-10-29', { market: 'cn', now: NOW.fri_pm })?.className ?? null;   // D90-5
   out[`${lang}.banner_role`] = td.dateBanner('2026-10-29', { market: 'cn', now: NOW.fri_am })?.attrs.role ?? null;
 }
 console.log(JSON.stringify(out));
 """
+NODE_SCRIPT = NODE_SCRIPT.replace("__PART_KEYS__", json.dumps(parts_compat.part_keys("A07")))
 
 
 def run_node(merge):
@@ -244,7 +247,9 @@ class NodeRuntimeTests(unittest.TestCase):
             self.assertIsNone(self.merged[f"{lang}.banner_none"])
             self.assertIsNone(self.merged[f"{lang}.banner_us"])
             self.assertEqual(self.merged[f"{lang}.notice_none_kids"], 1)    # 只有日期行，没有提示条
-            self.assertEqual(self.merged[f"{lang}.notice_kids"], ["u1-datebar num", "card u1-note is-warn u1-datebanner"])
+            # D90-5：周五上午看到周四的清单是正常情况，提示条用中性样式（不带 is-warn）；收盘后还没有今天的数据才是琥珀色
+            self.assertEqual(self.merged[f"{lang}.notice_kids"], ["u1-datebar num", "card u1-note u1-datebanner"])
+            self.assertEqual(self.merged[f"{lang}.banner_after_close_cls"], "card u1-note is-warn u1-datebanner")
 
     def test_before_merge_never_shows_keys(self):
         o = self.unmerged

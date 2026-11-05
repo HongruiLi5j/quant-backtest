@@ -21,13 +21,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "dashboard" / "ui"
-PARTS = UI / "i18n" / "parts"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import i18n_parts_compat as parts_compat  # noqa: E402  部件（parts/）已退役，键名单来自快照、值来自基础字典
 PAGES = UI / "pages"
 TESTS = ROOT / "tests"
 sys.path.insert(0, str(ROOT))
 
-ZH = json.loads((PARTS / "A09.zh.json").read_text(encoding="utf-8"))
-EN = json.loads((PARTS / "A09.en.json").read_text(encoding="utf-8"))
+ZH = parts_compat.part("A09", "zh")
+EN = parts_compat.part("A09", "en")
 CJK = re.compile(r"[㐀-鿿　-〿＀-￯]")
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 VALIDATE = PAGES / "backtest-validate.js"
@@ -56,13 +57,11 @@ class A09DictTests(unittest.TestCase):
         for k, v in EN.items():
             self.assertIsNone(CJK.search(v), f"{k}: {v}")
 
-    def test_no_collision_with_base_or_other_parts(self):
+    def test_all_keys_in_base_dictionary(self):
+        """部件已合并进基础字典并退役（parts/ 移到 _to_delete/）：本任务的每个键都必须在基础字典里。
+        原来的「不和基础字典撞键」检查针对合并前的状态，合并后必然撞键，已不适用。"""
         for lang in ("zh", "en"):
-            base = json.loads((UI / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            self.assertFalse(set(ZH) & set(base), lang)
-            for p in PARTS.glob(f"*.{lang}.json"):
-                if not p.name.startswith("A09."):
-                    self.assertFalse(set(ZH) & set(json.loads(p.read_text(encoding="utf-8"))), p.name)
+            self.assertEqual(parts_compat.missing_in_base("A09", lang), [], lang)
 
     def test_used_keys_exist_and_all_keys_used(self):
         used = set()
@@ -214,8 +213,9 @@ def run_node_json(script, cases):
 
 def build_probe_tree(dst):
     """拷出一份最小的 ui 目录：真实的 backtest.js / backtest-validate.js / shared / 字典，结果区两个模块换成空桩"""
-    for rel in ("shared/dom.js", "shared/i18n.js", "shared/api.js", "i18n/zh.json", "i18n/en.json",
-                "i18n/parts/A09.zh.json", "i18n/parts/A09.en.json", "pages/backtest.js", "pages/backtest-validate.js"):
+    # 部件已退役（A09 词条在基础字典里）；shared/asset-v.js 是 i18n.js 的新依赖（perf D39），url-state.js 是 backtest.js 的新依赖（ux D06）
+    for rel in ("shared/dom.js", "shared/i18n.js", "shared/api.js", "shared/asset-v.js", "shared/url-state.js", "i18n/zh.json", "i18n/en.json",
+                "pages/backtest.js", "pages/backtest-validate.js"):
         (dst / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(UI / rel, dst / rel)
     (dst / "pages" / "backtest-result.js").write_text(
@@ -320,7 +320,8 @@ class A09RenderedPageTests(unittest.TestCase):
         self.assertFalse(o["run_disabled"])
         self.assertEqual(o["calls"], 1)                       # 首次进入自动跑一次
         self.assertEqual(o["block"], "")
-        self.assertEqual(o["fields"]["start"]["msg"], "回测算到最新数据日 2026-10-23，没有单独的结束日期")
+        # 区间预设（D43）加了以后，提示改成说明结束日期由「区间」决定（revquant PD_after D14）
+        self.assertEqual(o["fields"]["start"]["msg"], "结束日期由上面的「区间」决定；选「全部」时算到最新数据日 2026-10-23")
         self.assertIn("is-hint", o["fields"]["start"]["cls"])
         for k in ("symbol", "start", "cost"):
             self.assertFalse(o["fields"][k]["invalid"], k)

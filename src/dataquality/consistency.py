@@ -24,15 +24,9 @@ from .status_table import board_of, parse_date
 SEVERITY_ORDER = {"error": 0, "warn": 1, "info": 2}
 OHLC = ["Open", "High", "Low", "Close"]
 
-# (板块, 起始日, 涨跌幅);同一板块取"起始日 <= 当天"中最晚的一条。
-# "ST" 只用于主板 ST 股(5%)。以下日期与幅度凭记忆,[需核实]
-DEFAULT_LIMIT_RULES = (
-    ("主板", date(1996, 12, 16), 0.10),
-    ("创业板", date(2009, 10, 30), 0.10),
-    ("创业板", date(2020, 8, 24), 0.20),
-    ("科创板", date(2019, 7, 22), 0.20),
-    ("ST", date(1998, 4, 1), 0.05),
-)
+# (规则名, 起始日, 涨跌幅);同一规则名取"起始日 <= 当天"中最晚的一条。表只在 src/limits.py 维护一份(D17),这里直接引用。
+# "ST" = 主板 ST(5%,2026-07-06 起 10%);"创业板ST" = 创业板 ST(改革前 5%,2020-08-24 起 20%)。
+from ..limits import LIMIT_RULES as DEFAULT_LIMIT_RULES  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -121,7 +115,11 @@ def _prep(df):
 
 def _limit_for(board, day, is_st, th: Thresholds) -> float:
     """某板块某天的涨跌幅(不含 slack)。主板 ST 用 ST 规则;其他板块的 ST 沿用板块幅度。"""
-    name = "ST" if (is_st and board == "主板") else board
+    name = board
+    if is_st and board in ("主板", "创业板"):
+        name = "ST" if board == "主板" else "创业板ST"
+        if not any(b == name for b, _, _ in th.limit_rules):      # 自定义规则表里没有这一行:沿用板块幅度
+            name = board
     cand = [(s, p) for b, s, p in th.limit_rules if b == name and s <= day]
     if not cand:
         return th.default_limit
