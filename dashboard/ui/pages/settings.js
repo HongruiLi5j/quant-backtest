@@ -38,13 +38,16 @@ function draw() {
     el('section', { class: 'card', 'aria-labelledby': 'u4-set-ui' },
       el('h2', { class: 'card__title', id: 'u4-set-ui', style: { 'margin-bottom': 'var(--space-2)' } }, t('u4.set.ui')),
       row('u4.set.lang', el('div', { class: 'segmented', role: 'group', 'aria-label': t('u4.set.lang') }, ...langBtns)),
-      row('u4.set.theme', seg(t('u4.set.theme'), [['dark', t('u4.set.theme.dark')], ['light', t('u4.set.theme.light')]], currentTheme(), setTheme)),
+      // D71：第三种主题「终端」（可选，不是默认）；词条没进字典前退成英文 Terminal，不露键名
+      row('u4.set.theme', seg(t('u4.set.theme'), [['dark', t('u4.set.theme.dark')], ['light', t('u4.set.theme.light')], ['terminal', t('u4.set.theme.terminal') === 'u4.set.theme.terminal' ? 'Terminal' : t('u4.set.theme.terminal')]], currentTheme(), setTheme)),
       row('u4.set.colors', seg(t('u4.set.colors'), [['cn', t('u4.set.colors.cn')], ['us', t('u4.set.colors.us')]], market, setMarket), 'u4.set.colors.hint'),
       row('u4.set.market', seg(t('u4.set.market'), Object.entries(meta.markets).map(([k, v]) => [k, v.name]), dataMarket(meta), setDataMarket), 'u4.set.market.hint')),
     el('section', { class: 'card', 'aria-labelledby': 'u4-set-links' },
       el('h2', { class: 'card__title', id: 'u4-set-links', style: { 'margin-bottom': 'var(--space-2)' } }, t('u4.set.links')),
-      row('u4.set.classic', el('a', { class: 'btn btn--sm', href: '/' }, t('ui.nav.classic'))),
-      row('u4.set.admin', el('a', { class: 'btn btn--sm', href: '/admin' }, t('ui.nav.admin')))),
+      // D11（C15）：以前标签和按钮写的是同一个词（旧版界面 / 后台），看起来重复；改成标签说清是哪一个、按钮写「打开」。
+      // 这里的后台是旧版 /admin（导航栏的「后台」是新页面），新页面打不开时用它，所以保留
+      row('u4.set.classic', el('a', { class: 'btn btn--sm', href: '/' }, t('c11.open'))),
+      row('u4.set.admin', el('a', { class: 'btn btn--sm', href: '/admin' }, t('c11.open')))),
     el('p', { class: 'ws-set__hint' }, t('u4.set.local_note'))));
 }
 

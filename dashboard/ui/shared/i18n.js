@@ -8,6 +8,7 @@
  * ========================================================== */
 
 import { store } from './dom.js';
+import { versioned } from './asset-v.js';
 
 const DICTS = {};
 let current = 'zh';
@@ -21,10 +22,14 @@ async function fetchJSON(url) {
   }
 }
 
+const PENDING = {};   // 正在下载的字典：同一语言并发调用共用一次请求（D21：setLang('zh') 时 Promise.all 里两个 loadDict('zh') 原来会各拉一次）
+
 /** 拉取一份字典（同一语言只拉一次）；U5 已把 parts/ 合进基础字典，这里只读基础字典，失败即抛错 */
 async function loadDict(lang) {
   if (DICTS[lang]) return DICTS[lang];
-  const base = await fetchJSON(new URL(`../i18n/${lang}.json`, import.meta.url));
+  PENDING[lang] ??= fetchJSON(versioned(new URL(`../i18n/${lang}.json`, import.meta.url)));   // D39：带内容哈希，可长期缓存
+  const base = await PENDING[lang];
+  delete PENDING[lang];   // 失败后允许下次重试；成功后由 DICTS 缓存
   if (!base) throw new Error(`i18n ${lang} 加载失败`);
   DICTS[lang] = base;
   return DICTS[lang];

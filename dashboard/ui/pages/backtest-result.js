@@ -7,11 +7,16 @@
  * ========================================================== */
 import { el, fmt } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { withInfo } from '../shared/glossary.js';   // D111：指标名后面的 ⓘ
 import { tDefault } from '../shared/t-fallback.js';
 import { attachTooltip, drawdownChart, equityChart, syncTimeScale } from '../shared/chart-helpers.js';
 import { card, isNum, legend, pct, table, tb, toneClass } from './u2-lib.js';
 
 /** [统计字段, 词条, 小数位, 单位, 持有基准的显示方式] —— 与旧页面 8 张卡一致 */
+// D111：回测结果指标卡的术语（键 = TILES 的后端字段）
+const TILE_TERMS = { 'CAGR%': 'cagr', ExcessSharpe: 'sharpe_cash', 'MaxDD%': 'maxdd', 'Vol%': 'vol', Calmar: 'calmar', 'Exposure%': 'exposure', Trades: 'trades', 'Win%': 'win' };
+// 报告里的指标名（后端 report.py 的 k）→ 术语：映射写在字典 gl.rt.<指标名>（js 里不留中文字面量）
+const reportTerm = (k) => { const v = t(`gl.rt.${k}`); return v === `gl.rt.${k}` ? null : v; };
 const TILES = [
   ['CAGR%', 'metric.cagr', 1, '%'], ['ExcessSharpe', 'u2.bt.excess_sharpe', 2, ''],
   ['MaxDD%', 'metric.maxdd', 1, '%'], ['Vol%', 'metric.vol', 1, '%'],
@@ -23,9 +28,9 @@ function tiles(r) {
   const s = r.stats; const b = r.bench_stats;
   return el('section', { class: 'ws-grid ws-grid--kpi u2-tiles', 'aria-label': t('backtest.kpi.title') },
     ...TILES.map(([key, lab, d, unit, fixed]) => el('div', { class: 'metric' },
-      el('span', { class: 'metric__label' }, t(lab)),
-      el('span', { class: 'metric__value num' }, isNum(s[key]) ? fmt(s[key], d, unit) : '—'),
-      el('span', { class: 'metric__foot num' }, t('u2.bt.vs_hold', { v: fixed ?? (isNum(b[key]) ? fmt(b[key], d, unit) : '—') })))));
+      el('span', { class: 'metric__label' }, withInfo(t(lab), TILE_TERMS[key])),
+      el('span', { class: 'metric__value num' }, isNum(s[key]) ? fmt(s[key], d, unit, key === 'CAGR%') : '—'),   // D77：年化收益两站统一带正负号
+      el('span', { class: 'metric__foot num' }, t('u2.bt.vs_hold', { v: fixed ?? (isNum(b[key]) ? fmt(b[key], d, unit, key === 'CAGR%') : '—') })))));
 }
 
 /** 后端 report 的单项格式：f = pct / int / days / x / num */
@@ -45,14 +50,14 @@ function report(groups) {
     ...groups.map((g) => el('div', { class: 'u2-rg' },
       el('p', { class: 'eyebrow' }, tb(g.group)),
       el('dl', { class: 'u2-rgrid' }, ...g.items.map((it) => el('div', { class: 'u2-ri' },
-        el('dt', { 'data-tip': it.tip ? tb(it.tip) : null, tabindex: it.tip ? '0' : null }, tb(it.k)),
+        el('dt', { 'data-tip': it.tip && !reportTerm(it.k) ? tb(it.tip) : null, tabindex: it.tip && !reportTerm(it.k) ? '0' : null }, withInfo(tb(it.k), reportTerm(it.k))),
         el('dd', { class: 'num' }, reportValue(it))))))));
 }
 
 /** 净值 + 回撤两张图。净值用对数坐标（和旧页面一致），两张图时间轴联动 */
 function chartsCard(r, label) {
-  const eqBox = el('div', { class: 'chart chart--lg', role: 'img', 'aria-label': t('backtest.equity.aria') });
-  const ddBox = el('div', { class: 'chart chart--sm', role: 'img', 'aria-label': t('backtest.dd.title') });
+  const eqBox = el('div', { class: 'chart chart--lg', role: 'figure', 'aria-label': t('backtest.equity.aria') });   // axe：role=img 里有可聚焦的署名链接，改 figure
+  const ddBox = el('div', { class: 'chart chart--sm', role: 'figure', 'aria-label': t('backtest.dd.title') });
   const node = card(t('u2.bt.equity_log'), null,
     legend([{ label, color: 'var(--chart-1)' }, { label: t('u2.bt.hold'), color: 'var(--chart-bench)' }]),
     eqBox,
@@ -100,7 +105,7 @@ function tradesCard(r) {
   const body = r.trades.length
     ? table([{ text: t('backtest.trades.entry') }, { text: t('backtest.trades.exit') }, { text: t('backtest.trades.days'), num: true }, { text: t('backtest.trades.ret'), num: true }],
       r.trades.map((x) => [{ v: x.entry, num: true }, x.open ? el('span', { class: 'badge badge--accent' }, t('u2.bt.holding')) : { v: x.exit, num: true },
-        { v: String(x.days), num: true }, { v: pct(x.ret, 2), num: true, cls: toneClass(x.ret) }]), { scroll: true })
+        { v: String(x.days), num: true }, { v: pct(x.ret, 2), num: true, cls: toneClass(x.ret) }]), { scroll: true, label: t('u2.bt.recent_trades') })
     : el('p', { class: 'muted' }, t('u2.bt.no_trades'));
   return card(t('u2.bt.recent_trades'), t('backtest.trades.count', { n: r.trades.length }), body);
 }

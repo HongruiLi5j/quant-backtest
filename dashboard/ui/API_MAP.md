@@ -59,3 +59,17 @@ mockup `quant-ai-dark/w/` 实际有 **10 个 html**（today、signals、monitor�
 3. 个人模式下 `/api/trade_list_mine` 只能本机访问，从外网（me.accessiblequant.com）访问会 403，页面要优雅降级。
 4. 上游文本（行情源返回的名称、告警原因）一律当纯文本，`textContent`。
 5. 未列出的 `/api/*` 业务实现不要改；缺字段写进 `~/Documents/AQ-ui-status/requests.md`，等 U5 和站主确认。
+
+## 4. 2026-11-04 通宵沙盒新增 / 改动的接口字段（D70 整理，全部向后兼容：旧字段没删）
+
+| 接口 | 改动 | 来源提交 | 页面怎么用 |
+|---|---|---|---|
+| `/api/meta` | 新增 `features: {upload_check, ledger_page}`（后台开关的当前值） | 5282f53（D41） | 体检、前向账本页打开时就知道功能关没关，不再发探测请求 |
+| `/api/backtest` | 新参数 `period=all\|is\|recent`（全部 / 2013–2019 / 2020-01-01 起到 2026-03-31）；不认识的值按 `all` 处理 | e1df1b3（D43） | 回测页「区间」预设下拉；网址里是 `bt_r` |
+| `/api/trade_list` 每行 | 新增 `trigger`：一句话触发原因（今天真正变化的子策略和条件），每日任务生成清单时写入；旧清单没有这个字段，前端退回截取 `reason` | 09d8063（D12） | 信号表「触发原因」第一行 |
+| `/api/trade_list` 每行 | 新增 `limit_close`：当天收盘涨停的买入信号带提示（历史上次日开盘仍涨停买不进的比例，从账本算，不写死） | 4ab733e（D30） | 信号表买入行的提示 |
+| 准确率统计（信号核对 / 跟踪） | 新增同日随机基准与区间：`hit_random`、`hit_lo`/`hit_hi`、`hit_excess_lo`/`hit_excess_hi`、`mean_excess_lo`/`mean_excess_hi`、`weeks`/`weeks_needed`、`tradable_rate`（可成交率）等 | 882c179（D16）、4ab733e（D30） | 信号页准确率表；12 周前不下「有效 / 反向」结论 |
+
+前端网址参数（不是接口，但会出现在分享链接里）：回测页 `bt_s`（策略）、`bt_y`（品种）、`bt_d`（开始日）、`bt_r`（区间）、`bt_c`（成本）、`bt_p_<参数名>`；只写和默认不同的值，打开链接只填表单、不自动运行（D06）。
+
+完整的逐项改动和撤销命令见 `docs/通宵变更_2026-11-04.md`。

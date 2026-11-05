@@ -5,9 +5,10 @@
  * 不预测、不推荐、不构成投资建议；通过检查不等于策略有效。
  * ========================================================== */
 
+import { info } from '../shared/glossary.js';   // D111：系数 / t 值 / p 值的 ⓘ
 import { el, store } from '../shared/dom.js';
 import { t, lang } from '../shared/i18n.js';
-import { postJSON } from '../shared/api.js';
+import { getJSON, postJSON } from '../shared/api.js';
 
 const MAX_ROWS = 10000;
 const MAX_CHARS = 1500000;
@@ -120,14 +121,28 @@ function attributionView(fa) {
     el('h3', {}, t('chk.fa.title')),
     el('p', { class: 'muted' }, t('chk.fa.sum', { model: fa.model, n: fa.n_obs, a: fa.first, b: fa.last, r2: f3(fa.r2), alpha: f3(fa.alpha_annual) })),
     el('div', { class: 'tablewrap' }, el('table', { class: 'table' },
-      el('thead', {}, el('tr', {}, el('th', {}, t('chk.fa.col.term')), el('th', {}, t('chk.fa.col.coef')), el('th', {}, t('chk.fa.col.t')), el('th', {}, t('chk.fa.col.p'))),),
+      el('thead', {}, el('tr', {}, el('th', {}, t('chk.fa.col.term')), el('th', {}, t('chk.fa.col.coef'), info('coef')), el('th', {}, t('chk.fa.col.t'), info('tstat')), el('th', {}, t('chk.fa.col.p'), info('pval'))),),
       el('tbody', {}, ...rows))),
     el('p', { class: 'muted' }, t('chk.fa.caveat')));
 }
 
+/** D41：功能开关是否打开。原来要把整张表填完、点「开始体检」才告诉你「未开启」。
+ *  开关从 /api/meta 的 features.upload_check 读（只读、本机才有这个字段；页面启动器已经请求过 meta，有缓存）。
+ *  以前用「空 POST 看 404」探测，tester 指出每次打开都留一条红色 404、还多发一个 POST，改掉了。
+ *  字段缺失（旧后端 / 远程）时不挡，交给提交时的正常报错。 */
+async function uploadCheckOn() {
+  try {
+    const meta = await getJSON('/api/meta', { mock: 'u2-meta' });
+    return meta?.features?.upload_check !== false;
+  } catch {
+    return true;
+  }
+}
+
 export async function render(root) {
+  const on = await uploadCheckOn();
   const ta = el('textarea', { class: 'input', rows: '8', placeholder: '2020-01-02,0.0012,0.0008,0.15', 'aria-label': t('chk.csv') });
-  const file = el('input', { type: 'file', accept: '.csv,.txt,text/csv,text/plain' });
+  const file = el('input', { type: 'file', accept: '.csv,.txt,text/csv,text/plain', 'aria-label': t('chk.csv') });   // axe：文件框要有可访问名称
   const trials = el('input', { class: 'input', type: 'number', min: '1', step: '1', value: '1' });
   const trades = el('input', { class: 'input', type: 'number', min: '0', step: '1' });
   const split = el('input', { class: 'input', type: 'date' });
@@ -178,11 +193,14 @@ export async function render(root) {
     } catch (e) {
       msg.textContent = e.status === 404 ? t('chk.off') : e.status === 429 ? t('chk.busy') : (e.body?.error || e.message || t('ui.state.error'));
     } finally {
-      btn.disabled = false;
+      btn.disabled = !on;
     }
   });
 
+  const offNote = on ? null : el('p', { class: 'is-warn', role: 'status' }, t('chk.off'));
+  if (!on) btn.disabled = true;   // 开关关着：一进页面就说清楚，「开始体检」不可点（模板 / 示例按钮照常能用）
   root.replaceChildren(el('div', { class: 'card' },
+    offNote,
     el('p', {}, t('chk.intro')),
     el('p', { class: 'muted' }, t('chk.privacy')),
     field('chk.csv', ta, 'chk.csv.hint'), file,

@@ -11,6 +11,7 @@
 import { el, svg } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { restoreFocusOnClose } from '../shared/a11y.js';
+import { versioned } from '../shared/asset-v.js';
 
 /** 页面状态；redraw 由 admin.js 在启动时挂上 */
 export const S = {
@@ -121,7 +122,7 @@ export function confirmDialog({ title, lines, ok }) {
 
 export function loginCard() {
   const icon = svg('svg', { class: 'state__icon', 'aria-hidden': 'true' });
-  icon.append(svg('use', { href: '../shared/icons.svg#i-cloud-off' }));
+  icon.append(svg('use', { href: `${versioned(new URL('../shared/icons.svg', import.meta.url))}#i-cloud-off` }));   // D39：带哈希，与其他图标同一地址
   return el('div', { class: 'card state adm-login', role: 'alert' }, icon,
     el('p', { class: 'state__title' }, t('adm.auth.title')),
     el('p', { class: 'muted' }, t('adm.auth.body')),

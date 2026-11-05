@@ -40,6 +40,10 @@
 }
 
 .topnav__nav::-webkit-scrollbar { display: none; }
+/* D35：还有没露出来的导航项时，那一侧渐隐（nav.js overflowCue 写 data-fade） */
+.topnav__nav[data-fade="r"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.topnav__nav[data-fade="l"] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.topnav__nav[data-fade="l r"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 
 /* Workspace：一行 10 项，13px，间距 20px */
 .topnav__nav--flat { gap: 20px; }
@@ -49,7 +53,7 @@
   display: inline-flex;
   align-items: center;
   height: 56px;
-  font-size: 13px;
+  font-size: var(--fs-num);
   white-space: nowrap;
   color: var(--text-secondary);
   cursor: pointer;

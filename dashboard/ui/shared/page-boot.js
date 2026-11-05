@@ -22,27 +22,45 @@ import { restoreFocusOnClose } from './a11y.js';
 import { renderTopnav, NAV, navTarget } from '../nav.js';
 import { stateLines, resolveLines, fillStateCard } from './state-card.js';
 import { stockPage } from './stock-link.js';
+import { versioned } from './asset-v.js';
+import { prefetchJSON } from './api.js';
+import { mountHelp } from './page-help.js';   // D67：每页「怎么读这一页」
 
 const page = document.body.dataset.page || '';
 const params = new URLSearchParams(window.location.search);
 let mod = null;
 let renderSeq = 0;
 
-/** 顶栏高亮：monitor 页带 ?market=us 时算「美股盯盘」 */
-const currentNav = () => (page === 'monitor' && params.get('market') === 'us' ? 'usmonitor' : page);
+/** 顶栏高亮：就是当前页面 id（D45 起美股盯盘并进「盯盘」，monitor 页不管 A 股还是美股都高亮「盯盘」） */
+const currentNav = () => page;
 
 function drawNav() {
   renderTopnav(document.querySelector('[data-topnav]'), {
     current: currentNav(),
-    iconsHref: '../shared/icons.svg',
+    iconsHref: versioned(new URL('../shared/icons.svg', import.meta.url)),   // D39：与 HTML 里的图标同一个带哈希地址，只下载一次、可长期缓存
     brandHref: navTarget(NAV[0]),
   });
 }
 
 const main = () => document.querySelector('main[data-state]');
 
+/** D49（revtech A11-01）：加载中对读屏软件是静默的——骨架块在 aria-hidden 的 .when-loading 里，main 上也没有 aria-busy。
+ *  现在：main 加 aria-busy；另在 main 外面放一个常驻的 role=status 读屏专用文字，加载时写「加载中…」，结束清空。
+ *  status 区放在 main 外，是因为页面渲染会整块替换 main 里的内容，常驻节点读屏才能稳定播报。 */
+let srStatus = null;
+function announce(text) {
+  if (!srStatus) {
+    srStatus = el('p', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
+    document.body.append(srStatus);
+  }
+  srStatus.textContent = text;
+}
+
 function setState(state) {
-  main()?.setAttribute('data-state', state);
+  const box = main();
+  box?.setAttribute('data-state', state);
+  if (state === 'loading') box?.setAttribute('aria-busy', 'true'); else box?.removeAttribute('aria-busy');
+  announce(state === 'loading' ? t('cmp.demo.loading') : '');
 }
 
 /** 错误卡片：登录过期给回首页的链接，其他错误显示统一提示 */
@@ -96,6 +114,7 @@ function keysDialog() {
   if (!dlg) {
     const rows = [
       ['1–9', t('ws.keys.pages')], ['/', t('ws.keys.search')], ['R', t('ws.keys.refresh')], ['?', t('ws.keys.help')], ['Esc', t('ws.keys.close')],
+      ['⌘K', t('ux.keys.palette')],   // D83：面板里能做的事（换主题 / 语言 / 涨跌色 / 本页操作）
     ];
     dlg = el('dialog', { class: 'dialog ws-keys', 'aria-label': t('ws.keys.title') },
       el('p', { class: 'card__title' }, t('ws.keys.title')),
@@ -130,14 +149,30 @@ function onKey(e) {
   }
 }
 
+/** R7-perf-1：首屏必需的接口在字典下载期间就先发出去。路径必须和页面里 getJSON 的完全一致才会被取用；
+ *  市场用上次选的（没有就 cn），猜错了只是白发一个请求。目前只有今日页有表。 */
+const PREFETCH = {
+  today: (m) => ['/api/meta', `/api/summary?market=${m}`, `/api/tracking?market=${m}`, '/api/main_strategy', '/api/member/me'],
+};
+function prefetchFirstScreen() {
+  const list = PREFETCH[page];
+  if (!list) return;
+  let m = 'cn';
+  try { m = localStorage.getItem('qb-ui-market') || 'cn'; } catch { /* 隐私模式读不到就用默认 */ }
+  if (!/^[a-z]{2,4}$/.test(m)) m = 'cn';
+  for (const path of list(m)) prefetchJSON(path);
+}
+
 async function boot() {
   initTheme();
+  prefetchFirstScreen();
   try {
     await initI18n();
   } catch (err) {
     console.warn('字典加载失败，按页面里写的中文显示', err);
   }
   drawNav();
+  mountHelp(page);
   initPalette({
     pages: NAV.map((n) => ({ key: n.key, href: navTarget(n), group: 'palette.group.pages' })),
     stockHref: (code) => stockPage(code),   // 新个股页 w/stock.html；不带 market 时用默认市场；预览模式带上 ?mock=1（G01）
@@ -147,7 +182,7 @@ async function boot() {
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="retry"]')) renderPage();
   });
-  window.addEventListener('langchange', () => { drawNav(); renderPage(); });
+  window.addEventListener('langchange', () => { drawNav(); mountHelp(page); renderPage(); });
   await renderPage();
 }
 

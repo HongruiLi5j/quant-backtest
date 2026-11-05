@@ -17,19 +17,25 @@ export function renderHeatmap(container, monthly, yearly) {
   const months = Array.from({ length: 12 }, (_, i) => t(`month.${i + 1}`));
 
   const grid = el('div', { class: 'heatmap', role: 'grid', 'aria-label': t('backtest.heatmap.aria') });
-  grid.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, ''));
-  months.forEach((m) => grid.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, m)));
-  grid.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, t('backtest.heatmap.year')));
+  // axe（aria-required-parent / children）：role=grid 里的格子必须放在 role=row 里。每行包一层 .heatmap__row（display: contents），
+  // CSS 网格布局完全不变，读屏能按行读；方向键导航按格子顺序，也不受影响
+  const head = el('div', { class: 'heatmap__row', role: 'row' });
+  head.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, ''));
+  months.forEach((m) => head.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, m)));
+  head.append(el('div', { class: 'heatmap__head', role: 'columnheader' }, t('backtest.heatmap.year')));
+  grid.append(head);
 
   for (const y of years) {
-    grid.append(el('div', { class: 'heatmap__year', role: 'rowheader' }, y));
+    const row = el('div', { class: 'heatmap__row', role: 'row' });
+    grid.append(row);
+    row.append(el('div', { class: 'heatmap__year', role: 'rowheader' }, y));
     monthly[y].forEach((v, i) => {
       if (v === null) {
-        grid.append(el('div', { class: 'heatmap__cell', role: 'gridcell', tabindex: '-1', 'aria-label': `${y} ${months[i]} —` }, ''));
+        row.append(el('div', { class: 'heatmap__cell', role: 'gridcell', tabindex: '-1', 'aria-label': `${y} ${months[i]} —` }, ''));
         return;
       }
       const k = Math.min(1, Math.abs(v) / maxAbs).toFixed(2);
-      grid.append(el('div', {
+      row.append(el('div', {
         class: `heatmap__cell ${v >= 0 ? 'heatmap__cell--pos' : 'heatmap__cell--neg'}`,
         role: 'gridcell', tabindex: '-1', style: { '--k': k },
         'aria-label': `${y} ${months[i]} ${fmt(v, 2, '%', true)}`,
@@ -37,7 +43,7 @@ export function renderHeatmap(container, monthly, yearly) {
       }, fmt(v, 1)));
     });
     const total = yearly[y];
-    grid.append(el('div', {
+    row.append(el('div', {
       class: `heatmap__cell heatmap__cell--total ${total >= 0 ? 'heatmap__cell--pos' : 'heatmap__cell--neg'}`,
       role: 'gridcell', tabindex: '-1', style: { '--k': Math.min(1, Math.abs(total) / (maxAbs * 4)).toFixed(2) },
       'aria-label': `${y} ${t('backtest.heatmap.year')} ${fmt(total, 2, '%', true)}`,

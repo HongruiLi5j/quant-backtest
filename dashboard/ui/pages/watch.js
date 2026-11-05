@@ -6,7 +6,7 @@
  *   m=市场 t=策略 d=开始日期 s=排序列 o=方向(a升 d降)；等于默认值的不写（市场总是写）
  * ========================================================== */
 
-import { el } from '../shared/dom.js';
+import { el, tbodyOrEmpty } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { setAriaLabel, tMaybe } from '../shared/a11y.js';
 import { tDefault } from '../shared/t-fallback.js';
@@ -14,6 +14,7 @@ import { stockPage, rememberStockStrategy } from '../shared/stock-link.js';
 import { getJSON, postJSON } from '../shared/api.js';
 import { pickMarket, marketSwitch, fmt, pct, pill, strategySelect, field, sortTh, showError, downloadCSV, toneClass } from './u4-util.js';
 import { pickState, writeState, nonDefault, dirToUrl, dirFromUrl, validDate } from '../shared/url-state.js';
+import { info } from '../shared/glossary.js';
 
 const DEFAULT_STRATEGY = 'blend2';
 const W = { strategy: DEFAULT_STRATEGY, start: '', sort: null, dir: -1 };
@@ -27,6 +28,8 @@ let timer = 0;
 
 const COLS = [['name', 'u4.w.c.name'], ['d1', 'u4.c.d1'], ['next', 'u4.c.next'], ['cagr', 'u4.c.cagr'], ['sharpe', 'u4.c.sharpe'], ['maxdd', 'u4.c.maxdd'],
   ['y1', 'u4.c.y1'], ['win', 'u4.c.win'], ['trades', 'u4.w.c.trades'], ['b_cagr', 'u4.c.b_cagr'], ['b_maxdd', 'u4.c.b_maxdd']];
+// D10：这些列表头后面放 ⓘ 解释（术语表在 shared/glossary.js + i18n 的 gl.*）。ⓘ 放在排序按钮外面，点它不会触发排序
+const TERMS = { cagr: 'cagr', sharpe: 'sharpe_cash', maxdd: 'maxdd', win: 'win', b_cagr: 'cagr', b_maxdd: 'maxdd' };
 
 /** 网址 → 状态。网址是不可信输入：策略对照 meta、排序列对照表头、日期必须是真实存在的 YYYY-MM-DD，不合法的丢掉。
  *  排序只有「列 + 方向」成对出现才恢复；只有 wl_s 没有 wl_o 时按表格默认的降序 */
@@ -86,7 +89,16 @@ function drawTable() {
   const list = [...rows];
   if (W.sort) list.sort((a, b) => ((a[W.sort] ?? -1e9) > (b[W.sort] ?? -1e9) ? 1 : -1) * W.dir);
   const state = { sort: W.sort, dir: W.dir === 1 ? 'asc' : 'desc' };
-  const thead = el('thead', {}, el('tr', {}, ...COLS.map(([k, n], i) => sortTh(t(n), k, state, i > 0)), el('th', { scope: 'col' })));
+  const thead = el('thead', {}, el('tr', {}, ...COLS.map(([k, n], i) => {
+    const th = sortTh(t(n), k, state, i > 0);
+    const i_ = TERMS[k] ? info(TERMS[k]) : null;
+    if (i_) {   // 数字列的排序按钮是 width:100%（workspace.css:304），会把 ⓘ 挤出格子；有 ⓘ 时改成自适应宽度，靠 th.num 右对齐
+      th.querySelector('.table__sort')?.style.setProperty('width', 'auto');
+      th.style.setProperty('white-space', 'nowrap');
+      th.append(i_);
+    }
+    return th;
+  }), el('th', { scope: 'col' })));
   const body = list.map((r) => {
     const name = el('td', {}, el('a', { href: stockPage(r.symbol, market) }, r.name), el('span', { class: 'u4-code' }, r.symbol), el('span', { class: 'badge u4-tag' }, r.kind === '个股' ? t('u4.w.kind_stock') : r.kind));
     let del = el('td');
@@ -106,13 +118,13 @@ function drawTable() {
     const tr = el('tr', { class: `u4-click ${r.kind === '个股' ? 'u4-pin' : ''}` }, name,
       el('td', { class: `num ${toneClass(r.d1)}` }, pct(r.d1, 2)),
       el('td', { class: 'num' }, fmt(r.next * 100, 0, '%'), ' ', pill(r.action)),
-      el('td', { class: `num ${r.cagr > r.b_cagr ? 'u4-better' : ''}` }, fmt(r.cagr, 1, '%')),
+      el('td', { class: `num ${r.cagr > r.b_cagr ? 'u4-better' : ''}` }, fmt(r.cagr, 1, '%', true)),
       el('td', { class: `num ${r.sharpe > r.b_sharpe ? 'u4-better' : ''}` }, fmt(r.sharpe)),
       el('td', { class: 'num' }, fmt(r.maxdd, 1, '%')),
       el('td', { class: `num ${toneClass(r.y1)}` }, pct(r.y1)),
       el('td', { class: 'num' }, fmt(r.win, 0, '%')),
       el('td', { class: 'num' }, r.trades ?? '—'),
-      el('td', { class: 'num' }, fmt(r.b_cagr, 1, '%')),
+      el('td', { class: 'num' }, fmt(r.b_cagr, 1, '%', true)),
       el('td', { class: 'num' }, fmt(r.b_maxdd, 1, '%')), del);
     tr.addEventListener('click', (e) => {
       if (e.target.closest('a,button')) return;
@@ -121,7 +133,7 @@ function drawTable() {
     });
     return tr;
   });
-  ui.table.replaceChildren(thead, el('tbody', {}, ...body));
+  ui.table.replaceChildren(thead, tbodyOrEmpty(body, thead.querySelectorAll('th').length, t('ui.state.empty')));   // D49-3
   ui.table.querySelectorAll('th button[data-k]').forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.k;
     W.dir = W.sort === k ? -W.dir : -1;

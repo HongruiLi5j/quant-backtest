@@ -2,7 +2,7 @@
  * 文件: shared/theme-switcher.js
  * 版本: 0.1.0 · 更新: 2026-10-23 · 作者: Claude（为李泓锐）
  * 用途: 深浅色切换 + 涨跌色（A 股红涨 / 美股绿涨）切换。
- *   - 主题写在 <html data-theme>，未手动选择时跟随系统 prefers-color-scheme
+ *   - 主题写在 <html data-theme>，未手动选择时默认终端主题（D95）
  *   - 涨跌色写在 <html data-market>，页面也可以用 data-market 默认值指定
  *   - 切换时派发 'themechange'，图表监听后重读 CSS 变量重绘
  * ========================================================== */
@@ -47,7 +47,8 @@ export function setMarket(market) {
 /** 初始化：恢复上次选择；没有就按页面默认 / 系统 */
 export function initTheme() {
   const theme = store.get('qb-theme');
-  if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+  // D71 终端主题；D95 没选过就默认终端（不再跟随系统深浅色）
+  root.dataset.theme = theme === 'light' || theme === 'dark' || theme === 'terminal' ? theme : 'terminal';
   const market = store.get('qb-market');
   if (market === 'cn' || market === 'us') root.dataset.market = market;
   else if (!root.dataset.market) root.dataset.market = 'cn';

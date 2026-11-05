@@ -15,7 +15,7 @@
 .u4-click { cursor: pointer; }
 .u4-code { margin-left: 6px; color: var(--text-secondary); font-size: var(--fs-xs); }
 .u4-tag { margin-left: 6px; }
-.u4-sub { margin-left: 6px; color: var(--text-dim); font-size: var(--fs-xs); }
+.u4-sub { margin-left: 6px; color: var(--text-secondary); font-size: var(--fs-xs); }   /* axe：text-dim 只有 3.2–3.9:1，承载信息的小字要 4.5:1 */
 .u4-link { color: var(--accent-text); cursor: pointer; background: none; border: 0; padding: 0; font: inherit; }
 .u4-link:hover { text-decoration: underline; }
 .u4-link--gray { color: var(--text-dim); cursor: default; }
@@ -68,3 +68,7 @@
 [data-page="check"] .card > input[type="file"] { display: block; max-width: 100%; margin-top: var(--space-2); font-size: var(--fs-sm); }
 [data-page="check"] .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
 [data-page="check"] .card > [role="status"] { margin-top: var(--space-2); }
+/* D49-2：表格行首格里的按钮，看起来和原来的文字一样；焦点环照常 */
+.u4-rowbtn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.u4-rowbtn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.u4-more[hidden] { display: none; }   /* R7：.btn 的 inline-flex 会盖过 hidden 属性 */

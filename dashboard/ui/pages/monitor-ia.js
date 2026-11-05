@@ -20,7 +20,7 @@ const EV_OPP = ['watch', 'consider_sell'];
 /** ISO 时间 → HH:MM:SS（接口已经是各自市场的本地时间） */
 export const clock = (iso) => (typeof iso === 'string' && iso.length >= 19 ? iso.slice(11, 19) : '—');
 
-function eventLine(ev, market, extra) {
+export function eventLine(ev, market, extra) {   // D68：盯盘页「提醒示例」也用它，保证示例和真提醒长得一样
   const params = ev.params || {};
   const trig = (Array.isArray(params.triggers) ? params.triggers : []).map((x) => (EV_TRIG[x] ? t(EV_TRIG[x]) : '')).join(' / ');
   const text = t(EV_KEYS[ev.kind] || EV_KEYS.watch, {

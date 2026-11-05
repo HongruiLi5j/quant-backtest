@@ -8,9 +8,12 @@ import { t } from '../shared/i18n.js';
 import { getJSON, isMock } from '../shared/api.js';
 import { pickState, writeState, dirToUrl, validDate } from '../shared/url-state.js';
 import { isNum, noteCard, softError, isLocalHost, tr } from './U1-common.js';
-import { COLUMNS, UNSORTABLE, buildList, sortRows, downloadCSV } from './signals-table.js';
-import { fold, trackingBody, mineBody, reviewBody, recordsBody } from './signals-extra.js';
+import { COLUMNS, UNSORTABLE, DEFAULT_HIDDEN, buildList, sortRows, downloadCSV, columnMenu } from './signals-table.js';
+import { fold, accuracyBody, mineBody, recordsBody } from './signals-extra.js';
 import { emptyLink, loadLink, order, noteFor, banner } from './signals-link.js';
+
+/** D40：词条还没合并时不显示键名 */
+const tNote = (k) => (t(k) === k ? '' : t(k));
 
 const TAB_ACTIONS = { buy: ['买入'], sell: ['卖出'], adjust: ['加仓', '减仓'], reduce: ['减仓'], add: ['加仓'] };
 const LIQ = ['', '正常', '流动性差', '流动性未知'];
@@ -20,6 +23,26 @@ const mobileQuery = window.matchMedia('(max-width: 600px)');
 const S = { inited: false, strategies: [], strategy: 'blend2', date: '', tab: 'buy', q: '', liq: '', view: { sort: 'code', dir: 1, manual: false },
   data: null, personal: false, link: emptyLink(), req: 0, redraw: null, mainPick: {} };
 mobileQuery.addEventListener('change', () => S.redraw?.());
+
+// D84：信号表隐藏哪些列，记在本机（localStorage）；读出来只认 COLUMNS 里有的 key，坏数据回到默认
+const COLS_KEY = 'qb-ux-sig-cols';
+
+/** D90-3：表格上方 4–5 行的口径说明默认收起。标题就用说明自己冒号前那一句（「2020 年起（回看，不是样本外）」），
+ *  不另造词条；没有冒号时整段照原样显示，不折叠 */
+function methodFold(text) {
+  if (!text) return null;
+  const i = text.search(/[：:]/);
+  if (i <= 0 || i > 40) return el('p', { class: 'muted' }, text);
+  return el('details', { class: 'u1-method' }, el('summary', {}, text.slice(0, i)), el('p', { class: 'muted' }, text));
+}
+function loadHidden() {
+  try {
+    const v = JSON.parse(store.get(COLS_KEY, 'null'));
+    if (Array.isArray(v) && v.every((k) => COLUMNS.some(([c]) => c === k))) return new Set(v);   // 有一个不认识的值就整份不信，回默认
+  } catch { /* 用默认 */ }
+  return new Set(DEFAULT_HIDDEN);
+}
+S.hidden = loadHidden();
 
 const NS = 'sg';   // 网址参数前缀
 const SORTABLE = COLUMNS.map(([k]) => k).filter((k) => !UNSORTABLE.includes(k));
@@ -88,7 +111,7 @@ function drawList(box, infoBox, shownEl) {
   const onSort = (key) => {
     S.view.dir = S.view.sort === key ? -S.view.dir : 1; S.view.sort = key; S.view.manual = true; syncUrl(); S.redraw?.();
   };
-  const list = (rs, exception = false) => buildList(rs, S.view, { exception, mobile, onSort, noteFor: (row) => noteFor(S.link, row) });
+  const list = (rs, exception = false) => buildList(rs, S.view, { exception, mobile, onSort, hidden: S.hidden, noteFor: (row) => noteFor(S.link, row) });
   const foldBox = (title, content) => el('details', { class: 'card u1-fold' }, el('summary', {}, title), content);
   const minPct = ((r.min_target ?? 0.05) * 100).toFixed(2).replace(/\.?0+$/, '');
   shownEl.textContent = t('u1.sig.shown', { n: rows.length });
@@ -127,16 +150,17 @@ function controls(root, dates, onChange, r = null) {
   const xlsx = el('a', { class: 'btn btn--sm', href: isMock() ? '#' : `/api/trade_list_export?${xq}` }, t('u1.sig.xlsx'));
   const tabs = el('div', { class: 'segmented', role: 'tablist', 'aria-label': t('u1.col.signal') }, ...tabsFor().map((k) => {
     const n = tabCount(r, k);
-    const b = el('button', { class: 'segmented__btn', type: 'button', role: 'tab', dataset: { tab: k }, 'aria-pressed': String(S.tab === k), 'aria-selected': String(S.tab === k) },
+    const b = el('button', { class: 'segmented__btn', type: 'button', role: 'tab', dataset: { tab: k }, 'aria-selected': String(S.tab === k) },   // axe：role=tab 不允许 aria-pressed
       t(`u1.sig.tab.${k}`), n === null ? null : [' ', el('span', { class: 'u1-tab-count num' }, String(n))]);
     b.addEventListener('click', () => {
       S.tab = k; S.view.manual = false; saveFilter(); syncUrl();
-      tabs.querySelectorAll('button').forEach((x) => { x.setAttribute('aria-pressed', String(x === b)); x.setAttribute('aria-selected', String(x === b)); });
+      tabs.querySelectorAll('button').forEach((x) => { x.setAttribute('aria-selected', String(x === b)); });
       S.redraw?.();
     });
     return b;
   }));
-  return el('div', { class: 'card u1-controls' }, el('div', { class: 'ws-filter' }, strat, date, tabs), el('div', { class: 'ws-filter' }, search, liq, msort, mdir, csv, xlsx));
+  const cols = columnMenu(S.hidden, (next) => { S.hidden = next; store.set(COLS_KEY, JSON.stringify([...next])); S.redraw?.(); });   // D84
+  return el('div', { class: 'card u1-controls' }, el('div', { class: 'ws-filter' }, strat, date, tabs), el('div', { class: 'ws-filter' }, search, liq, msort, mdir, cols, csv, xlsx));
 }
 
 export async function render(root) {
@@ -190,14 +214,23 @@ export async function render(root) {
   const infoBox = el('div', { class: 'stack', style: { '--gap': '4px' } });
   const listBox = el('div', { class: 'stack', style: { '--gap': '12px' } });
   const mine = !isLocalHost() ? null : fold(t('u1.sig.mine_title'), () => mineBody(S.strategy, S.date), { open: true });
-  const limits = el('details', { class: 'card u1-fold' }, el('summary', {}, t('u1.sig.limits')), el('p', {}, r.disclaimer), el('ul', { class: 'u1-list' }, ...(r.limitations ?? []).map((x) => el('li', {}, x))));
+  // 最后一遍试用：已发布的旧清单里存的局限说明还写着「这里的"样本外"仅表示时间切分」，改从字典取
+  // （中文和后端 trade_list.LIMITATIONS / DISCLAIMER 一字不差，tests/test_strategy_names_d77.py 检查），英文界面有英文
+  const dictLims = [1, 2, 3, 4, 5].map((n) => tNote(`c78.lim.${n}`)).filter(Boolean);
+  const lims = dictLims.length ? dictLims : (r.limitations ?? []);
+  const limits = el('details', { class: 'card u1-fold' }, el('summary', {}, t('u1.sig.limits')), el('p', {}, tNote('c78.disclaimer') || r.disclaimer), el('ul', { class: 'u1-list' }, ...lims.map((x) => el('li', {}, x))));
   const labels = Object.fromEntries(Object.entries(meta.strategies ?? {}).map(([k, v]) => [k, v.label]));
   root.replaceChildren(bar,
     el('div', { class: 'card u1-counts-line' }, ...counts),
-    el('p', { class: 'muted' }, r.performance_note), infoBox, listBox,
+    // tester pass 5：已发布的旧清单里存的说明还写着「样本外…」，和列名「2020 年起」对不上；说明改从字典取
+    // （中文和后端 trade_list.PERFORMANCE_NOTE 一字不差，tests/test_strategy_names_d77.py 检查），英文界面也有英文
+    methodFold(tNote('c78.perf_note') || r.performance_note), infoBox, listBox,
     el('div', { class: 'stack u1-gap', style: { '--gap': '12px' } },
-      fold(t('u1.sig.track_title'), () => trackingBody(S.strategy), { open: true }).node, mine?.node ?? null,
-      fold(t('u1.sig.review_title'), reviewBody).node, fold(t('u1.sig.records_title'), () => recordsBody(labels)).node, limits));
+      // D40 方案 A：以前三张「信号准不准」的表口径各不相同；现在合成一个块（quant D16 口径），
+      // 「全部策略信号流水」仍可展开，但标明它对比的是沪深300ETF、卖出没有翻转
+      // tester Phase D：手机上这块默认展开有 2,700px，把股票卡片后面的内容推得很远；手机默认收起（点开照常），电脑照旧展开
+      fold(t('c40a.title'), () => accuracyBody(S.strategy), { open: !mobileQuery.matches, note: tNote('c40.review') }).node, mine?.node ?? null,
+      fold(t('u1.sig.records_title'), () => recordsBody(labels), { note: tNote('c40.records') }).node, limits));
   S.redraw = () => drawList(listBox, infoBox, bind('shown'));
   S.redraw();
   if (linkReq) {   // 持仓台账读完再联动重画；失败只提示，不影响清单

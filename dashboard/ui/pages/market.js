@@ -7,9 +7,11 @@
  *   m=市场 t=策略 q=搜索词 b=板块 i=行业 g=信号 s=排序列 o=方向(a升 d降) p=页码(从 1 数)；等于默认值的不写（市场总是写）
  * ========================================================== */
 
-import { el } from '../shared/dom.js';
+import { el, tbodyOrEmpty } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
-import { activateOnKey, setAriaLabel } from '../shared/a11y.js';
+import { industryName } from '../shared/industry.js';   // R8：英文界面的行业名
+import { info } from '../shared/glossary.js';   // D111：列名后面的 ⓘ
+import { setAriaLabel } from '../shared/a11y.js';
 import { getJSON, postJSON } from '../shared/api.js';
 import { stockPage } from '../shared/stock-link.js';
 import { pickMarket, marketSwitch, fmt, pct, isNum, capFmt, pill, strategySelect, field, sortTh, showError, downloadCSV, debounce, toneClass } from './u4-util.js';
@@ -26,6 +28,8 @@ let ui = null;            // 当前这次渲染创建出来的控件和容器
 let last = null;          // 最近一次 /api/scan 的结果
 
 /* 列: [字段, i18n 键] —— 顺序与旧页一致 */
+/** D111：列 → 术语（词条在 i18n 的 gl.*）；ⓘ 放在排序按钮外面，点它不会触发排序 */
+const COL_TERMS = { mcap: 'mcap', cagr: 'cagr', sharpe: 'sharpe_cash', maxdd: 'maxdd', sharpe_is: 'is_oos', sharpe_oos: 'is_oos', win: 'win', b_cagr: 'cagr', b_sharpe: 'sharpe_cash', b_maxdd: 'maxdd' };
 const COLS = [['code', 'u4.c.stock'], ['d1', 'u4.c.d1'], ['next', 'u4.c.next'], ['cagr', 'u4.c.cagr'], ['sharpe', 'u4.c.sharpe'], ['maxdd', 'u4.c.maxdd'],
   ['sharpe_is', 'u4.c.is'], ['sharpe_oos', 'u4.c.oos'], ['y1', 'u4.c.y1'], ['win', 'u4.c.win'], ['b_cagr', 'u4.c.b_cagr'], ['b_sharpe', 'u4.c.b_sharpe'], ['b_maxdd', 'u4.c.b_maxdd']];
 const RAW_SORT = ['code', 'd1', 'm1', 'y1', 'mcap'];
@@ -85,8 +89,11 @@ function drawSummary(m) {
   if (m.delisted) head.push('u4.s.delisted');
   head.push('u4.s.buy', 'u4.s.sell', 'u4.s.holding');
   const rows = Object.entries(m.strategies ?? {}).map(([k, v]) => {
-    const tr = el('tr', { class: 'u4-click', tabindex: '0', 'aria-selected': String(k === S.strategy) },
-      el('td', {}, v.label),
+    // D49-2（revtech A11-03）：原来整行 tabindex=0 + aria-selected，读屏念成一个没有名字的「行」，也不知道能点。
+    // 改成首格放一个真正的按钮（名字 = 策略名，aria-pressed = 是否当前策略）；整行鼠标点击照旧
+    const btn = el('button', { class: 'u4-rowbtn', type: 'button', 'aria-pressed': String(k === S.strategy) }, v.label);
+    const tr = el('tr', { class: 'u4-click' },
+      el('td', {}, btn),
       el('td', { class: `num ${v.beat_bh_pct > 50 ? 'u4-better' : ''}` }, fmt(v.beat_bh_pct, 0, '%')),
       el('td', { class: 'num' }, fmt(v.beat_is, 0, '%')),
       el('td', { class: `num ${v.beat_oos > 50 ? 'u4-better' : ''}` }, fmt(v.beat_oos, 0, '%')),
@@ -95,25 +102,25 @@ function drawSummary(m) {
       m.delisted ? el('td', { class: 'num' }, fmt(v.with_delisted, 0, '%')) : null,
       el('td', { class: 'num' }, String(v.buy)), el('td', { class: 'num' }, String(v.sell)), el('td', { class: 'num' }, fmt(v.holding_pct, 0, '%')));
     const pick = () => { S.strategy = k; S.page = 0; ui.strategy.value = k; go(); };
-    tr.addEventListener('click', pick);
-    activateOnKey(tr, pick);   // Enter 和空格都能选（A11）
+    tr.addEventListener('click', pick);   // 按钮在行里，键盘 Enter/空格触发按钮的 click 会冒泡到这里，不用另外处理按键
     return tr;
   });
-  ui.summary.replaceChildren(el('thead', {}, el('tr', {}, ...head.map((k, i) => el('th', { scope: 'col', class: i ? 'num' : null }, t(k))))), el('tbody', {}, ...rows));
+  ui.summary.replaceChildren(el('thead', {}, el('tr', {}, ...head.map((k, i) => el('th', { scope: 'col', class: i ? 'num' : null }, t(k))))), tbodyOrEmpty(rows, head.length, t('ui.state.empty')));   // D49-3
   // 真实接口的 meta.split 是分割日期字符串（如 "2020-01-01"），取年份；老数据里是布尔值时退回 2020
   const split = m.split ? (typeof m.split === 'string' ? m.split.slice(0, 4) : '2020') : null;
   ui.explain.replaceChildren(
     el('p', {}, el('strong', {}, t('u4.x.how')), ' ', t('u4.x.beat')),
     el('p', {}, split ? t('u4.x.split', { y: split }) : t('u4.x.half')),
-    el('p', {}, el('strong', {}, t('u4.x.persist_h')), ' ', t('u4.x.persist'), ' ', el('strong', {}, t('u4.x.luck'))),
-    el('p', {}, t('u4.x.top'), ' ', t('u4.x.click')));
+    el('p', {}, el('strong', {}, t('u4.x.persist_h')), info('persist'), ' ', t('u4.x.persist'), ' ', el('strong', {}, t('u4.x.luck'))),
+    el('p', {}, t('u4.x.top'), ' ', t('u4.x.click')),
+    el('p', {}, t('c110.market')));   // D110：数据质量屏蔽规则
 }
 
 /* ---------- 逐只结果表 ---------- */
 function stockCell(x) {
   return el('td', {}, el('a', { href: stockPage(x.code, market) }, x.name),
     el('span', { class: 'u4-code' }, x.code), el('span', { class: 'badge u4-tag' }, x.board),
-    x.industry ? el('span', { class: 'u4-sub' }, x.industry) : null);
+    x.industry ? el('span', { class: 'u4-sub' }, csrcParts(x.industry) ? industryName(x.industry) : x.industry) : null);
 }
 
 function watchCell(x) {
@@ -122,6 +129,9 @@ function watchCell(x) {
   b.addEventListener('click', (e) => { e.stopPropagation(); addToWatch(x.code); });
   return el('td', {}, b);
 }
+
+/** 在表头 th 后面追加 ⓘ（术语缺失时不加） */
+function withIcon(th, term) { const ic = term ? info(term) : null; if (ic) th.append(ic); return th; }
 
 function drawRows() {
   const r = last;
@@ -133,7 +143,7 @@ function drawRows() {
     ? [['code', 'u4.c.stock'], ...(hasCap ? [['mcap', 'u4.c.mcap']] : []), ['d1', 'u4.c.d1'], ['m1', 'u4.c.m1'], ['y1', 'u4.c.y1'], ['last_date', 'u4.c.date']]
     : (hasCap ? [COLS[0], ['mcap', 'u4.c.mcap'], ...COLS.slice(1)] : COLS);
   const thead = el('thead', {}, el('tr', {}, ...cols.map(([k, n], i) => (raw && k === 'last_date'
-    ? el('th', { scope: 'col', class: 'num' }, t(n)) : sortTh(t(n), k, S, i > 0))), el('th', { scope: 'col' })));
+    ? el('th', { scope: 'col', class: 'num' }, t(n)) : withIcon(sortTh(t(n), k, S, i > 0), COL_TERMS[k]))), el('th', { scope: 'col' })));
   const body = r.rows.map((x) => {
     const cells = raw ? [
       stockCell(x), hasCap ? el('td', { class: 'num' }, capFmt(x.mcap)) : null,
@@ -143,18 +153,18 @@ function drawRows() {
       stockCell(x), hasCap ? el('td', { class: 'num' }, capFmt(x.mcap)) : null,
       el('td', { class: `num ${toneClass(x.d1)}` }, pct(x.d1, 2)),
       el('td', { class: 'num' }, fmt((x.next || 0) * 100, 0, '%'), ' ', pill(x.action)),
-      el('td', { class: 'num' }, fmt(x.cagr, 1, '%')),
+      el('td', { class: 'num' }, fmt(x.cagr, 1, '%', true)),
       el('td', { class: `num ${x.sharpe > x.b_sharpe ? 'u4-better' : ''}` }, fmt(x.sharpe)),
       el('td', { class: 'num' }, fmt(x.maxdd, 1, '%')),
-      el('td', { class: 'num' }, fmt(x.sharpe_is)), el('td', { class: 'num' }, fmt(x.sharpe_oos)),
+      el('td', { class: 'num', title: isNum(x.sharpe_is) ? null : t('r7.mkt.no_is') }, fmt(x.sharpe_is)), el('td', { class: 'num', title: isNum(x.sharpe_oos) ? null : t('r7.mkt.no_oos') }, fmt(x.sharpe_oos)),   // R7：空值说明原因（上市不足一年 = 该段不算，不是 bug）
       el('td', { class: `num ${toneClass(x.y1)}` }, pct(x.y1)), el('td', { class: 'num' }, fmt(x.win, 0, '%')),
-      el('td', { class: 'num' }, fmt(x.b_cagr, 1, '%')), el('td', { class: 'num' }, fmt(x.b_sharpe)), el('td', { class: 'num' }, fmt(x.b_maxdd, 1, '%')),
+      el('td', { class: 'num' }, fmt(x.b_cagr, 1, '%', true)), el('td', { class: 'num' }, fmt(x.b_sharpe)), el('td', { class: 'num' }, fmt(x.b_maxdd, 1, '%')),
     ];
     const tr = el('tr', { class: `u4-click ${watched.has(x.code) ? 'u4-pin' : ''}` }, ...cells, watchCell(x));
     tr.addEventListener('click', (e) => { if (!e.target.closest('a,button')) window.location.href = stockPage(x.code, market); });   // G01：去新个股页
     return tr;
   });
-  ui.table.replaceChildren(thead, el('tbody', {}, ...body));
+  ui.table.replaceChildren(thead, tbodyOrEmpty(body, thead.querySelectorAll('th').length, t('ui.state.empty')));   // D49-3
   ui.table.querySelectorAll('th button[data-k]').forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.k;
     S.dir = S.sort === k && S.dir === 'desc' ? 'asc' : 'desc';
@@ -165,6 +175,32 @@ function drawRows() {
 
 function fillSelect(sel, items, value) {
   sel.replaceChildren(el('option', { value: '' }, t('u4.f.all')), ...items.map((x) => el('option', { value: x }, x)));
+  sel.value = items.includes(value) ? value : '';
+}
+
+/** D14（C22）：行业下拉。接口给的是证监会行业「A01农业」这种「门类字母 + 两位代码 + 名称」，80 多项平铺很难找。
+ *  按门类字母用 <optgroup> 分组，选项文字去掉代码前缀；选项的 value 仍是接口原值，筛选和网址参数不变。
+ *  门类名称是证监会《上市公司行业分类指引》的 19 个门类（字典 c14.sec.*）；对不上格式的项放在最后的「其他」组 */
+const CSRC_SECTIONS = 'ABCDEFGHIJKLMNOPQRS';   // 门类字母；名称在字典 c14.sec.<字母>（中英文）
+/** 「C27医药制造业」→ { sec: 'C', name: '医药制造业' }；不是这种格式返回 null（不用正则字面量：test_mock_schema 的括号检查不认正则） */
+function csrcParts(x) {
+  const s = String(x), digit = (ch) => ch >= '0' && ch <= '9';
+  if (s.length < 4 || !CSRC_SECTIONS.includes(s[0]) || !digit(s[1]) || !digit(s[2])) return null;
+  return { sec: s[0], name: s.slice(3) };
+}
+
+function fillIndustry(sel, items, value) {
+  if (!items.some((x) => csrcParts(x))) { fillSelect(sel, items, value); return; }   // 美股等非证监会分类：保持平铺
+  const groups = new Map();
+  for (const x of items) {
+    const m = csrcParts(x);
+    const sec = m ? m.sec : '?';
+    if (!groups.has(sec)) groups.set(sec, []);
+    groups.get(sec).push(el('option', { value: x, title: m ? industryName(x) : x }, m ? industryName(x) : x));
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === '?') - (b === '?') || a.localeCompare(b));
+  sel.replaceChildren(el('option', { value: '' }, t('u4.f.all')),
+    ...order.map((k) => el('optgroup', { label: k === '?' ? t('c14.other') : `${k} ${t(`c14.sec.${k}`)}` }, ...groups.get(k))));
   sel.value = items.includes(value) ? value : '';
 }
 
@@ -199,9 +235,16 @@ async function load(fixed = false) {
   ui.meta.textContent = [t('u4.m.date', { d: m.data_date }),
     m.excluded ? t('u4.m.count_ex', { n: m.stocks, x: excluded }) : t('u4.m.count_st', { n: m.stocks, x: m.excluded_st ?? 0 }),
     m.delisted ? t('u4.m.delisted', { n: m.delisted }) : null].filter(Boolean).join(' · ');
+  // D31（revquant P2）：没有退市股数据时，全市场统计只覆盖活到今天的股票，并且按今天的 ST 名单剔除了整段历史，结果偏乐观。
+  // 标签和说明按 meta 里的实际数字显示；以后下载了退市股（m.delisted > 0），标签自动消失
+  const surv = !m.delisted;
+  ui.survivor.hidden = !surv;
+  // D87：美股的幸存者说明不同（没有 ST，样本按今天的市值名单、股价、成交额选，数据里没有退市股；revquant_us.md U1-A / U4）
+  const survNote = market === 'us' ? t('c87.us_note') : t('c31.tag_note', { x: m.excluded_st ?? 0 });
+  ui.survivor.replaceChildren(...(surv ? [t('c31.tag'), ' ', el('span', { class: 'muted' }, survNote)] : []));
   drawSummary(m);
   if (ui.board.options.length <= 1) fillSelect(ui.board, r.boards ?? [], S.board);
-  if (ui.industry.options.length <= 1) fillSelect(ui.industry, r.industries ?? [], S.industry);
+  if (ui.industry.options.length <= 1) fillIndustry(ui.industry, r.industries ?? [], S.industry);
   const pages = Math.max(1, Math.ceil(r.total / r.size));
   ui.count.textContent = t('u4.m.total', { n: r.total });
   ui.pageNo.textContent = `${r.page + 1} / ${pages}`;
@@ -236,12 +279,13 @@ export async function render(root) {
     return s;
   };
   ui = {
+    survivor: el('p', { class: 'badge badge--warn c31-survivor', hidden: true, style: { 'white-space': 'normal', margin: '0' } }),
     meta: document.querySelector('[data-bind="meta"]'),
     msg: el('p', { class: 'u4-msg', role: 'alert', hidden: true }),
     empty: el('div', { class: 'card state', hidden: true }),
     summary: el('table', { class: 'table' }),
     explain: el('div', { class: 'u4-explain' }),
-    table: el('table', { class: 'table' }),
+    table: el('table', { class: 'table table--pin-first' }),   // D01：首列（股票名）吸左
     count: el('span', { class: 'u4-pager__count' }),
     pageNo: el('span', { class: 'num' }),
     prev: el('button', { class: 'btn btn--sm', type: 'button' }, t('u4.m.prev')),
@@ -260,13 +304,13 @@ export async function render(root) {
 
   ui.body = el('div', {},
     el('section', { class: 'card card--flush', 'aria-label': t('u4.s.title') },
-      el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.s.title'))),
+      el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.s.title')), ui.survivor),
       el('div', { class: 'table-wrap' }, ui.summary), ui.explain),
     el('section', { class: 'card card--flush', style: { 'margin-top': 'var(--space-4)' }, 'aria-label': t('u4.r.title') },
       el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.r.title'))),
       el('div', { class: 'u4-bar' }, field('u4.f.strategy', ui.strategy), field('u4.f.search', search), field('u4.f.board', ui.board),
         field('u4.f.industry', ui.industry), field('u4.f.signal', signal), el('span', { class: 'u4-bar__spacer' }), ui.exp),
-      el('div', { class: 'table-wrap' }, ui.table),
+      el('div', { class: 'table-wrap table-wrap--tall' }, ui.table),   // D01：逐只结果表头吸顶
       el('div', { class: 'u4-pager' }, ui.count, ui.prev, ui.pageNo, ui.next)));
   root.replaceChildren(
     el('div', { class: 'u4-bar', style: { padding: '0 0 var(--space-3)', border: '0' } }, marketSwitch(meta, market, (k) => { S.page = 0; S.board = ''; S.industry = ''; track = true; syncUrl(k); window.dispatchEvent(new CustomEvent('langchange')); })),

@@ -11,7 +11,11 @@ import { t } from '../shared/i18n.js';
 import { attachTooltip, chartColors, withAlpha } from '../shared/chart-helpers.js';
 import { baseOptions, chartMissing, isNum, pct, toneClass, track } from './u2-lib.js';
 
-const H = { price: 300, pos: 36, vol: 70, sub: 90, ind: 100 };
+const H = { price: 300, pos: 44, vol: 70, sub: 90, ind: 100 };   // D07：仓位窗格 36→44，上面留出标题位置
+/* D07 fix（revtech）：0–100 的副图坐标刻度（20/40/60/80）和参考线标签（30/70、20/80）离得太近，互相遮挡。
+ * 刻度文字只保留参考线那几个数，其他刻度不写字；参考线标签本身走同一个 formatter，所以照常显示。 */
+const levelsOnly = (levels) => ({ type: 'custom', minMove: 1, formatter: (v) => (levels.includes(Math.round(v)) ? String(Math.round(v)) : '') });
+const TIGHT = { scaleMargins: { top: 0.06, bottom: 0.06 } };   // 固定 0–100 时坐标不再多出 120
 const CANDLE_MAX = 300;     // 超过这个根数价格窗格改画收盘面积线
 const RECENT_BARS = 252;    // 默认可见窗口：最近约 1 年（A 股一年约 245~252 个交易日）
 
@@ -23,7 +27,8 @@ const points = (dates, values) => dates.map((time, i) => ({ time, value: values[
 const levelLine = (series, price, c) => series.createPriceLine({ price, color: c.text, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
 
 /** 策略线的颜色：虚线（止损线）用回撤红，其余按序取 tokens */
-const lineColor = (c, L, k) => (L.dash ? c.dd : [c.line, c.line2, c.riseText, c.fallText][k % 4]);
+// D79：均线第 3、4 条原来用涨跌红绿，和 K 线的红涨绿跌撞色；改用中性系列色（图例 paletteVars 同序）
+const lineColor = (c, L, k) => (L.dash ? c.dd : [c.line, c.line2, c.s3, c.s4][k % 4]);
 
 /** 窗格表：返回要画的副图列表（顺序 = 窗格顺序） */
 function panelList(d, ind) {
@@ -119,11 +124,15 @@ export function kChart(box, d, ind, view = 'recent') {
   // —— 窗格 1：仓位条（柱高固定为 1，颜色深浅 = 仓位）
   const fixedRange = (lo, hi) => () => ({ priceRange: { minValue: lo, maxValue: hi } });
   const pos = chart.addSeries(lib.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, autoscaleInfoProvider: fixedRange(0, 1) }, 1);
+  // D07：仓位条的 0/1 坐标没有信息量，还和下面成交量窗格顶上的刻度叠在一起 → 不显示刻度文字；柱子只占下 55%，上面给「仓位」标题
+  pos.priceScale().applyOptions({ ticksVisible: false, scaleMargins: { top: 0.45, bottom: 0 } });
+  pos.applyOptions({ priceFormat: { type: 'custom', formatter: () => '' } });
   paint.push((c) => pos.setData(dates.map((time, i) => ({ time, value: isNum(d.position[i]) && d.position[i] > 0 ? 1 : 0,
     color: withAlpha(c.line2, 0.15 + 0.75 * Math.min(1, d.position[i] || 0)) }))));
 
   // —— 窗格 2：成交量
   const vol = chart.addSeries(lib.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'volume' } }, 2);
+  vol.priceScale().applyOptions({ scaleMargins: { top: 0.25, bottom: 0 } });   // D07：顶部留白，给窗格标题和上一个窗格的刻度让位
   paint.push((c) => vol.setData(dates.map((time, i) => ({ time, value: isNum(d.volume[i]) ? d.volume[i] : 0,
     color: withAlpha(d.close[i] >= d.open[i] ? c.rise : c.fall, 0.5) }))));
 
@@ -139,10 +148,12 @@ export function kChart(box, d, ind, view = 'recent') {
       addLine(d.ind.macd.dif, pane, {}, (c) => c.line2);
       addLine(d.ind.macd.dea, pane, {}, (c) => c.line);
     } else if (key === 'rsi') {
-      const s = addLine(d.ind.rsi, pane, { lineWidth: 2, autoscaleInfoProvider: fixedRange(0, 100) }, (c) => c.line2);
+      const s = addLine(d.ind.rsi, pane, { lineWidth: 2, autoscaleInfoProvider: fixedRange(0, 100), priceFormat: levelsOnly([30, 70]) }, (c) => c.line2);
+      s.priceScale().applyOptions(TIGHT);
       [30, 70].forEach((lv) => levelLine(s, lv, c0));
     } else {
-      const s = addLine(d.ind.kdj.k, pane, { autoscaleInfoProvider: fixedRange(0, 100) }, (c) => c.line2);
+      const s = addLine(d.ind.kdj.k, pane, { autoscaleInfoProvider: fixedRange(0, 100), priceFormat: levelsOnly([20, 80]) }, (c) => c.line2);
+      s.priceScale().applyOptions(TIGHT);
       addLine(d.ind.kdj.d, pane, {}, (c) => c.line);
       addLine(d.ind.kdj.j, pane, {}, (c) => c.riseText);
       [20, 80].forEach((lv) => levelLine(s, lv, c0));
@@ -162,11 +173,20 @@ export function kChart(box, d, ind, view = 'recent') {
   const panes = chart.panes();
   heights.forEach((h, i) => { if (panes[i]?.setStretchFactor) panes[i].setStretchFactor(h / 100); else panes[i]?.setHeight(h); });
   const labels = [[t('u2.st.position'), 1], [t('u2.st.volume'), 2], ...panels.map((p, k) => [paneTitle(p, d), 3 + k])];
-  requestAnimationFrame(() => {
+  // 窗格标题的位置要等图表把各窗格高度排好才能算。原来只等一帧：偶尔这一帧窗格高度还是 0，
+  // 「仓位 / 成交量」标题就叠到价格区上（D81 像素对比时抓到）。现在高度没排好就下一帧再试（最多 30 帧），
+  // 图表框尺寸变化（窗口缩放、手机转屏）时也重新摆一次。
+  const spans = labels.map(([text]) => el('span', { class: 'u2-pane-label' }, text));
+  box.append(...spans);
+  const place = (tries = 0) => {
+    const hs = panes.map((p) => p.getHeight?.() ?? 0);
+    if (hs.slice(1).some((h) => h <= 0) && tries < 30) { requestAnimationFrame(() => place(tries + 1)); return; }
     let top = 0;
-    const tops = panes.map((p) => { const y = top; top += (p.getHeight?.() ?? 0) + 1; return y; });
-    box.append(...labels.map(([text, i]) => el('span', { class: 'u2-pane-label', style: { top: `${(tops[i] ?? 0) + 4}px` } }, text)));
-  });
+    const tops = hs.map((h) => { const y = top; top += h + 1; return y; });
+    labels.forEach(([, i], k) => { spans[k].style.top = `${(tops[i] ?? 0) + 4}px`; });
+  };
+  requestAnimationFrame(() => place());
+  if (window.ResizeObserver) new ResizeObserver(() => requestAnimationFrame(() => place())).observe(box);
 
   attachTooltip(chart, box, (param) => {
     const i = idx.get(String(param.time));

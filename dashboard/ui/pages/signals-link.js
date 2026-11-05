@@ -39,7 +39,8 @@ export function noteFor(link, r) {
   const pos = link.map.get(r.code);
   const tag = (text) => el('small', { class: 'u1-sub' }, text);
   if (SELL.includes(r.action)) {
-    if (!pos) return { cls: 'u1-link-dim', node: tag(t('u1.link.not_held')) };
+    // D90-3：没持有的卖出行不再每行写一遍「未持有」（25 行全是这三个字）；行变淡（u1-link-dim）已经表明，持有的行才有文字说明
+    if (!pos) return { cls: 'u1-link-dim', node: null };
     const pnl = pos.floating_pnl === null || pos.floating_pnl === undefined ? '—' : tDefault('a02.fmt.pnl_pct', { pnl: n(pos.floating_pnl, 2), pct: n(Number(pos.floating_pct) * 100, 2) });
     return { cls: 'u1-link-held', node: tag(t('u1.link.held', { s: n(pos.shares, 0), c: n(pos.avg_cost, 3), d: pos.held_days ?? '—', p: pnl })) };
   }

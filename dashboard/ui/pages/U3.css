@@ -27,7 +27,10 @@
 
 /* 按钮行、表单 */
 .u3-btn-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
-.u3-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-3) var(--space-4); align-items: end; }
+.u3-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-3) var(--space-4); align-items: start; }   /* D90-2：原来 end（底对齐），各列提示文字长短不同，输入框高低错开最多 62px */
+/* 每个字段占三行「标签 / 输入框 / 提示」，用 subgrid 和同一行的其他字段共用这三行：标签换行或提示长短不一，输入框都在同一条线上 */
+.u3-form-grid > .u3-field:not(.u3-field--check) { display: grid; grid-template-rows: subgrid; grid-row: span 3; align-content: start; gap: 4px; }
+.u3-form-grid > :not(.u3-field), .u3-form-grid > .u3-field--check { grid-row: span 3; align-self: center; }
 .u3-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-secondary); }
 .u3-field .ws-input { width: 100%; min-width: 0; }
 .u3-field--check { flex-direction: row; align-items: center; gap: var(--space-2); }
@@ -57,6 +60,17 @@
 .u3-ia-grid > :nth-child(2) { order: 3; grid-column: 1 / -1; }
 .u3-ia-card .table-wrap { margin-inline: calc(-1 * var(--ws-card-pad)); }
 .u3-ia-summary { font-size: var(--fs-xs); margin: 0 0 var(--space-2); }
+
+/* —— D34 盯盘页间距与对齐（只改 CSS）——
+ * 原来各区块靠「.card + .card」这类相邻规则加上边距，说明文字和卡片之间、盯盘分析区块和下一张卡片之间没有命中，间距是 0；
+ * 「.ws-main .card + .card」又比「.u3-ia-grid > .card」更具体，新机会卡被多推下 16px，和执行提醒不齐。
+ * 改成：整页一列 grid，统一 16px 间距，子元素自身的上下边距清零；两张分析卡同一行等高。 */
+.ws-mon { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+.ws-main .ws-mon > * { margin-block: 0; }
+.ws-main .ws-mon > .card + .card { margin-top: 0; }
+.ws-mon > .u3-msg-box:empty { display: none; }
+.ws-main .u3-ia-grid > .card { margin-top: 0; }
+.u3-ia-grid { align-items: stretch; }
 .u3-ev { margin: 0 0 var(--space-2); font-size: var(--fs-sm); line-height: 1.5; padding-left: var(--space-3); border-left: 2px solid var(--border-subtle); }
 .u3-ev--ok { border-left-color: var(--green-fill); }
 .u3-ev--watch { border-left-color: var(--amber); }
@@ -72,7 +86,7 @@
    字号降到 16px（约 92px）；.u3-capital 是 flex 容器、不受列宽约束，加 min-width/max-width 锁住；
    overflow-wrap 兜底：位数更多的真实数据宁可折行也不伸出卡片 */
 @media (max-width: 480px) {
-  .ws-grid--kpi6 .metric__value { font-size: 16px; overflow-wrap: anywhere; }
+  .ws-grid--kpi6 .metric__value { font-size: var(--fs-md); overflow-wrap: anywhere; }
   .u3-capital { min-width: 0; max-width: 100%; }
   .u3-capital .metric__value { max-width: 100%; }
 }

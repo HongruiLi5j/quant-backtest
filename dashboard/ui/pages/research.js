@@ -6,7 +6,7 @@
  * 信号跟踪: 实盘记录里 20 天样本不足 30 条时，改用「历史回放」并在顶部说明（和旧页规则一致）。
  * ========================================================== */
 
-import { el, store } from '../shared/dom.js';
+import { el, store, tbodyOrEmpty } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { getJSON } from '../shared/api.js';
 import { stockPage } from '../shared/stock-link.js';
@@ -14,7 +14,9 @@ import { dataMarket, marketSwitch, fmt, pct, pill, toneClass } from './u4-util.j
 import { factorView } from './research-factor.js';
 
 const KEY = 'qb-ws-research';
-const TABS = ['tracking', 'replay', 'validation', 'factor', 'monotonic'];
+// D41：Replay 排行 / Validation / Monotonic 后端没有接口，原来点进去只有一句「暂未提供」。先从标签栏拿掉；
+// soon() 和词条保留，等接口做好把 id 加回这里即可。以前存过这几个标签的 localStorage 会回到默认的「信号跟踪」。
+const TABS = ['tracking', 'factor'];
 let tab = 'tracking';
 let ctx = null;   // { meta, market, data }
 
@@ -29,6 +31,17 @@ function cells(s, n) {
   if (!s[`n${n}`]) return [el('td', { class: 'num muted' }, t('u4.res.wait')), el('td', { class: 'num muted' }, '—'), el('td', { class: 'num muted' }, '—')];
   return [el('td', { class: 'num' }, String(s[`n${n}`])), el('td', { class: `num ${toneClass(s[`avg${n}`])}` }, pct(s[`avg${n}`], 2)),
     el('td', { class: `num ${s[`beat${n}`] > 50 ? 'u4-better' : ''}` }, fmt(s[`beat${n}`], 0, '%'))];
+}
+
+/** R7-ux-2：手机上「最近的信号」200 行会撑到 8000+px（手机不做框中框）。窄屏只先显示前 20 行，点"显示更多"每次 +30；宽屏保持原样（限高滚动框） */
+function pagedOnPhone(wrap, rows) {
+  if (!window.matchMedia('(max-width: 700px)').matches || rows.length <= 20) return wrap;
+  let shown = 20;
+  const apply = () => { rows.forEach((r, i) => { r.hidden = i >= shown; }); more.hidden = shown >= rows.length; more.textContent = t('u1.sig.more_cards', { n: rows.length - shown }); };
+  const more = el('button', { class: 'btn btn--sm u4-more', type: 'button' }, t('u1.sig.more_cards', { n: rows.length - shown }));
+  more.addEventListener('click', () => { shown += 30; apply(); });
+  apply();
+  return el('div', {}, wrap, el('div', { style: { 'text-align': 'center', padding: 'var(--space-3)' } }, more));
 }
 
 function tracking() {
@@ -60,15 +73,15 @@ function tracking() {
     tr.addEventListener('click', (e) => { if (!e.target.closest('a')) window.location.href = stockPage(x.code, ctx.market); });   // G01：去新个股页
     return tr;
   });
-  const table = (head, body, numFrom) => el('div', { class: 'table-wrap' }, el('table', { class: 'table' },
-    el('thead', {}, el('tr', {}, ...head.map((h, i) => el('th', { scope: 'col', class: i >= numFrom ? 'num' : null }, h)))), el('tbody', {}, ...body)));
+  const table = (head, body, numFrom) => el('div', { class: body.length > 15 ? 'table-wrap table-wrap--tall' : 'table-wrap' }, el('table', { class: 'table' },   // D01：超过 15 行才限高
+    el('thead', {}, el('tr', {}, ...head.map((h, i) => el('th', { scope: 'col', class: i >= numFrom ? 'num' : null }, h)))), tbodyOrEmpty(body, head.length, t('ui.state.empty'))));   // D49-3
   return el('div', {},
     useRep ? el('div', { class: 'card u4-banner' }, el('strong', {}, t('u4.res.rep_h')), ' ', t('u4.res.rep_b', { n: liveTotal })) : null,
     el('p', { class: 'muted', style: { 'margin-bottom': 'var(--space-3)', 'font-size': 'var(--fs-sm)' } }, status),
     el('section', { class: 'card card--flush', 'aria-label': t('u4.res.sum_title') },
       el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.res.sum_title'))), table(sumHead, summary, 2)),
     el('section', { class: 'card card--flush', style: { 'margin-top': 'var(--space-4)' }, 'aria-label': t('u4.res.recent_title') },
-      el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.res.recent_title'))), table(recentHead, recent, 4)));
+      el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u4.res.recent_title'))), pagedOnPhone(table(recentHead, recent, 4), recent)));
 }
 
 function draw(root) {

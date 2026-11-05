@@ -63,12 +63,29 @@ export function dateLine(dataDate, { market = 'cn', tz = '' } = {}) {
 /** 提示条；不需要提示（或不是 A 股、或词条未合并）返回 null */
 export function dateBanner(dataDate, { market = 'cn', now = new Date() } = {}) {
   if (market !== 'cn') return null;
-  const texts = resolve(bannerLines(dataDate, shanghaiClock(now)));
+  const lines = bannerLines(dataDate, shanghaiClock(now));
+  const texts = resolve(lines);
   if (!texts.length) return null;
-  return el('div', { class: 'card u1-note is-warn u1-datebanner', role: 'status' }, ...texts.map((s) => el('p', {}, s)));
+  // D90-5：琥珀色只留给真要留意的情况——收盘后该有今天的数据却没有、日期在未来、日期认不出。
+  // 周末、开盘前、盘中看到的是「上一个交易日的清单」，这是正常的，提示照样显示但用中性样式（不再和真正的警告抢眼）
+  const warn = lines.some((l) => ['a07.banner.after_close', 'a07.banner.future', 'a07.banner.unknown'].includes(l.key));
+  // D90-1：提示条压成一行——第一句当标题（「这是 X 收盘后的清单，不是盘中信号」），其余原因收在 ▸ 里，点开看。
+  // 原来两三行全展开，今日页首屏被提示占掉一大半（今日动作卡在 900px 屏幕的 633px 处才开始）
+  return el('details', { class: `card u1-note ${warn ? 'is-warn ' : ''}u1-datebanner`, role: 'status' },
+    el('summary', {}, texts[0]), ...texts.slice(1).map((s) => el('p', {}, s)));
 }
 
-/** 今日页顶部：日期行 + 提示条（有就带） */
+/** D08（C04）：全市场买卖清单（东方财富收盘快照）可能比 ETF 日线（新浪）先到一天。
+ *  这时提示条说「今天的数据还没出现」，紧接着清单却是今天的——两句话看起来矛盾。
+ *  清单日期更新时补一句，说明两个日期各指什么；只比较接口给的日期字符串，不推断 */
+export function listNewerLine(dataDate, listDate) {
+  if (!validDate(dataDate) || !validDate(listDate) || listDate <= dataDate) return null;
+  const text = t('c08.list_newer', { d: listDate, e: dataDate });
+  return text === 'c08.list_newer' ? null : el('p', { class: 'ws-note u1-datelist' }, text);
+}
+
+/** 今日页顶部：日期行 + 提示条（有就带）+ 清单日期更新时的说明 */
 export function dateNotice(dataDate, opts = {}) {
-  return el('div', { class: 'u1-datewrap' }, dateLine(dataDate, opts), dateBanner(dataDate, opts));
+  return el('div', { class: 'u1-datewrap' }, dateLine(dataDate, opts), dateBanner(dataDate, opts),
+    opts.market === 'cn' ? listNewerLine(dataDate, opts.listDate) : null);
 }

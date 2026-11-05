@@ -7,6 +7,8 @@
  *   - 首次进入时的接口错误交给页面启动器（401/403 显示「登录已过期」）；之后点按钮的错误显示在按钮旁
  *   - 输入校验（A09）：规则在 backtest-validate.js（照后端 app.py / registry.py 写）；这里只负责把结果画在输入框旁边、
  *     有错时禁用「运行回测」。每次输入、换策略 / 品种、回测结束都会重新校验
+ *   - D06：每次回测成功后把和默认不同的输入写进网址（前缀 bt_，见 shared/url-state.js），刷新 / 收藏 / 发链接能还原；
+ *     网址里的值按白名单校验后只填进表单，不自动运行，要用户自己点「运行回测」
  * ========================================================== */
 import { el } from '../shared/dom.js';
 import { lang, t } from '../shared/i18n.js';
@@ -14,8 +16,12 @@ import { getJSON } from '../shared/api.js';
 import { analysisNodes } from './backtest-analysis.js';
 import { recentAndTrades, resultNodes } from './backtest-result.js';
 import { checkParam, validateAll } from './backtest-validate.js';
+import { pickState, writeState, nonDefault, validDate } from '../shared/url-state.js';
 
-const form = { strategy: '', symbol: '', start: '', cost: '', params: {} };
+const form = { strategy: '', symbol: '', start: '', cost: '', params: {}, period: 'all' };
+// D43：区间预设，和后端 registry.PERIODS 一致（quant e1df1b3）。不给自由填写的结束日，避免挑区间凑结果；
+// recent 截止 2026-03-31，符合「研究只用到 2026-03-31」的约定。显示文字是日期本身，只有「全部」走词条
+const PERIODS = [['all', null], ['is', '2013 – 2019'], ['recent', '2020 – 2026-03']];
 let meta = null;
 let market = 'cn';
 let last = null;          // 上一次回测结果
@@ -56,12 +62,46 @@ function symbolOptions(extra) {
 function seedForm() {
   const q = new URLSearchParams(window.location.search);
   const want = q.get('strategy');
-  form.strategy = meta.strategies[want] ? want : (meta.strategies.blend2 ? 'blend2' : Object.keys(meta.strategies)[0]);
+  form.strategy = want && Object.hasOwn(meta.strategies, want) ? want : (meta.strategies.blend2 ? 'blend2' : Object.keys(meta.strategies)[0]);
   form.symbol = q.get('symbol') || mk().main;
   form.cost = String(defaultCost(form.symbol));
   form.params = paramDefaults(form.strategy);
   seeded = true;
+  if (loadUrlState()) return 'url';
   return Boolean(q.get('symbol') || q.get('strategy'));
+}
+
+const SYMBOL_RE = /^[0-9A-Za-z.\-]{1,12}$/;   // A 股 6 位代码 / 美股代码（BRK.B 之类）
+const NUM_RE = /^-?\d+(\.\d+)?$/;
+
+/** D06：从网址 bt_ 参数读回表单。网址是不可信输入：策略必须在 meta 里；代码只许字母数字点横线；日期必须真实存在；
+ *  成本、参数只收纯数字，参数名只收当前策略声明过的。超出范围的数字照样填进去，交给 A09 校验标红、禁用运行按钮。
+ *  返回 true 表示网址里有可用的回测参数（这时不自动运行）。 */
+function loadUrlState() {
+  const u = pickState('bt');
+  let used = false;
+  if (typeof u.s === 'string' && Object.hasOwn(meta.strategies, u.s)) { form.strategy = u.s;   // hasOwn：防 ?bt_s=constructor 之类原型链上的键（revtech C-D06）
+    form.params = paramDefaults(u.s); used = true; }
+  if (SYMBOL_RE.test(u.y ?? '')) { form.symbol = u.y; form.cost = String(defaultCost(u.y)); used = true; }
+  if (validDate(u.d)) { form.start = u.d; used = true; }
+  if (PERIODS.some(([k]) => k === u.r)) { form.period = u.r; used = true; }
+  if (NUM_RE.test(u.c ?? '')) { form.cost = u.c; used = true; }
+  for (const p of meta.strategies[form.strategy]?.params ?? []) {
+    const v = u[`p_${p.key}`];
+    if (NUM_RE.test(v ?? '')) { form.params[p.key] = Number(v); used = true; }
+  }
+  return used;
+}
+
+/** D06：把这次回测的输入写进网址，只写和默认不同的（网址短、默认链接干净） */
+function saveUrlState() {
+  const dflt = paramDefaults(form.strategy);
+  const values = {
+    s: nonDefault(form.strategy, meta.strategies.blend2 ? 'blend2' : Object.keys(meta.strategies)[0]),
+    y: nonDefault(form.symbol, mk().main), d: form.start, r: nonDefault(form.period, 'all'), c: nonDefault(String(form.cost), String(defaultCost(form.symbol))),
+  };
+  for (const [k, v] of Object.entries(form.params)) if (v !== dflt[k]) values[`p_${k}`] = v;
+  writeState('bt', values);
 }
 
 /** 提示位：输入框正下方的一行小字，输入框用 aria-describedby 指向它（屏幕阅读器会读） */
@@ -97,6 +137,9 @@ function buildControls(ui) {
   const sym = el('select', { class: 'ws-select', 'aria-label': t('u2.bt.symbol') }, ...symbolOptions(form.symbol));
   sym.value = form.symbol;
   const start = el('input', { class: 'ws-input', type: 'date', value: form.start, 'aria-label': t('u2.bt.start') });
+  const period = el('select', { class: 'ws-select', 'aria-label': t('u2.st.period') },
+    ...PERIODS.map(([k, label]) => el('option', { value: k }, label ?? t('u2.st.p.all'))));
+  period.value = form.period;
   const cost = el('input', { class: 'ws-input u2-narrow', type: 'number', min: '0', max: '100', step: '1', value: form.cost, 'aria-label': t('u2.bt.cost') });
   const desc = el('p', { class: 'ws-note' });
   const params = el('div', { class: 'u2-params' });
@@ -119,6 +162,10 @@ function buildControls(ui) {
     for (const [k, f] of Object.entries(pfields)) paint(f, v.params[k]);
     ui.block.textContent = v.errors ? msgText({ key: 'a09.sum.blocked', vars: { n: v.errors } }) : '';
     run.disabled = busy || v.errors > 0;
+    // D06 fix（tester 复现：换策略自动运行还没回来时改参数再点运行，网址只剩 bt_s）：网址不再只在「回测成功后」才写，
+    // 而是每次输入校验通过就跟着表单走——不依赖哪个请求先回来，也就没有竞态。链接本来就不会自动运行，所以网址里是
+    // 「还没跑过的参数」也不要紧：打开链接只是把表单填好。form.params 里只存合格的值（见 drawParams），不会把错值写进网址。
+    if (!v.errors) saveUrlState();
     return v.errors;
   };
 
@@ -139,6 +186,7 @@ function buildControls(ui) {
   };
   strat.addEventListener('change', () => { form.strategy = strat.value; form.params = paramDefaults(form.strategy); drawParams(); ui.run.click(); });
   sym.addEventListener('change', () => { form.symbol = sym.value; form.cost = String(defaultCost(form.symbol)); cost.value = form.cost; ui.sync(); ui.run.click(); });
+  period.addEventListener('change', () => { form.period = period.value; ui.run.click(); });
   const onStart = () => { form.start = start.value; ui.sync(); };
   start.addEventListener('input', onStart);
   start.addEventListener('change', onStart);
@@ -148,7 +196,7 @@ function buildControls(ui) {
   const head = el('div', { class: 'card__head' }, el('h2', { class: 'card__title' }, t('u2.bt.title')), el('span', { class: 'card__sub' }, t('u2.bt.sub')));
   const card = el('section', { class: 'card' }, head,
     el('div', { class: 'u2-form' }, field(t('u2.bt.strategy'), strat), field(t('u2.bt.symbol'), sym, fields.symbol.slot),
-      field(t('u2.bt.start'), start, fields.start.slot), field(t('u2.bt.cost'), cost, fields.cost.slot)),
+      field(t('u2.bt.start'), start, fields.start.slot), field(t('u2.st.period'), period), field(t('u2.bt.cost'), cost, fields.cost.slot)),
     desc, params,
     el('div', { class: 'u2-actions' }, run, reset, ui.block, ui.msg));
   drawParams();   // 里面会 sync()，所以放在 card 搭好之后
@@ -173,12 +221,13 @@ async function runBacktest(ui, strict) {
   busy = true; ui.run.disabled = true; ui.msg.replaceChildren();
   setRunning(ui, true);
   try {
-    const q = new URLSearchParams({ market, strategy: form.strategy, symbol: form.symbol, cost: form.cost, start: form.start, params: JSON.stringify(form.params) });
+    const q = new URLSearchParams({ market, strategy: form.strategy, symbol: form.symbol, cost: form.cost, start: form.start, period: form.period, params: JSON.stringify(form.params) });
     const r = await getJSON(`/api/backtest?${q}`, { mock: 'u2-backtest' });
     if (r.error) { ui.msg.textContent = r.error; ui.out.hidden = true; return; }
     last = r; lastLang = lang();
     dataEnds[`${market}:${r.symbol}`] = r.end;   // 记下这只品种最新数据日，开始日期校验要用
     showResult(ui, r);
+    saveUrlState();
   } catch (err) {
     if (strict && err.auth) throw err;
     ui.out.hidden = true;
@@ -198,6 +247,11 @@ export async function render(root) {
   ui.run.addEventListener('click', () => runBacktest(ui, false));
   // 语言切换（上次结果还在、语言变了）：直接重画；否则（首次 / R 刷新）重新跑一次
   if (last && lastLang !== lang() && !preset) { lastLang = lang(); showResult(ui, last); return undefined; }
+  if (preset === 'url') {   // D06：网址带来的参数只填表，不自动运行
+    ui.sync();
+    ui.msg.textContent = msgText({ key: 'ux.bt.from_url' });
+    return undefined;
+  }
   await runBacktest(ui, true);
   return undefined;
 }

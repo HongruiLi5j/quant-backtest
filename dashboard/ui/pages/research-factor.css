@@ -10,7 +10,7 @@
 .n24-chart-wrap { overflow-x: auto; }
 .n24-scatter { display: block; width: 100%; min-width: 560px; height: auto; }
 .n24-groups { display: block; width: 100%; height: auto; }
-.n24-scatter text, .n24-groups text { fill: var(--chart-text); font-family: var(--font-mono); font-size: 11px; }
+.n24-scatter text, .n24-groups text { fill: var(--chart-text); font-family: var(--font-mono); font-size: var(--fs-2xs); }
 .n24-grid { stroke: var(--chart-grid); }
 .n24-zero { stroke: var(--chart-text); }
 .n24-cap { stroke: var(--amber); stroke-dasharray: 5 4; }

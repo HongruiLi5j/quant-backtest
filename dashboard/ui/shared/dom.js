@@ -65,5 +65,28 @@ export function fmt(value, digits = 2, unit = '', signed = false) {
   return (signed && value > 0 ? '+' : '') + s + unit;
 }
 
+/** 大数字的中文简写（D02）：1611594574 → "16.1亿"，53425168 → "5340万"（3 位有效数字）；不到 1 万原样加千分位。
+ *  用浏览器自带的 Intl（CLDR 中文规则），不引库；英文界面给 "1.6B"。完整数字请另放 title，导出 CSV 用原始值。 */
+export function fmtCN(value, sig = 3) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  const locale = document.documentElement.lang === 'en' ? 'en-US' : 'zh-CN';
+  if (Math.abs(value) < 10000) return Number(value).toLocaleString(locale, { maximumFractionDigits: 0 });
+  return new Intl.NumberFormat(locale, { notation: 'compact', maximumSignificantDigits: sig }).format(value);
+}
+
+/** D49-3（revtech A11-02）：表格 tbody；没有行时放一行跨满所有列的「暂时没有数据」（读屏 role=status），
+ *  不再只剩表头——用户分不清是空的还是坏了。text 由调用方传（一般是 t('ui.state.empty')），这里不依赖 i18n。 */
+export function tbodyOrEmpty(rows, cols, text) {
+  if (rows.length) return el('tbody', {}, ...rows);
+  return el('tbody', {}, el('tr', {}, el('td', { colspan: String(Math.max(1, cols)), class: 'muted table__empty' }, el('span', { role: 'status' }, text))));
+}
+
 /** 涨跌 class：正 is-rise / 负 is-fall / 零 is-flat */
 export const toneClass = (v) => (v > 0 ? 'is-rise' : v < 0 ? 'is-fall' : 'is-flat');
+
+/** D48（T-9）：下载文件名清理。策略名之类的中文标签里有全角冒号「：」、「+」、空格、斜杠，
+ *  在 Windows / 网盘 / 命令行里都麻烦。把这些换成下划线并合并连续下划线；保留中文、字母、数字、点、短横线。 */
+export function safeFileName(name) {
+  const s = String(name ?? '').replace(/[\\/:*?"<>|：；;，,+\s（）()]+/g, '_').replace(/_+/g, '_').replace(/_(?=\.)|^_+|_+$/g, '');
+  return s || 'export.csv';
+}

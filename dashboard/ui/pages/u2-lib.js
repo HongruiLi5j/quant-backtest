@@ -5,9 +5,9 @@
  *   - 颜色全部取 CSS tokens（chartColors），切换主题时自动重绘（themechange）
  *   - 所有文字走 textContent / el()，不拼 HTML
  * ========================================================== */
-import { el, fmt, toneClass, cssVar } from '../shared/dom.js';
+import { el, fmt, toneClass, tbodyOrEmpty, safeFileName } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
-import { chartColors, withAlpha } from '../shared/chart-helpers.js';
+import { chartColors, withAlpha, baseOptions as sharedBaseOptions } from '../shared/chart-helpers.js';
 
 export const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 /** 带正负号的百分数文本，空值显示 — */
@@ -21,8 +21,9 @@ export function table(heads, rows, opts = {}) {
     return el(tag, { class: [spec.num ? 'num' : '', spec.cls ?? ''].join(' ').trim() || null, colspan: spec.span ?? null }, spec.v);
   };
   const head = heads.length ? el('thead', {}, el('tr', {}, ...heads.map((h) => el('th', { scope: 'col', class: h.num ? 'num' : null }, h.text)))) : null;
-  const body = el('tbody', {}, ...rows.map((r) => el('tr', { class: r.cls ?? null, dataset: r.dataset ?? {} }, ...(r.cells ?? r).map((c) => cell(c)))));
-  return el('div', { class: `table-wrap ${opts.scroll ? 'u2-scroll' : ''}`.trim() }, el('table', { class: 'table' }, head, body));
+  const body = tbodyOrEmpty(rows.map((r) => el('tr', { class: r.cls ?? null, dataset: r.dataset ?? {} }, ...(r.cells ?? r).map((c) => cell(c)))), heads.length, t('ui.state.empty'));   // D49-3
+  // axe（scrollable-region-focusable）：限高滚动的表格框要能用键盘聚焦，才能用方向键滚动
+  return el('div', { class: `table-wrap ${opts.scroll ? 'u2-scroll' : ''}`.trim(), ...(opts.scroll ? { tabindex: '0', role: 'region', 'aria-label': opts.label } : {}) }, el('table', { class: 'table' }, head, body));
 }
 
 /** 带标题的卡片 */
@@ -37,7 +38,7 @@ export function downloadCSV(name, header, rows) {
   const q = (v) => { const s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const lines = [header.map((h) => q(h[1])).join(',')].concat(rows.map((r) => header.map((h) => q(typeof h[0] === 'function' ? h[0](r) : r[h[0]])).join(',')));
   const url = URL.createObjectURL(new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
-  const a = el('a', { href: url, download: name });
+  const a = el('a', { href: url, download: safeFileName(name) });   // D48：文件名去掉全角冒号、+、空格
   document.body.append(a);
   a.click();
   a.remove();
@@ -50,24 +51,9 @@ export function legend(items) {
 }
 
 const charts = new Set();
-/** 图表公共配置（和 shared/chart-helpers.js 的 baseOptions 同风格） */
-export function baseOptions(c, height) {
-  return {
-    autoSize: true,
-    ...(height ? { height } : {}),
-    layout: { background: { type: 'solid', color: 'transparent' }, textColor: c.text, fontFamily: c.font, fontSize: 11, attributionLogo: true },
-    grid: { vertLines: { color: 'transparent' }, horzLines: { color: c.grid } },
-    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.08 } },
-    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
-    crosshair: {
-      mode: 0,
-      vertLine: { color: withAlpha(c.crosshair, 0.6), width: 1, style: 3, labelBackgroundColor: c.crosshair },
-      horzLine: { color: withAlpha(c.crosshair, 0.4), width: 1, style: 3, labelBackgroundColor: c.crosshair },
-    },
-    handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-    handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
-  };
-}
+/** 图表公共配置：D79 起直接用 shared/chart-helpers.js 的 baseOptions（全站只有一份）。
+ *  这里保留原来的参数和取值：上边距 0.1、价格用图表库默认格式（个股 K 线要两位小数，不能套 1 位小数的格式） */
+export const baseOptions = (c, height) => sharedBaseOptions(c, { height, top: 0.1, priceFormatter: false });
 
 /** 登记一张图：换主题时按 recolor(c) 重新取色 */
 export function track(chart, recolor) {
@@ -120,9 +106,10 @@ export function lineChart(box, dates, series, opts = {}) {
 }
 
 /** 一组备用折线色（取 tokens，不写死颜色） */
-export const palette = [(c) => c.line, (c) => c.line2, (c) => c.riseText, (c) => c.fallText, (c) => cssVar('--accent-glow', c.line)];
+// D79：多条线的颜色不再借用涨跌红绿（红线到底是「某个策略」还是「跌」分不清，色弱用户也分不出）
+export const palette = [(c) => c.line, (c) => c.line2, (c) => c.s3, (c) => c.s4, (c) => c.s5];
 /** 图例用的 CSS 变量名，和 palette 一一对应 */
-export const paletteVars = ['var(--chart-1)', 'var(--chart-2)', 'var(--color-rise)', 'var(--color-fall)', 'var(--accent-glow)'];
+export const paletteVars = ['var(--chart-1)', 'var(--chart-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)'];
 
 /** 后端返回的固定中文词（指标名、分组、说明、假设标题、板块、时区）→ 当前语言；词条里没有就原样显示 */
 export function tb(text) {

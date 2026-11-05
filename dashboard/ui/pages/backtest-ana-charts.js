@@ -13,7 +13,7 @@ export function histogram(box, h, kind) {
   if (!counts.length) { box.replaceChildren(el('p', { class: 'muted' }, t('u2.ana.few'))); return; }
   const W = Math.max(280, box.clientWidth || 420); const H = 150; const m = { l: 8, r: 8, t: 8, b: 22 };
   const mx = Math.max(...counts, 1); const bw = (W - m.l - m.r) / counts.length;
-  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', class: 'u2-hist__svg' });
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', class: 'u2-hist__svg', 'aria-label': t(kind === 'pct' ? 'u2.ana.hist_ret' : 'u2.ana.hist_days') });   // axe：role=img 的 svg 要有名字
   counts.forEach((n, i) => {
     const hh = (n / mx) * (H - m.t - m.b);
     const neg = kind === 'pct' && (edges[i] + edges[i + 1]) / 2 < 0;

@@ -11,6 +11,7 @@
 import { el, svg } from '../shared/dom.js';
 import { t, lang } from '../shared/i18n.js';
 import { getJSON, isMock } from '../shared/api.js';
+import { versioned } from '../shared/asset-v.js';
 
 const REFRESH_MS = 30000;
 const LOGS = ['daily', 'update', 'server'];
@@ -27,10 +28,30 @@ function bytes(n) {
   if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(0)} MB`;
   return `${Math.max(0, Math.round(n / 1024))} KB`;
 }
+/* D46：页面上所有时间统一用北京时间并标出来。原来卡片按浏览器所在时区（所有者在美国时是太平洋时间）、
+ * 日志行是 UTC、生成时间是 +08:00 原样截断，同一页三种时区。词条只有两三个，就地写，不动共享字典。 */
+const TZ = 'Asia/Shanghai';
+const tzTag = () => (lang() === 'en' ? ' (Beijing)' : '（北京时间）');
+function bj(d, withSec = false) {
+  return d.toLocaleString(lang() === 'en' ? 'en-US' : 'zh-CN', { timeZone: TZ, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', ...(withSec ? { second: '2-digit' } : {}), hour12: false });
+}
 function when(sec) {
   if (!sec) return '—';
-  const d = new Date(sec * 1000);
-  return d.toLocaleString(lang() === 'en' ? 'en-US' : 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  return bj(new Date(sec * 1000)) + tzTag();
+}
+/** ISO 时间字符串（带时区）→ 北京时间；解析不了就原样截断 */
+function whenIso(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? String(s).replace('T', ' ').slice(0, 16) : bj(d) + tzTag();
+}
+/** 日志行开头的 ISO 时间（daily.log 写的是 UTC）换成北京时间；其他行不动 */
+const LOG_TS = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d))/;
+function logLine(line) {
+  const m = LOG_TS.exec(line);
+  if (!m) return line;
+  const d = new Date(m[1]);
+  return Number.isNaN(d.getTime()) ? line : bj(d, true) + line.slice(m[1].length);
 }
 function uptime(s) {
   if (!Number.isFinite(s)) return '—';
@@ -99,7 +120,7 @@ function dataCard(o) {
   const rows = [];
   for (const [k, m] of Object.entries(o.markets || {})) {
     rows.push(kv(t('sys.d.date', { m: m.name || k }), m.data_date || '—', m.data_date ? `sys-t--${ageLevel(m.age_days)}` : null));
-    rows.push(kv(t('sys.d.gen', { m: m.name || k }), m.generated_at ? String(m.generated_at).replace('T', ' ').slice(0, 16) : '—'));
+    rows.push(kv(t('sys.d.gen', { m: m.name || k }), whenIso(m.generated_at)));
   }
   const all = o.markets?.cn?.all;
   if (all) rows.push(kv(t('sys.d.cache'), `${all.cached ?? '—'} / ${all.listed ?? '—'}`));
@@ -111,7 +132,13 @@ function jobsCard(o) {
   const rows = (o.launchd || []).map((j) => {
     if (j.available === false) return kv(name(j.label), t('sys.job.na'));
     if (!j.loaded) return kv(name(j.label), t('sys.job.unloaded'), 'sys-t--bad');
-    if (j.pid) return kv(name(j.label), t('sys.job.running', { pid: j.pid }), 'sys-t--ok');
+    if (j.pid) {
+      // D46：「网站服务」这个后台任务的 PID 和下面「网站服务」卡片里本进程的 PID 不同时（例如沙盒/手动启动的服务），
+      // 写清楚它是另一个进程，免得以为同一个服务有两个 PID
+      const other = j.label === 'com.quantdaily.server' && o.server?.pid && j.pid !== o.server.pid;
+      const note = other ? (lang() === 'en' ? ' · another process, not this server' : ' · 另一个进程，不是当前这个网站服务') : '';
+      return kv(name(j.label), t('sys.job.running', { pid: j.pid }) + note, other ? 'sys-t--warn' : 'sys-t--ok');
+    }
     return kv(name(j.label), j.last_exit ? t('sys.job.exit', { c: j.last_exit }) : t('sys.job.loaded'), j.last_exit ? 'sys-t--warn' : 'sys-t--ok');
   });
   for (const task of Object.values(o.tasks || {})) {
@@ -144,16 +171,18 @@ function logCard(log, redraw) {
     return b;
   }));
   const lines = log?.lines || [];
-  const body = lines.length ? lines.join('\n') : t('sys.log.empty');
+  const shown = lines.map(logLine);                                   // D46：行首时间换成北京时间
+  const converted = shown.some((x, i) => x !== lines[i]);
+  const body = lines.length ? shown.join('\n') : t('sys.log.empty');
   return el('section', { class: 'card sys-card sys-card--log' },
     el('div', { class: 'sys-card__head' }, el('h2', { class: 'card__title' }, t('sys.c.log')), tabs),
-    el('p', { class: 'muted sys-small' }, log?.mtime ? t('sys.log.mtime', { v: when(log.mtime) }) : ''),
+    el('p', { class: 'muted sys-small' }, (log?.mtime ? t('sys.log.mtime', { v: when(log.mtime) }) : '') + (converted ? (lang() === 'en' ? ' · log times shown in Beijing time' : ' · 日志时间已换成北京时间') : '')),
     el('pre', { class: 'sys-log mono' }, body));
 }
 
 function loginBox() {
   const icon = svg('svg', { class: 'state__icon', 'aria-hidden': 'true' });
-  icon.append(svg('use', { href: '../shared/icons.svg#i-cloud-off' }));
+  icon.append(svg('use', { href: `${versioned(new URL('../shared/icons.svg', import.meta.url))}#i-cloud-off` }));   // D39：带哈希，与其他图标同一地址
   return el('div', { class: 'card state', role: 'alert' }, icon,
     el('p', { class: 'state__title' }, t('sys.auth.title')),
     el('p', { class: 'muted' }, t('sys.auth.body')),

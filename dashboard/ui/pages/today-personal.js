@@ -10,6 +10,9 @@ import { dateLine, dateBanner } from './today-date.js';
 import { g3 } from './today-brief.js';
 
 const ORDER = ['卖出', '减仓', '买入', '加仓'];   // 风险优先：先看要卖的
+
+/** '2026-11-04T15:42:12+08:00' → '11-04 15:42'（接口时间已是北京时间，只截取，不换算时区） */
+export const shortTime = (iso) => (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? `${iso.slice(5, 10)} ${iso.slice(11, 16)}` : (iso || ''));
 const TAB = { 卖出: 'sell', 减仓: 'reduce', 买入: 'buy', 加仓: 'add' };   // 动作 → 信号页（个人模式）的标签名，见 signals.js tabsFor()
 
 /** 主策略的已发布清单：{ note } 表示不适用（美股 / 主策略不可用），{ main, r } 是清单本身 */
@@ -60,7 +63,8 @@ export function actionsCard(market, s, list) {
   // G03：清单只列仓位变化超过阈值（或开 / 清仓）的股票，没有「持有」这一类——说清楚，不自己编一个持有数
   const hold = isNum(r.threshold) ? g3('g03.actions.hold_note', { pp: Math.round(r.threshold * 100) }) : '';
   return card(
-    el('p', { class: 'muted u1-actions__src' }, `${r.strategy} · ${r.data_date} · ${r.generated_at}`),
+    // D08（C13）：以前直接显示策略键名 blend2 和 ISO 时间戳；改成策略中文名 + 「数据日期 · 生成时间」
+    el('p', { class: 'muted u1-actions__src' }, t('c08.list_src', { n: r.label || r.strategy, d: r.data_date, g: shortTime(r.generated_at) })),
     lagging ? [dateLine(r.data_date, { market }), dateBanner(r.data_date, { market })] : null,
     el('div', { class: 'u1-counts' }, ...counts,
       el('div', { class: 'metric' }, el('span', { class: 'metric__label' }, t('u1.today.exceptions')),

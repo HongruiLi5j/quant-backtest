@@ -14,7 +14,7 @@
  *   旧的 mockup 版 api-config.js 的 USE_MOCK 不再使用。
  * ========================================================== */
 
-import { t } from './i18n.js';   // 错误提示会显示在页面上（卡片、toast），跟随当前语言
+import { t, lang } from './i18n.js';   // 错误提示会显示在页面上（卡片、toast），跟随当前语言
 
 const TIMEOUT_MS = 60000;
 const MOCK_BASE = new URL('../mock-data/', import.meta.url);
@@ -59,10 +59,74 @@ function debugRecord(path, init, body) {
   return body;
 }
 
+/* ---- D77：英文界面的策略名 ----
+ * 策略名只有一个来源：后端 src/registry.py（中文 label + 英文 label_en）。/api/meta 带回两种名字；
+ * 英文界面下，这里把 /api/meta 里的 label / desc 换成英文，并记住 键→英文名；之后别的接口返回的对象里，
+ * 只要有 key 或 strategy 字段是已知策略键、又有 label 字段（今日 summary、个股 compare、清单、引擎 meta 等），就换成英文名。
+ * 中文界面什么都不做。只改显示文字，不改任何数字。 */
+let stratEn = null;   // { 策略键: { label, desc } }
+const EN_FIELDS = ['reason', 'trigger', 'text', 'notes', 'caveats', 'assumptions', 'label', 'help'];   // D89：后端整句 / 名称的英文版字段名（前五个由 quant 定；label / help 来自 registry）
+/* D111/R8：英文界面的固定名称（市场名、时区、ETF / 指数名）。字典 nm.<中文>；只换这几个显示字段，
+ * 不碰 action 等后端用来比较的取值；股票名没有英文数据，保持原样。 */
+const NAME_FIELDS = new Set(['name', 'market_name', 'main_name', 'timezone_label']);
+const nameEn = (v) => { const k = `nm.${v}`; const r = t(k); return r === k ? v : r; };
+function localizeNames(o, depth = 0) {
+  if (depth > 6 || !o || typeof o !== 'object') return;
+  if (Array.isArray(o)) { for (const x of o) localizeNames(x, depth + 1); return; }
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v === 'string') { if (NAME_FIELDS.has(k)) o[k] = nameEn(v); }
+    else if (v && typeof v === 'object') {
+      if (k === 'universe' && !Array.isArray(v)) { for (const [c, nme] of Object.entries(v)) if (typeof nme === 'string') v[c] = nameEn(nme); }
+      else localizeNames(v, depth + 1);
+    }
+  }
+}
+function localize(path, body) {
+  if (lang() !== 'en' || !body || typeof body !== 'object') return body;
+  localizeNames(body);
+  if (path.startsWith('/api/meta') && body.strategies && !Array.isArray(body.strategies)) {
+    stratEn = {};
+    for (const [k, v] of Object.entries(body.strategies)) {
+      if (!v || typeof v.label_en !== 'string') continue;
+      stratEn[k] = { label: v.label_en, desc: v.desc_en };
+      v.label = v.label_en;
+      if (typeof v.desc_en === 'string') v.desc = v.desc_en;
+      // D89：参数名和提示（registry PARAM_EN）
+      for (const prm of Array.isArray(v.params) ? v.params : []) {
+        if (prm && typeof prm.label_en === 'string') prm.label = prm.label_en;
+        if (prm && typeof prm.help_en === 'string' && prm.help) prm.help = prm.help_en;
+      }
+    }
+    return body;
+  }
+  const walk = (o, depth) => {
+    if (depth > 5 || !o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { for (const x of o) walk(x, depth + 1); return; }
+    // D89：后端生成的整句同时给英文（quant：reason_en、trigger_en、text_en、notes_en、caveats_en），有就用英文；
+    // 没有这些字段时（旧数据）照旧显示中文
+    for (const f of EN_FIELDS) {
+      const v = o[`${f}_en`];
+      if (typeof v === 'string' && v && typeof o[f] === 'string') o[f] = v;
+      else if (Array.isArray(v) && v.length && Array.isArray(o[f]) && v.length === o[f].length) o[f] = v;
+    }
+    const k = typeof o.key === 'string' ? o.key : (typeof o.strategy === 'string' ? o.strategy : null);
+    const en = k && stratEn ? stratEn[k] : null;
+    if (en && typeof o.label === 'string') o.label = en.label;
+    if (en && typeof o.desc === 'string' && en.desc) o.desc = en.desc;
+    for (const [kk, v] of Object.entries(o)) {
+      // 以策略键为键的字典（例如全市场 meta.strategies = { blend2: { label… } }），值里没有 key 字段
+      if (stratEn?.[kk] && v && typeof v === 'object' && !Array.isArray(v) && typeof v.label === 'string') v.label = stratEn[kk].label;
+      if (v && typeof v === 'object') walk(v, depth + 1);
+    }
+  };
+  walk(body, 0);
+  return body;
+}
+
 async function request(path, init, opts) {
   checkPath(path);
   if (isMock()) {
-    return debugRecord(path, init, await readMock(mockName(path, opts.mock), init.method === 'POST' ? { ok: true, mock: true } : undefined));
+    return debugRecord(path, init, localize(path, await readMock(mockName(path, opts.mock), init.method === 'POST' ? { ok: true, mock: true } : undefined)));
   }
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), Number.isFinite(opts?.timeoutMs) && opts.timeoutMs > 0 ? opts.timeoutMs : TIMEOUT_MS);
@@ -87,11 +151,32 @@ async function request(path, init, opts) {
     throw new ApiError(res.status, typeof text === 'string' ? text : `HTTP ${res.status}`, body);
   }
   if (body === null) throw new ApiError(res.status, t('a02.err.not_json'));
-  return debugRecord(path, init, body);
+  if (opts?.noLocalize) return body;   // R7-perf-1：预取的结果先放着，真正被 getJSON 取用时再做英文替换和字段核对
+  return debugRecord(path, init, init.method === 'GET' ? localize(path, body) : body);
+}
+
+/* ---- R7-perf-1：预取 ----
+ * 页面入口脚本在字典（i18n json）还没回来时就先把首屏必需的 GET 发出去，两件事并行而不是排队。
+ * 预取只存"原始返回"，被 getJSON 取用那一刻才做 localize（保证 /api/meta 先于别的接口处理，D77 的策略英文名顺序不变）；
+ * 10 秒内没人取用就作废（之后 getJSON 照常重新请求）；每个预取只能被取用一次。 */
+const PRE = new Map();
+const PRE_TTL_MS = 10000;
+export function prefetchJSON(path) {
+  if (isMock() || PRE.has(path)) return;
+  const p = request(path, { method: 'GET' }, { noLocalize: true });
+  p.catch(() => {});   // 没人取用时不要报未处理的拒绝
+  PRE.set(path, { p, at: Date.now() });
 }
 
 /** GET，返回解析后的 JSON */
 export function getJSON(path, opts = {}) {
+  const hit = PRE.get(path);
+  if (hit) {
+    PRE.delete(path);
+    if (Date.now() - hit.at < PRE_TTL_MS && !Object.keys(opts).some((k) => k !== 'mock')) {
+      return hit.p.then((body) => debugRecord(path, { method: 'GET' }, localize(path, body)));
+    }
+  }
   return request(path, { method: 'GET' }, opts);
 }
 

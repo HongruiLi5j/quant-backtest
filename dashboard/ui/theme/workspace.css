@@ -12,7 +12,7 @@
   --ws-pad: 32px;
   --ws-card-pad: 20px;
   --ws-row: 36px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   background:
     radial-gradient(60% 320px at 50% 0, color-mix(in srgb, var(--accent-primary) 8%, transparent), transparent 70%),
     var(--bg-base);
@@ -24,7 +24,7 @@
 .ws::after { display: none !important; }
 
 .ws .num,
-.ws .mono { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ws .mono { font-family: var(--font-mono); font-size: var(--fs-num); font-variant-numeric: tabular-nums; }
 
 .ws-main {
   padding: var(--ws-pad);
@@ -32,6 +32,20 @@
 }
 
 @keyframes ws-in { from { opacity: 0; } }
+
+/* —— D05 数据面板去毛玻璃、去光晕（方向 C「紫色精修」）——
+ * 卡片和指标卡原来是半透明底 + backdrop-filter 模糊 + 阴影/外发光。工作台背景几乎是纯色，模糊看不出效果，
+ * 却让每张卡片都要额外合成一层，表格文字也更软。改成等效实色 --bg-card（= 原半透明色叠在页面底色上的结果），
+ * 颜色和对比度不变。只作用于工作台（.ws）；落地页、弹窗、命令面板的玻璃效果保留，主按钮和顶栏当前项的光保留。 */
+.ws .card,
+.ws .metric {
+  background: var(--bg-card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.ws .metric--key { box-shadow: none; }
+.ws .metric__value--hero { text-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) { .ws-main { animation: none; } }
 
@@ -68,7 +82,12 @@
 .ws-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ws-grid + .ws-grid { margin-top: var(--space-4); }
 
-.ws .metric__value { font-family: var(--font-mono); font-size: 22px; }
+.ws .metric__value { font-family: var(--font-mono); font-size: var(--fs-xl); }
+
+/* D90-4：五列的指标格只放了 4 个时（今日页市场概览，D08 去掉了第 5 个），右边空出一格；只有 4 个就排成 4 列。只在宽屏生效 */
+@media (min-width: 1201px) {
+  .ws-grid--kpi:has(> :nth-child(4):last-child) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 @media (max-width: 1200px) {
   .ws-grid--kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -163,7 +182,7 @@
   min-height: 34px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--fs-num);
   text-align: left;
   color: var(--text-secondary);
 }
@@ -185,7 +204,7 @@
 }
 
 /* markdown 正文：读起来像文档，不像网页 */
-.ws-md { max-width: 76ch; font-size: 14px; line-height: 1.7; }
+.ws-md { max-width: 76ch; font-size: var(--fs-sm); line-height: 1.7; }
 .ws-md h1 { font-size: var(--fs-xl); font-weight: 700; margin-bottom: var(--space-4); }
 .ws-md h2 { font-size: var(--fs-md); font-weight: 650; margin: var(--space-6) 0 var(--space-3); }
 .ws-md p, .ws-md ul, .ws-md ol, .ws-md table, .ws-md blockquote { margin-bottom: var(--space-4); }
@@ -195,12 +214,12 @@
 .ws-md li + li { margin-top: 4px; }
 .ws-md strong { color: var(--text-primary); }
 .ws-md blockquote { padding-left: var(--space-4); border-left: 2px solid var(--border-strong); color: var(--text-secondary); }
-.ws-md table { border-collapse: collapse; font-size: 13px; }
+.ws-md table { border-collapse: collapse; font-size: var(--fs-num); }
 .ws-md th, .ws-md td { height: 34px; padding: 0 var(--space-4) 0 0; border-bottom: 1px solid var(--border-subtle); text-align: left; }
 .ws-md th { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 600; }
 .ws-md td[align="right"], .ws-md th[align="right"] { text-align: right; padding: 0 0 0 var(--space-4); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .ws-md code { font-family: var(--font-mono); font-size: 0.92em; }
-.ws-md__raw { white-space: pre-wrap; font-family: var(--font-mono); font-size: 13px; }
+.ws-md__raw { white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-num); }
 
 @media (max-width: 900px) {
   .ws-reports { grid-template-columns: 1fr; }
@@ -227,7 +246,7 @@
   height: 28px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm, 6px);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-control);   /* D03 */
   background: var(--bg-sunken);
   color: var(--text-primary);
   font: inherit;
@@ -268,7 +287,7 @@
   min-width: 160px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-control);   /* D03 */
   background: var(--bg-sunken);
   color: var(--text-primary);
   font: inherit;
@@ -288,6 +307,14 @@
 .ws .table tr.is-unacked td { background: color-mix(in srgb, var(--amber) 5%, transparent); }
 .ws .table th .table__sort { min-height: 0; padding: 0; font-size: inherit; }
 .ws .table th.num .table__sort { justify-content: flex-end; width: 100%; }
+/* D36：触屏（手指点）时可点元素至少 24px 高（WCAG 2.2 · 2.5.8）。只在 pointer: coarse 下生效，桌面鼠标的密度不变；
+ * 加的是内边距/最小高度，不放大字号。句中的文字链接按标准属于行内例外，不处理。 */
+@media (pointer: coarse) {
+  .ws .table th .table__sort,
+  .ws .u4-link { min-height: 24px; }
+  .ws details > summary { padding-block: 3px; }
+  .ws dt[tabindex] { min-height: 24px; }
+}
 
 /* —— Signals：展开行 —— */
 .ws-th-toggle { width: 36px; }
@@ -330,8 +357,8 @@
 .ws-intraday__avg { fill: none; stroke: var(--amber); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .ws-intraday__base { stroke: var(--chart-bench); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
 .ws-intraday__cursor { stroke: var(--accent-glow); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.ws-intraday__tick { font-size: 11px; fill: var(--chart-text); font-family: var(--font-mono); }
-.ws-intraday__read { display: flex; gap: var(--space-4); margin: var(--space-2) 0 var(--space-3); font-size: 13px; }
+.ws-intraday__tick { font-size: var(--fs-2xs); fill: var(--chart-text); font-family: var(--font-mono); }
+.ws-intraday__read { display: flex; gap: var(--space-4); margin: var(--space-2) 0 var(--space-3); font-size: var(--fs-num); }
 .ws-lights { list-style: none; display: grid; gap: 6px; }
 .ws-lights__row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); min-height: 32px; font-size: var(--fs-sm); }
 .ws-lights__row .ws-note { margin-top: 0; }
@@ -356,7 +383,7 @@
 .ws-quant__track { position: relative; height: 72px; border-radius: var(--radius-sm); background: var(--bg-sunken); overflow: hidden; }
 .ws-quant__bar { position: absolute; inset: auto 0 0; height: 100%; transform-origin: bottom; transform: scaleY(var(--p, 0)); border-radius: inherit; background: var(--fill-rise); transition: transform var(--motion-slow) var(--ease-out); }
 .ws-quant__bar.is-neg { background: var(--fill-fall); }
-.ws-quant__val { font-size: 12px; }
+.ws-quant__val { font-size: var(--fs-xs); }
 
 /* —— System：阶段点、日志 —— */
 .ws-stages { display: inline-flex; align-items: center; gap: 4px; }
@@ -372,7 +399,7 @@
   overflow: auto;
   border-top: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   white-space: pre;
   color: var(--text-secondary);
@@ -387,3 +414,7 @@
 @media (max-width: 1000px) { .ws-grid--2 { grid-template-columns: 1fr; } }
 @media (max-width: 1200px) { .ws-grid--wide { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .ws-grid--kpi6 { grid-template-columns: 1fr 1fr; } }
+
+/* —— D71「终端」主题的工作台密度：表格行更紧、去掉顶部紫色光晕（颜色本身在 tokens.css） —— */
+:root[data-theme="terminal"] .ws { --ws-row: 30px; --ws-card-pad: 16px; background: var(--bg-base); }
+:root[data-theme="terminal"] .ws .table td { padding-top: var(--space-2); padding-bottom: var(--space-2); }

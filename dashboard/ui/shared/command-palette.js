@@ -7,14 +7,16 @@
 
 import { el, qs } from './dom.js';
 import { t, setLang, lang } from './i18n.js';
-import { setTheme, setMarket, currentTheme } from './theme-switcher.js';
+import { setTheme, setMarket } from './theme-switcher.js';
 import { getJSON } from './api.js';
 import { restoreFocusOnClose } from './a11y.js';
 import { rankStocks } from './palette-match.js';
 
 /** 页面条目由 page-boot 传入（nav.js 的 NAV） */
+// D83：主题改成三个明确的动作（深色 / 浅色 / 终端），不再只能来回切；标签由「主题」+ 主题名拼成，复用设置页词条（分隔用半角 ·，代码里不留中文标点）
+const themeAction = (name) => ({ label: () => `${t('u4.set.theme')} · ${t(`u4.set.theme.${name}`)}`, run: () => setTheme(name), group: 'palette.group.actions' });
 const ACTIONS = [
-  { key: 'palette.action.theme', run: () => setTheme(currentTheme() === 'light' ? 'dark' : 'light'), group: 'palette.group.actions' },
+  themeAction('dark'), themeAction('light'), themeAction('terminal'),
   { key: 'palette.action.lang', run: () => setLang(lang() === 'zh' ? 'en' : 'zh'), group: 'palette.group.actions' },
   { key: 'palette.action.market', run: () => setMarket(document.documentElement.dataset.market === 'us' ? 'cn' : 'us'), group: 'palette.group.actions' },
 ];
@@ -30,6 +32,8 @@ let stockHref = (code) => `backtest.html?symbol=${code}`;
 let stocks = [];
 let searchSeq = 0;
 let searchTimer = 0;
+let searching = false;     // D04：/api/search 还没回来
+let pendingEnter = false;  // D04：结果回来前按了 Enter，结果一到就执行第一条股票
 let active = 0;
 
 function build() {
@@ -56,7 +60,11 @@ function build() {
 
 function entries() {
   const stockRows = stocks.map((s) => ({ label: `${s.code} ${s.name}`, href: stockHref(s.code), group: 'palette.group.stocks' }));
-  return [...pageList.map((p) => ({ ...p, label: t(p.key) })), ...ACTIONS.map((a) => ({ ...a, label: t(a.key) })), ...stockRows];
+  // D83：本页操作——页面上标了 data-palette 的链接 / 按钮（例如个股页「在回测实验室调参数」），打开面板时现读，执行 = 点它
+  const here = [...document.querySelectorAll('main [data-palette]')].filter((n) => n.offsetParent !== null)
+    .map((n) => ({ label: n.dataset.palette || n.textContent.trim(), run: () => n.click(), group: 'palette.group.here' }));
+  return [...here, ...pageList.map((p) => ({ ...p, label: t(p.key) })),
+    ...ACTIONS.map((a) => ({ ...a, label: typeof a.label === 'function' ? a.label() : t(a.key) })), ...stockRows];
 }
 
 function render() {
@@ -65,7 +73,9 @@ function render() {
   active = 0;
   list.replaceChildren();
   if (!items.length) {
-    list.append(el('li', { class: 'palette__empty', role: 'presentation' }, t('palette.empty')));
+    // D04：还在搜的时候不说「没有匹配」，说「搜索中」；词条还没进字典时只显示省略号，不露键名
+    const busy = t('palette.searching');
+    list.append(el('li', { class: 'palette__empty', role: 'presentation', 'aria-live': 'polite' }, searching ? (busy === 'palette.searching' ? '…' : busy) : t('palette.empty')));
     return;
   }
   let lastGroup = '';
@@ -87,7 +97,10 @@ function onInput() {
   clearTimeout(searchTimer);
   const q = input.value.trim();
   const seq = ++searchSeq;
-  if (!q) { stocks = []; return; }
+  pendingEnter = false;
+  if (!q) { stocks = []; searching = false; return; }
+  searching = true;
+  if (!items.length) render();   // 立刻显示「搜索中」
   searchTimer = setTimeout(async () => {
     try {
       const rows = await getJSON(`/api/search?market=cn&q=${encodeURIComponent(q)}`);
@@ -96,7 +109,14 @@ function onInput() {
     } catch {
       stocks = [];   // 登录过期或接口不可用：只剩页面和操作条目
     }
-    if (seq === searchSeq && dialog?.open) render();
+    if (seq !== searchSeq) return;
+    searching = false;
+    if (!dialog?.open) return;
+    render();
+    if (pendingEnter) {   // 结果到之前按过 Enter：按完整结果执行第一条（和平时按 Enter 一样：页面 → 操作 → 股票的顺序）
+      pendingEnter = false;
+      run(active);
+    }
   }, 180);
 }
 
@@ -122,7 +142,19 @@ function run(index) {
 function onKey(e) {
   if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
-  else if (e.key === 'Enter') { e.preventDefault(); run(active); }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    const q = input.value.trim();
+    // 列表里已经有条目（含用方向键选中的那条）就立刻执行；只有列表空着、还在搜时才等结果（revtech C-D04）
+    if (items.length || !searching) { run(active); return; }
+    if (/^\d{6}$/.test(q)) {   // D04 快速通道：6 位 A 股代码不等搜索结果，直接去个股页（带 market=cn）
+      const href = stockHref(q);
+      dialog.close();
+      window.location.href = href.includes('market=') ? href : `${href}${href.includes('?') ? '&' : '?'}market=cn`;
+      return;
+    }
+    pendingEnter = true;   // 其他输入：等结果回来再执行
+  }
 }
 
 export function openPalette() {

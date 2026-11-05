@@ -6,7 +6,7 @@
  *   所有文字都用 textContent / el()，不拼 HTML 字符串。
  * ========================================================== */
 
-import { el, store, fmt, toneClass } from '../shared/dom.js';
+import { el, store, fmt, toneClass, safeFileName } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
 import { tDefault } from '../shared/t-fallback.js';
 
@@ -52,7 +52,7 @@ export function capFmt(v) {
   return `${(v / 1e6).toFixed(0)}M`;
 }
 
-const ACTIONS = { 买入: ['badge--rise', 'buy'], 加仓: ['badge--rise', 'add'], 换仓: ['badge--rise', 'swap'], 卖出: ['badge--fall', 'sell'], 减仓: ['badge--fall', 'trim'], 持有: ['', 'hold'], 空仓: ['', 'flat'] };
+const ACTIONS = { 买入: ['badge--rise', 'buy'], 加仓: ['badge--rise', 'add'], 换仓: ['badge--rise', 'swap'], 卖出: ['badge--fall', 'sell'], 减仓: ['badge--fall', 'trim'], 持有: ['', 'hold'], 空仓: ['', 'flat'], 空仓观望: ['', 'flat'] };
 
 /** 信号徽章；服务端空字符串表示已退市 */
 export function pill(action) {
@@ -98,7 +98,7 @@ export function downloadCSV(name, header, rows) {
   const q = (v) => { const s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const lines = [header.map((h) => q(h[1])).join(',')].concat(rows.map((r) => header.map((h) => q(typeof h[0] === 'function' ? h[0](r) : r[h[0]])).join(',')));
   const url = URL.createObjectURL(new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
-  const a = el('a', { href: url, download: name });
+  const a = el('a', { href: url, download: safeFileName(name) });   // D48：文件名去掉全角冒号、+、空格
   document.body.append(a);
   a.click();
   a.remove();

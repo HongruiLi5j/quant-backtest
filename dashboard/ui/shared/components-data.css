@@ -87,6 +87,46 @@
   white-space: nowrap;
 }
 
+/* —— D01 长表格：限高滚动框 ——
+ * 原来 .table-wrap 只有 overflow-x:auto，它自己成了滚动容器但没有高度上限，
+ * th 的 sticky 只相对它生效，所以页面往下滚时表头跟着滚走。
+ * 加 .table-wrap--tall 后：框高 = 视口减去顶栏和页头，表头在框内吸顶、首列（.table--pin-first）在框内吸左。
+ * 只在宽屏且够高时启用；手机上不做「框中框」，保持原样只横向滚动。 */
+@media (min-width: 701px) and (min-height: 600px) {
+  .table-wrap--tall {
+    max-height: calc(100dvh - 180px);
+    overflow: auto;
+  }
+}
+/* 吸顶的表头要有实色底，否则下面的行会透出来 */
+.table-wrap--tall .table th { z-index: 2; background: var(--bg-card, var(--bg-solid)); }   /* D05 后和卡片底色一致 */
+/* 首列吸左；左上角那个格子同时吸顶和吸左，层级要比其他表头和首列都高（revtech 条件 1） */
+.table--pin-first td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-card, var(--bg-solid)); }
+.table--pin-first th:first-child { left: 0; z-index: 3; }
+/* 右侧还有列没露出来时显示一道阴影：background-attachment local 的实色块跟着内容滚，
+ * 滚到最右边时正好盖住 scroll 层的阴影；没有横向溢出时两层重合，看不到阴影。纯 CSS，不加 JS。 */
+.table-wrap--tall {
+  background:
+    linear-gradient(to left, var(--bg-card, var(--bg-solid)) 40%, transparent) right center / 48px 100% no-repeat local,
+    linear-gradient(to left, color-mix(in srgb, var(--text-primary) 22%, transparent), transparent) right center / 16px 100% no-repeat scroll;   /* 用文字色：深色主题是浅色阴影，浅色主题是深色阴影；原来的黑色在深色卡片上看不见（二次走查） */
+}
+
+/* —— D73（R3-ux-3）手机宽度：所有横向滚动的表格首列吸左 ——
+ * 390px 下有 20 多张表在框里横向滚动，只有全市场的首列是钉住的，滑到右边就不知道这一行是哪只股票 / 哪个策略。
+ * ≤700px 时给 .table-wrap 里每张表的首列 sticky（不滚动的表上 sticky 不起作用，无副作用）；右侧一道细线和后面的列隔开。
+ * 已知代价：被钉住的首格用卡片底色，行悬停 / 当前策略的整行高亮在首格上看不到（只在手机上）。 */
+@media (max-width: 700px) {
+  .table-wrap .table td:first-child,
+  .table-wrap .table th:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg-card, var(--bg-solid));
+    box-shadow: 1px 0 0 var(--border-subtle);
+  }
+  .table-wrap .table td:first-child { z-index: 1; }
+  .table-wrap .table th:first-child { z-index: 3; }
+}
+
 .table tbody tr { transition: background var(--motion-fast); }
 .table tbody tr:hover { background: var(--surface-hover); }
 .table .num { text-align: right; }
@@ -109,8 +149,10 @@
   grid-template-columns: 44px repeat(12, minmax(28px, 1fr)) 56px;
   gap: 3px;
   min-width: 560px;
-  font-size: 11px;
+  font-size: var(--fs-xs);   /* D36：11px → 12px */
 }
+
+.heatmap__row { display: contents; }   /* axe：给读屏的行容器，不参与布局 */
 
 .heatmap__head {
   padding: 4px 0;
@@ -314,7 +356,7 @@
   background: var(--c);
 }
 
-.metric__info { font-size: 11px; color: var(--text-dim); }
+.metric__info { font-size: var(--fs-2xs); color: var(--text-dim); }
 .is-warn { color: var(--amber); }
 
 @media (min-width: 768px) {

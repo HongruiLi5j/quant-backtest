@@ -17,11 +17,13 @@
   --bg-elevated: rgba(30, 22, 65, 0.8);
   --bg-sunken: rgba(6, 4, 22, 0.55);
   --bg-solid: #120e2e;              /* 不支持 backdrop-filter 时的实色兜底 */
+  --bg-card: #100c28;               /* D05 工作台卡片实色 = bg-surface 叠在 bg-base 上的结果，去掉毛玻璃后观感不变、对比度不变 */
   --surface-hover: rgba(107, 91, 255, 0.08);
 
   /* —— 边框 —— */
   --border-subtle: rgba(107, 91, 255, 0.15);
   --border-strong: rgba(107, 91, 255, 0.3);
+  --border-control: #6e64a8;          /* D03 输入框/下拉框/分段按钮的边框：控件边界要 ≥3:1（WCAG 1.4.11），subtle 只有 1.14:1 */
   --glass-highlight: rgba(255, 255, 255, 0.08);
 
   /* —— 强调色 —— */
@@ -46,6 +48,9 @@
   /* —— 图表 —— */
   --chart-1: #9f7bff;
   --chart-2: #5b8cff;
+  --series-3: #2dd4bf;   /* D79：多条线的第 3–5 种颜色（青 / 金 / 灰），不再借用涨跌红绿 */
+  --series-4: #eab308;
+  --series-5: #a1a1aa;
   --chart-bench: rgba(255, 255, 255, 0.45);
   --chart-dd: #ff8a8a;
   --chart-grid: rgba(255, 255, 255, 0.05);
@@ -101,9 +106,11 @@
   --bg-elevated: rgba(255, 255, 255, 0.92);
   --bg-sunken: rgba(107, 91, 255, 0.05);
   --bg-solid: #ffffff;
+  --bg-card: #fcfcff;
   --surface-hover: rgba(107, 91, 255, 0.06);
   --border-subtle: rgba(75, 59, 219, 0.14);
   --border-strong: rgba(75, 59, 219, 0.3);
+  --border-control: #7f78a8;
   --glass-highlight: rgba(255, 255, 255, 0.9);
   --accent-primary: #4b3bdb;
   --accent-glow: #7c5cff;
@@ -119,6 +126,9 @@
   --green-fill: #16a34a;
   --chart-1: #6b4bff;
   --chart-2: #2f6bff;
+  --series-3: #0f766e;
+  --series-4: #a16207;
+  --series-5: #6b7280;
   --chart-bench: rgba(20, 16, 46, 0.47);
   --chart-dd: #c2410c;
   --chart-grid: rgba(20, 16, 46, 0.06);
@@ -140,9 +150,11 @@
     --bg-elevated: rgba(255, 255, 255, 0.92);
     --bg-sunken: rgba(107, 91, 255, 0.05);
     --bg-solid: #ffffff;
+    --bg-card: #fcfcff;
     --surface-hover: rgba(107, 91, 255, 0.06);
     --border-subtle: rgba(75, 59, 219, 0.14);
     --border-strong: rgba(75, 59, 219, 0.3);
+    --border-control: #7f78a8;
     --glass-highlight: rgba(255, 255, 255, 0.9);
     --accent-primary: #4b3bdb;
     --accent-glow: #7c5cff;
@@ -158,6 +170,9 @@
     --green-fill: #16a34a;
     --chart-1: #6b4bff;
     --chart-2: #2f6bff;
+    --series-3: #0f766e;
+    --series-4: #a16207;
+    --series-5: #6b7280;
     --chart-bench: rgba(20, 16, 46, 0.47);
     --chart-dd: #c2410c;
     --chart-grid: rgba(20, 16, 46, 0.06);
@@ -169,4 +184,50 @@
     --focus-ring: #3d2fc2;
     --selection: rgba(107, 91, 255, 0.2);
   }
+}
+
+/* —— D71（R3-ux-1）「终端」主题：可选的第三种主题，不是默认 ——
+ * 方向 A「冷静终端」（参考 Bloomberg / Koyfin / Linear）：中性近黑、实色面板、单一蓝色强调、小圆角、无光晕。
+ * 只在设置页「主题」里选；顶栏月亮按钮仍只在深色 / 浅色之间切。没写的变量沿用上面的深色值（涨跌色、琥珀色等）。
+ * 对比度同样由 tests/test_ui_contrast.py 守住（第三个主题「终端」）。 */
+:root[data-theme="terminal"] {
+  color-scheme: dark;
+  --bg-base: #0d0f12;
+  --bg-surface: #15181d;
+  --bg-elevated: #1b1f26;
+  --bg-sunken: #0a0c0f;
+  --bg-solid: #15181d;
+  --bg-card: #15181d;
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --border-subtle: #252a32;
+  --border-strong: #353c47;
+  --border-control: #6b7482;
+  --red-fill: #d43434;               /* 热力图最深格白字要 ≥4.5:1，比深色主题的填充色略深 */
+  --green-fill: #13793b;
+  --glass-highlight: transparent;
+  --accent-primary: #2563eb;          /* 白字 5.2:1；更亮的 #3b82f6 白字只有 3.7:1 */
+  --accent-glow: #60a5fa;
+  --accent-text: #8ab4ff;
+  --accent-2: #1d4ed8;
+  --accent-contrast: #ffffff;
+  --text-primary: #e8eaed;
+  --text-secondary: #a3aab5;
+  --text-dim: rgba(232, 234, 237, 0.45);
+  --chart-1: #8ab4ff;
+  --chart-2: #c4a1ff;
+  --series-3: #2dd4bf;
+  --series-4: #eab308;
+  --series-5: #a1a1aa;
+  --chart-bench: rgba(232, 234, 237, 0.5);
+  --chart-grid: rgba(255, 255, 255, 0.06);
+  --chart-text: rgba(232, 234, 237, 0.7);
+  --shadow-glow: none;
+  --shadow-glow-sm: none;
+  --shadow-card: none;
+  --text-glow: none;
+  --focus-ring: #8ab4ff;
+  --selection: rgba(37, 99, 235, 0.45);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }

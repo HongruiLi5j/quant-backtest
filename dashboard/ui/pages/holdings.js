@@ -106,17 +106,70 @@ function positionRow(p, snap) {
     td(el('a', { class: 'mono', href: stockPage(p.code, 'cn') }, p.code)),   // 持仓只有 A 股（6 位代码）；G01 改去新个股页
     td(p.name || p.code),
     td(num(p.shares, 0), true), td(num(p.avg_cost, 3), true), td(price, true), td(pnl, true), td(weight, true),
-    td(p.first_buy || '—', true, 'muted'), td(p.held_days ?? '—', true, 'muted'));
+    td(p.first_buy || '—', true, 'muted'), td(p.held_days ?? '—', true, 'muted'),
+    // D13（C19）：组合策略对这只持仓怎么看。先占位，draw() 之后由 fillStrategy() 逐只填（不阻塞页面）
+    td(span('…', 'muted c13-sig'), false), td(span('…', 'muted c13-next'), true));
+}
+
+/** D13：组合策略对每只持仓的信号和明日目标仓位（只读，不下单；策略计算全在后端，前端只取字段）。
+ *  ① 先用今天已发布的买卖清单（和信号页同一份：/api/main_strategy + /api/trade_list），这样两页对同一只股票的说法一致；
+ *  ② 不在清单里的持仓（仓位变化没超过阈值等），才逐只查个股页同一个接口 /api/stock，并标注「未进今日清单」；
+ *     最多同时 3 个请求（每个请求后端要算全部策略，约 0.1–0.9 秒）。
+ *  市场取持仓自己的 market 字段（没有就按 A 股）。没有止损线列：要等 quant 确认策略确实按它交易 */
+const FALLBACK_PARALLEL = 3;
+const actText = (a) => { const k = `u1.act.${a}`; return a ? (t(k) !== k ? t(k) : a) : '—'; };   // 后端给中文动作，有词条就翻译
+
+async function todayList() {
+  try {
+    const main = await getJSON('/api/main_strategy');
+    if (!main?.main) return null;
+    const r = await getJSON(`/api/trade_list?strategy=${encodeURIComponent(main.main)}`);
+    return r && !r.error && !r.empty && Array.isArray(r.rows) ? r : null;
+  } catch { return null; }
+}
+
+async function fillStrategy(tbody, positions) {
+  const rows = [...tbody.querySelectorAll('tr')];
+  const cells = positions.map((p, i) => ({ p, sig: rows[i]?.querySelector('.c13-sig'), nxt: rows[i]?.querySelector('.c13-next') })).filter((c) => c.sig && c.nxt);
+  const set = (c, sig, nxt, note) => {
+    c.sig.replaceChildren(sig, note ? el('small', { class: 'muted u3-block' }, note) : '');
+    c.sig.className = ''; c.nxt.textContent = nxt; c.nxt.className = '';
+  };
+  const list = await todayList();
+  const byCode = new Map((list?.rows ?? []).map((r) => [r.code, r]));
+  const rest = [];
+  for (const c of cells) {
+    const r = byCode.get(c.p.code);
+    if (r) set(c, actText(r.action), isNum(r.next) ? ratio(r.next, 0) : '—', t('c13.from_list', { d: list.data_date }));
+    else rest.push(c);
+  }
+  // 不在清单里的：限并发逐只查
+  let i = 0;
+  const worker = async () => {
+    while (i < rest.length) {
+      const c = rest[i++];
+      try {
+        const market = c.p.market || 'cn';
+        const strat = list?.strategy || 'blend2';
+        const d = await getJSON(`/api/stock?market=${encodeURIComponent(market)}&code=${encodeURIComponent(c.p.code)}&strategy=${encodeURIComponent(strat)}&period=1y`, { mock: 'u2-stock' });   // 演示模式（?mock=1）用个股页同一份 mock
+        if (d?.error || !isNum(d?.next)) throw new Error('no data');
+        set(c, actText(d.action), ratio(d.next, 0), t('c13.not_in_list'));
+      } catch {
+        set(c, t('u1.na'), '—', '');
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(FALLBACK_PARALLEL, rest.length) }, worker));
 }
 
 function positionsCard(snap) {
   const list = sortPositions(snap.positions || []);
-  const heads = ['hold.pos.code', 'hold.pos.name', 'hold.pos.shares', 'hold.pos.avg', 'hold.pos.price', 'hold.pos.pnl', 'hold.pos.weight', 'hold.pos.first', 'hold.pos.days'];
+  const heads = ['hold.pos.code', 'hold.pos.name', 'hold.pos.shares', 'hold.pos.avg', 'hold.pos.price', 'hold.pos.pnl', 'hold.pos.weight', 'hold.pos.first', 'hold.pos.days', 'c13.sig', 'c13.next'];
   return el('section', { class: 'card card--flush', 'aria-labelledby': 'hold-pos-t' },
     el('div', { class: 'card__head' }, el('h2', { class: 'card__title', id: 'hold-pos-t' }, t('hold.pos.title'))),
-    table(heads, list.map((p) => positionRow(p, snap)), 'hold.pos.empty', { numCols: [2, 3, 4, 5, 6, 7, 8], id: 'holdPositionsTable' }),
-    el('p', { class: 'ws-note u3-pad' }, t('hold.pos.foot')),
-    el('p', { class: 'ws-note u3-pad' }, t('hold.monitor')));
+    table(heads, list.map((p) => positionRow(p, snap)), 'hold.pos.empty', { numCols: [2, 3, 4, 5, 6, 7, 8, 10], id: 'holdPositionsTable' }),
+    list.length ? el('p', { class: 'ws-note u3-pad' }, t('c13.note')) : null,
+    el('p', { class: 'ws-note u3-pad' }, t('hold.pos.foot')));   // D11（C17）：去掉占位文字「盯盘盈亏：尚未接入」，实现之前不显示
 }
 
 function closedCard(snap) {
@@ -145,6 +198,8 @@ function draw() {
     historyCard(snap, { includeVoided: st.includeVoided, msg: st.msg, reload,
       setVoided: (v) => { st.includeVoided = v; reload(); } }),
     closedCard(snap));
+  const tbody = st.root.querySelector('#holdPositionsTable tbody');
+  if (tbody) fillStrategy(tbody, sortPositions(snap.positions || []));   // 顺序与表格行一致
 }
 
 async function fetchSnap() {

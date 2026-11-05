@@ -7,6 +7,8 @@
 .u2-gap { margin-top: var(--space-4); }
 .u2-stack { display: grid; gap: var(--space-4); min-width: 0; }
 .u2-scroll { max-height: 320px; overflow-y: auto; }
+.u2-compare .table th, .u2-compare .table td { padding-left: var(--space-2); padding-right: var(--space-2); }   /* D07 */
+.u2-compare .table td:first-child { white-space: normal; min-width: 8em; }   /* D07：长策略名换行 */
 .u2-result[hidden] { display: none; }
 
 /* —— 表单：标签在上、控件在下 —— */
@@ -52,7 +54,7 @@
 .u2-hist__svg { width: 100%; height: 150px; display: block; }
 .u2-bar { fill: var(--chart-2); opacity: 0.85; }
 .u2-bar--neg { fill: var(--chart-dd); }
-.u2-axis { fill: var(--chart-text); font-size: 11px; }
+.u2-axis { fill: var(--chart-text); font-size: var(--fs-xs); }   /* D36：11 → 12px */
 .u2-exports { padding: var(--space-4) 0 0; }
 
 /* —— 个股页 —— */
@@ -73,7 +75,7 @@
   color: var(--text-secondary);
 }
 .u2-click { cursor: pointer; }
-.u2-click:hover td, .u2-click:focus-visible td { background: color-mix(in srgb, var(--accent-primary) 10%, transparent); }
+.u2-click:hover td, .u2-click:focus-within td { background: color-mix(in srgb, var(--accent-primary) 10%, transparent); }
 .u2-pin td { background: color-mix(in srgb, var(--accent-primary) 16%, transparent); font-weight: 600; }
 
 @media (max-width: 1000px) {
@@ -92,3 +94,14 @@
 .u2-k, .u2-chart { max-width: 100%; }
 /* G01：回测运行中，上一次的结果变淡、暂时不能点，提示它不是这次参数的结果 */
 .u2-result[aria-busy="true"] { opacity: .45; pointer-events: none; }
+/* D49-2：表格行首格里的按钮，看起来和原来的文字一样；焦点环照常 */
+.u2-rowbtn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.u2-rowbtn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+/* D80：个股页换策略 / 区间时的加载中样子（不挪位置，CLS 不变） */
+.u2-refetch { pointer-events: none; cursor: progress; }
+.u2-refetch > * { opacity: .5; transition: opacity var(--motion-fast); }
+/* D85 策略叠加比较 */
+.u2-cmpbox { margin-right: 6px; vertical-align: middle; accent-color: var(--accent-primary); }
+.u2-cmp-diff { margin-top: var(--space-2); }
+.u2-cmp[aria-busy="true"] { opacity: .5; }
+.u2-cmp-note { margin-top: var(--space-3); }

@@ -10,10 +10,12 @@
   root.classList.add('js');
   try {
     const theme = localStorage.getItem('qb-theme');
-    if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme);
+    // D95：没选过（或存的值不认识）就默认终端主题；用户手动选过的仍然优先
+    root.setAttribute('data-theme', theme === 'light' || theme === 'dark' || theme === 'terminal' ? theme : 'terminal');
     const market = localStorage.getItem('qb-market');
     if (market === 'cn' || market === 'us') root.setAttribute('data-market', market);
   } catch (e) {
-    /* 隐私模式下 localStorage 不可用，按默认值渲染 */
+    /* 隐私模式下 localStorage 不可用，按默认值（终端）渲染 */
+    root.setAttribute('data-theme', 'terminal');
   }
 })();

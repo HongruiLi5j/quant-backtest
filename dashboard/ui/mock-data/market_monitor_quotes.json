@@ -18,7 +18,27 @@
   "degraded": false,
   "truncated": false,
   "rounds": 33,
-  "timezone": "北京时间"
+  "timezone": "北京时间",
+  "estimate": {
+   "count": 4,
+   "basis": "watch",
+   "requests_per_round": 4,
+   "round_seconds": 60,
+   "rounds_affordable": 120
+  },
+  "rules": {
+   "thresholds": {
+    "momentum": 0.03,
+    "momentum_minutes": 5,
+    "volume_ratio": 2.0,
+    "breakout": 0.01,
+    "drop_pct": 5.0,
+    "window_minutes": 5
+   },
+   "targets": 0,
+   "stops": 0,
+   "stop_pct": 0.15
+  }
  },
  "quotes": [
   {

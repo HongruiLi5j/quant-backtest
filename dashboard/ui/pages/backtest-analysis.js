@@ -7,6 +7,7 @@
  * ========================================================== */
 import { el, fmt } from '../shared/dom.js';
 import { t } from '../shared/i18n.js';
+import { withInfo as wi } from '../shared/glossary.js';   // D111：指标名后面的 ⓘ
 import { renderHeatmap } from '../shared/chart-heatmap.js';
 import { card, downloadCSV, isNum, pct, table, tb, toneClass } from './u2-lib.js';
 import { chartSection, histogram } from './backtest-ana-charts.js';
@@ -18,6 +19,10 @@ function metricRow(label, v, b, d = 2, unit = '', good = 'high') {
   return [label, { v: fmt(v, d, unit), num: true, cls: better ? 'is-rise' : '' }, num(b, d, unit)];
 }
 
+/** D76（revquant 标签约束）：只在 rf=0 的 Sharpe 旁边写「± 标准误」（后端 sharpe_se 就是这一个口径的，
+ *  页面顶部扣现金收益的 Sharpe 没有 se，不能挂上去）；不说「两个 Sharpe 差距小于 se 就没区别」——两条收益相关，差的误差另算 */
+const withSe = (v, se) => ({ v: isNum(v) && isNum(se) ? `${fmt(v, 2)} ± ${fmt(se, 2)}` : fmt(v, 2), num: true });
+
 function assumptions(a) {
   return card(t('u2.ana.assume'), t('u2.ana.assume_sub'),
     el('dl', { class: 'ws-dl' }, ...(a.assumptions ?? []).flatMap(([k, v]) => [el('dt', {}, tb(k)), el('dd', { class: 'u2-ass' }, v)])));
@@ -26,15 +31,18 @@ function assumptions(a) {
 function coreCards(a) {
   const f = a.full ?? {}; const bf = a.bench_full ?? {}; const ex = a.extra ?? {};
   const core = table([{ text: t('u2.ana.metric') }, { text: t('chart.strategy'), num: true }, { text: t('u2.bt.hold'), num: true }], [
-    metricRow(t('u2.ana.total'), f.total, bf.total, 1, '%'), metricRow(t('metric.cagr'), f.cagr, bf.cagr, 1, '%'),
-    metricRow(t('metric.vol'), f.vol, bf.vol, 1, '%', 'low'), metricRow('Sharpe', f.sharpe, bf.sharpe),
-    metricRow(t('u2.ana.sortino'), f.sortino, bf.sortino), metricRow(t('u2.ana.calmar'), f.calmar, bf.calmar),
-    metricRow(t('metric.maxdd'), f.maxdd, bf.maxdd, 1, '%', '')]);
+    metricRow(wi(t('u2.ana.total'), 'total'), f.total, bf.total, 1, '%'), [wi(t('metric.cagr'), 'cagr'), { v: fmt(f.cagr, 1, '%', true), num: true, cls: isNum(f.cagr) && isNum(bf.cagr) && f.cagr > bf.cagr ? 'is-rise' : '' }, { v: fmt(bf.cagr, 1, '%', true), num: true }],
+    metricRow(wi(t('metric.vol'), 'vol'), f.vol, bf.vol, 1, '%', 'low'),
+    [wi(t('u2.ana.s_sharpe_rf0'), 'sharpe_rf0'), withSe(f.sharpe, f.sharpe_se), withSe(bf.sharpe, bf.sharpe_se)],   // rf=0 的 Sharpe（analytics.py:34）+ D76 标准误
+    metricRow(wi(t('u2.ana.sortino'), 'sortino'), f.sortino, bf.sortino), metricRow(wi(t('u2.ana.calmar'), 'calmar'), f.calmar, bf.calmar),
+    metricRow(wi(t('metric.maxdd'), 'maxdd'), f.maxdd, bf.maxdd, 1, '%', '')]);
   const dist = table([], [
     [t('u2.ana.best_day'), { v: pct(ex.best_day, 2), num: true, cls: 'is-rise' }], [t('u2.ana.worst_day'), { v: pct(ex.worst_day, 2), num: true, cls: 'is-fall' }],
-    [t('u2.ana.var'), { v: pct(ex.var95, 2), num: true }], [t('u2.ana.skew'), num(ex.skew)], [t('u2.ana.kurt'), num(ex.kurt)],
+    // D29（revquant A7）：后端 VaR 是负数，标签已写「至少亏」，这里显示绝对值，避免「至少亏 -0.55%」
+    [wi(t('u2.ana.var'), 'var95'), { v: isNum(ex.var95) ? fmt(Math.abs(ex.var95), 2, '%') : '—', num: true }], [wi(t('u2.ana.skew'), 'skew'), num(ex.skew)], [wi(t('u2.ana.kurt'), 'kurt'), num(ex.kurt)],
     [t('u2.ana.pos_months'), num(ex.pos_months, 0, '%')]]);
-  return el('div', { class: 'ws-grid ws-grid--2' }, card(t('u2.ana.core'), null, core), card(t('u2.ana.dist'), null, dist));
+  const seNote = isNum(f.sharpe_se) ? el('p', { class: 'ws-note' }, t('c76.se_note')) : null;
+  return el('div', { class: 'ws-grid ws-grid--2' }, card(t('u2.ana.core'), null, core, seNote), card(t('u2.ana.dist'), null, dist));
 }
 
 /** 样本内 / 样本外：前 70% / 后 30%，附带判断语 */
@@ -42,11 +50,11 @@ function split(a, r) {
   const sp = a.split ?? {};
   if (!sp.date) return card(t('u2.ana.split'), null, el('p', { class: 'muted' }, t('u2.ana.split_short')));
   const seg = (k) => sp[k] ?? {};
-  const row = (name, k, kb) => [name, num(seg(k).cagr, 1, '%'), num(seg(k).sharpe), num(seg(k).maxdd, 1, '%'), num(seg(kb).cagr, 1, '%'), num(seg(kb).sharpe), num(seg(kb).maxdd, 1, '%')];
-  const heads = ['u2.ana.period', 'u2.ana.s_cagr', 'u2.ana.s_sharpe', 'u2.ana.s_dd', 'u2.ana.h_cagr', 'u2.ana.h_sharpe', 'u2.ana.h_dd'].map((k, i) => ({ text: t(k), num: i > 0 }));
+  const row = (name, k, kb) => [name, { v: fmt(seg(k).cagr, 1, '%', true), num: true }, withSe(seg(k).sharpe, seg(k).sharpe_se), num(seg(k).maxdd, 1, '%'), { v: fmt(seg(kb).cagr, 1, '%', true), num: true }, withSe(seg(kb).sharpe, seg(kb).sharpe_se), num(seg(kb).maxdd, 1, '%')];
+  const heads = ['u2.ana.period', 'u2.ana.s_cagr', 'u2.ana.s_sharpe', 'u2.ana.s_dd', 'u2.ana.h_cagr', 'u2.ana.h_sharpe', 'u2.ana.h_dd'].map((k, i) => ({ text: ['u2.ana.s_sharpe', 'u2.ana.h_sharpe'].includes(k) ? wi(t(k), 'sharpe_rf0') : t(k), num: i > 0 }));
   const si = seg('is').sharpe; const so = seg('oos').sharpe;
   const verdict = isNum(si) && isNum(so) ? t(so >= si * 0.6 ? 'u2.ana.oos_ok' : 'u2.ana.oos_bad') : '';
-  return card(t('u2.ana.split'), null,
+  return card(wi(t('u2.ana.split'), 'split70'), null,
     table(heads, [row(t('u2.ana.is', { a: r.start, b: sp.date }), 'is', 'b_is'), row(t('u2.ana.oos', { a: sp.date, b: r.end }), 'oos', 'b_oos')]),
     el('p', { class: 'ws-note' }, verdict, ' ', t('u2.ana.split_warn')));
 }
@@ -69,9 +77,9 @@ function tradeStats(a) {
   const tr = a.trades ?? {};
   if (!tr.n) return card(t('u2.ana.trades'), null, el('p', { class: 'muted' }, t('u2.ana.no_trades')));
   const rows = [
-    [t('metric.trades'), num(tr.n, 0), t('metric.win'), num(tr.win, 1, '%')],
+    [wi(t('metric.trades'), 'trades'), num(tr.n, 0), wi(t('metric.win'), 'win'), isNum(tr.win_lo) ? { v: t('c76.win', { w: fmt(tr.win, 1), lo: fmt(tr.win_lo, 1), hi: fmt(tr.win_hi, 1) }), num: true } : num(tr.win, 1, '%')],   // D76：胜率带 95% 区间（Wilson）
     [t('u2.ana.avg_win'), { v: pct(tr.avg_win, 2), num: true, cls: 'is-rise' }, t('u2.ana.avg_loss'), { v: pct(tr.avg_loss, 2), num: true, cls: 'is-fall' }],
-    [t('u2.ana.payoff'), num(tr.payoff), t('u2.ana.expect'), { v: pct(tr.expectancy, 2), num: true, cls: toneClass(tr.expectancy) }],
+    [wi(t('u2.ana.payoff'), 'payoff'), num(tr.payoff), wi(t('u2.ana.expect'), 'expect'), { v: pct(tr.expectancy, 2), num: true, cls: toneClass(tr.expectancy) }],
     [t('u2.ana.best_trade'), { v: pct(tr.best, 2), num: true, cls: 'is-rise' }, t('u2.ana.worst_trade'), { v: pct(tr.worst, 2), num: true, cls: 'is-fall' }],
     [t('u2.ana.avg_days'), num(tr.avg_days, 1), t('u2.ana.streak'), num(tr.max_lose_streak, 0)]];
   const h1 = el('div', { class: 'u2-hist' }); const h2 = el('div', { class: 'u2-hist' });
@@ -86,29 +94,32 @@ function costSens(a) {
   if (!cs.length) return null;
   const name = (l) => (l === '0' ? t('u2.ana.cost0') : l === '1x' ? t('u2.ana.cost1') : t('u2.ana.cost_n', { n: l.replace('x', '') }));
   const note = cs.length >= 4 && isNum(cs[3].sharpe) ? t(cs[3].sharpe > 0.3 ? 'u2.ana.cost_ok' : 'u2.ana.cost_bad') : '';
-  return card(t('u2.ana.cost'), t('u2.ana.cost_sub'),
-    table([t('u2.ana.fee_level'), t('u2.ana.one_way'), t('metric.cagr'), 'Sharpe', t('metric.maxdd')].map((x, i) => ({ text: x, num: i > 0 })),
-      cs.map((c) => [name(c.label), num(c.cost_bp, 1, 'bp'), num(c.cagr, 1, '%'), num(c.sharpe), num(c.maxdd, 1, '%')])),
+  return card(wi(t('u2.ana.cost'), 'cost_sens'), t('u2.ana.cost_sub'),
+    table([t('u2.ana.fee_level'), t('u2.ana.one_way'), t('metric.cagr'), wi(t('u2.ana.s_sharpe_rf0'), 'sharpe_rf0'), t('metric.maxdd')].map((x, i) => ({ text: x, num: i > 0 })),
+      cs.map((c) => [name(c.label), num(c.cost_bp, 1, 'bp'), { v: fmt(c.cagr, 1, '%', true), num: true }, num(c.sharpe), num(c.maxdd, 1, '%')])),
     el('p', { class: 'ws-note' }, note));
 }
 
 function monteCarlo(a) {
   const mc = a.mc;
   if (!mc) return null;
-  return card(t('u2.ana.mc'), t('u2.ana.mc_sub'),
+  return card(wi(t('u2.ana.mc'), 'mc'), t('u2.ana.mc_sub'),
     table([{ text: '' }, ...mc.pct.map((q) => ({ text: t('u2.ana.pctile', { q }), num: true }))], [
-      [t('metric.cagr'), ...mc.cagr.map((v) => ({ v: fmt(v, 1, '%'), num: true, cls: toneClass(v) }))],
+      [t('metric.cagr'), ...mc.cagr.map((v) => ({ v: fmt(v, 1, '%', true), num: true, cls: toneClass(v) }))],
       [t('metric.maxdd'), ...mc.maxdd.map((v) => ({ v: fmt(v, 1, '%'), num: true, cls: 'is-fall' }))]]),
     el('p', { class: 'ws-note' }, t('u2.ana.mc_note', { block: mc.block, n: mc.n, p: fmt(mc.p_loss, 1, '%') })));
 }
 
+/** D48（T-9 B17）：参数敏感性表头。权重 1/3 的倍数会显示成 0.13333333，统一最多保留 2 位小数并去掉多余的 0 */
+const paramText = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Number(v.toFixed(2))) : String(v));
+
 function paramSens(a) {
   const ps = a.param_sens ?? [];
   if (!ps.length) return null;
-  return card(t('u2.ana.param'), t('u2.ana.param_sub'),
+  return card(wi(t('u2.ana.param'), 'param_robust'), t('u2.ana.param_sub'),
     ...ps.map((p) => el('div', { class: 'u2-gap' }, el('p', { class: 'eyebrow' }, p.label),
-      table([{ text: t('u2.ana.value') }, ...p.pts.map((x) => ({ text: String(x.v), num: true }))],
-        [['Sharpe', ...p.pts.map((x) => num(x.sharpe))], [t('metric.cagr'), ...p.pts.map((x) => num(x.cagr, 1, '%'))]]))),
+      table([{ text: t('u2.ana.value') }, ...p.pts.map((x) => ({ text: paramText(x.v), num: true }))],
+        [[wi(t('u2.ana.s_sharpe_rf0'), 'sharpe_rf0'), ...p.pts.map((x) => num(x.sharpe))], [t('metric.cagr'), ...p.pts.map((x) => ({ v: fmt(x.cagr, 1, '%', true), num: true }))]]))),
     el('p', { class: 'ws-note' }, t('u2.ana.param_note')));
 }
 

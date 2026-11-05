@@ -43,13 +43,21 @@ export function chartColors() {
     riseText: cssVar('--color-rise', '#ff8a8a'),
     fallText: cssVar('--color-fall', '#4ade80'),
     crosshair: cssVar('--accent-glow', '#9f7bff'),
+    // D79：多条线的第 3–5 种颜色（tokens.css --series-3..5，青 / 金 / 灰）。红绿只留给涨跌（K 线、成交量、MACD 柱）
+    s3: cssVar('--series-3', '#2dd4bf'),
+    s4: cssVar('--series-4', '#eab308'),
+    s5: cssVar('--series-5', '#a1a1aa'),
     font: cssVar('--font-mono', 'monospace'),
   };
 }
 
-function baseOptions(c) {
+/** D79：全站唯一的图表公共配置（以前 pages/u2-lib.js 里还有一份，两份已经开始不一样）。
+ *  opts.height：固定高度；opts.top：价格轴上边距（默认 0.12）；opts.priceFormatter：false = 用图表库默认格式 */
+export function baseOptions(c, opts = {}) {
+  const { height = null, top = 0.12, priceFormatter = (v) => fmt(v, 1) } = opts;
   return {
     autoSize: true,
+    ...(height ? { height } : {}),
     layout: {
       background: { type: 'solid', color: 'transparent' },
       textColor: c.text,
@@ -58,7 +66,7 @@ function baseOptions(c) {
       attributionLogo: true,          // lightweight-charts 许可要求保留署名
     },
     grid: { vertLines: { color: 'transparent' }, horzLines: { color: c.grid } },
-    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top, bottom: 0.08 } },
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
     crosshair: {
       mode: 0,
@@ -67,7 +75,7 @@ function baseOptions(c) {
     },
     handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true },
-    localization: { priceFormatter: (v) => fmt(v, 1) },
+    ...(priceFormatter ? { localization: { priceFormatter } } : {}),
   };
 }
 

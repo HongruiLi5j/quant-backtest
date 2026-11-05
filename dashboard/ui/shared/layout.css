@@ -30,6 +30,12 @@
   navigation: auto;
 }
 
+/* D83：系统开了「减少动态效果」时不做跨页面的滑动淡入。reset.css 里 *、*::before、*::after 的规则
+ * 匹配不到 ::view-transition-* 伪元素，所以以前这个 280 / 640ms 的动画对这类用户照样播放 */
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
+
 ::view-transition-old(root) {
   animation: vt-out var(--motion-base) var(--ease-out) both;
 }
@@ -271,7 +277,7 @@
   gap: 2px;
   min-height: 52px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--text-secondary);
 }
 

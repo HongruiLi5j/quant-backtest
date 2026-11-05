@@ -15,7 +15,14 @@
   "batch_mode": false,
   "truncated": false,
   "rounds": 9,
-  "timezone": "美东时间（America/New_York，自动夏令时）"
+  "timezone": "美东时间（America/New_York，自动夏令时）",
+  "estimate": {
+   "count": 3,
+   "basis": "watch",
+   "requests_per_round": 3,
+   "round_seconds": 60,
+   "rounds_affordable": 120
+  }
  },
  "quotes": [
   {
